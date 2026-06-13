@@ -28,8 +28,11 @@ Current implementation:
 - The add-on writes the code to the `Claude Pending Script` Text datablock.
 - Static checks block obvious risky imports and calls before the Run button is enabled.
 - The sidebar shows status, risk, intent, expected changes, static issues/warnings, and Run/Reject controls.
+- Static analysis reports both declared script risk and detected risk (`low`, `medium`, `high`, or `blocked`) with risk reasons and checkpoint recommendation.
 - Execution pushes a Blender undo step when possible, saves a timestamped `.blend` checkpoint when enabled, and records stdout/errors in `Claude Script Log`.
 - Failed scripts keep their pending code and expose a `Repair Script` action that sends the failed code and traceback back to Claude for a corrected draft.
+- External clients can normally call `run_approved_script` with a short-lived one-time token issued by the Blender UI for the current pending script.
+- Users can also enable a Blender-side timed external script trust window, currently 15 minutes from the sidebar. During that window, external clients may run staged scripts without a per-script token, or with an empty token string, but each script still has to be staged in Blender and pass static checks at run time. Blocked scripts remain refused. Trust grants are runtime-only and are cleared on add-on reload, file load, and bridge start.
 
 ### Limited Autonomous
 
@@ -77,6 +80,8 @@ Flag or block proposed scripts that include:
 
 These checks are guardrails, not a true sandbox. Blender Python runs with broad local privileges, so user approval and checkpointing remain essential.
 
+Live-preview reverts return a rollback manifest and warnings when restoration is incomplete. This is visibility, not a guarantee that every possible Blender API mutation is reversible.
+
 ## Safer Defaults
 
 - Prefer helper tools for simple edits.
@@ -101,21 +106,25 @@ These checks are guardrails, not a true sandbox. Blender Python runs with broad 
 Before approved execution:
 
 - Push an undo step when possible.
-- Save a timestamped copy of the `.blend` when checkpoints are enabled.
+- Save a timestamped Claude-created `.blend` checkpoint when checkpoints are enabled.
 - Record the generated script and result log locally.
+- For external clients, require the approval token to match the current pending script and consume it before execution.
+- If a timed external script trust window is active, accept tokenless external execution only until the runtime expiry time and only for a currently staged script that still passes static checks.
 
 During live preview:
 
 - Record before-state for each helper step.
 - Keep the transaction pending until the user commits it.
 - Provide a one-click revert for pending preview changes.
+- Show rollback coverage and warnings after commit/revert.
 - Escalate to approval-required mode when rollback state cannot be captured confidently.
 
 After execution:
 
 - Show success/failure clearly.
 - Offer undo for the last action.
-- Return execution errors back into the Claude conversation so it can repair the script.
+- Offer explicit restore of the last Claude-created checkpoint.
+- Return execution errors and checkpoint status back into the Claude conversation so it can draft a repaired script without running it automatically.
 
 ## Documentation Access
 

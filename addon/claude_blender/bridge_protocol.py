@@ -9,6 +9,18 @@ from __future__ import annotations
 
 
 BRIDGE_VERSION = "0.2"
+CONTRACT_SCHEMA_VERSION = "1.0"
+DEFAULT_TOOL_TIMEOUT_SECONDS = 60
+
+
+DEFAULT_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "ok": {"type": "boolean", "description": "Whether the tool completed successfully"},
+        "message": {"type": "string", "description": "Human-readable status or error message"},
+    },
+    "additionalProperties": True,
+}
 
 
 TOOL_CONTRACTS = {
@@ -252,20 +264,127 @@ TOOL_CONTRACTS = {
     "draft_script": {
         "description": "Stage generated Blender Python in a Text datablock for explicit user approval",
         "mutates_scene": False,
+        "has_side_effects": True,
         "requires_approval": True,
     },
     "run_approved_script": {
-        "description": "Run generated Blender Python after explicit user approval",
+        "description": "Run a pending script with a one-time approval token or an active Blender-side trust window",
         "mutates_scene": True,
+        "has_side_effects": True,
         "requires_approval": True,
+        "external_only": True,
+        "supports_headless": False,
+        "timeout_seconds": 120,
+        "permissions": ["scene:read", "scene:mutate", "script:run"],
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "approval_token": {
+                    "type": "string",
+                    "description": (
+                        "Optional one-time token copied from Blender after the user approves external execution. "
+                        "Omit this, or pass an empty string, only while a Blender-side timed external script trust "
+                        "window is active."
+                    ),
+                }
+            },
+            "additionalProperties": False,
+        },
+        "output_schema": {
+            "type": "object",
+            "properties": {
+                "ok": {"type": "boolean"},
+                "message": {"type": "string"},
+                "stdout": {"type": "string"},
+                "log_datablock": {"type": "string"},
+                "checkpoint": DEFAULT_OUTPUT_SCHEMA,
+            },
+            "required": ["ok"],
+            "additionalProperties": True,
+        },
     },
 }
+
+
+def _risk_level(contract):
+    if contract.get("risk_level"):
+        return str(contract["risk_level"])
+    if contract.get("requires_approval"):
+        return "approval"
+    if contract.get("mutates_scene"):
+        return "preview"
+    return "read"
+
+
+def _permissions(contract):
+    configured = contract.get("permissions")
+    if configured:
+        return [str(item) for item in configured]
+    if contract.get("requires_approval"):
+        return ["scene:read", "script:stage"]
+    if contract.get("mutates_scene"):
+        permissions = ["scene:read", "scene:mutate"]
+        if contract.get("requires_live_preview"):
+            permissions.append("preview:write")
+        return permissions
+    return ["scene:read"]
+
+
+def normalized_tool_contract(name, contract=None):
+    raw = dict(contract if contract is not None else TOOL_CONTRACTS.get(name, {}))
+    risk_level = _risk_level(raw)
+    normalized = {
+        "name": str(name),
+        "title": str(raw.get("title") or str(name).replace("_", " ").title()),
+        "description": str(raw.get("description") or ""),
+        "mutates_scene": bool(raw.get("mutates_scene", False)),
+        "requires_live_preview": bool(raw.get("requires_live_preview", False)),
+        "requires_approval": bool(raw.get("requires_approval", False)),
+        "has_side_effects": bool(raw.get("has_side_effects", raw.get("mutates_scene", False))),
+        "requires_selection": bool(raw.get("requires_selection", False)),
+        "supports_headless": bool(raw.get("supports_headless", not raw.get("mutates_scene", False))),
+        "risk_level": risk_level,
+        "timeout_seconds": int(raw.get("timeout_seconds") or DEFAULT_TOOL_TIMEOUT_SECONDS),
+        "permissions": _permissions(raw),
+        "output_schema": raw.get("output_schema") or DEFAULT_OUTPUT_SCHEMA,
+    }
+    for key, value in raw.items():
+        normalized.setdefault(key, value)
+    return normalized
+
+
+def output_schema_for_tool(name):
+    return normalized_tool_contract(name).get("output_schema") or DEFAULT_OUTPUT_SCHEMA
+
+
+def mcp_annotations_for_tool(name):
+    contract = normalized_tool_contract(name)
+    mutates = bool(contract["mutates_scene"])
+    side_effects = bool(contract["has_side_effects"])
+    approval = bool(contract["requires_approval"])
+    destructive = bool(contract.get("destructive", False))
+    return {
+        "mutatesScene": mutates,
+        "hasSideEffects": side_effects,
+        "requiresApproval": approval,
+        "requiresLivePreview": bool(contract["requires_live_preview"]),
+        "riskLevel": contract["risk_level"],
+        "permissions": list(contract["permissions"]),
+        "readOnlyHint": not side_effects,
+        "destructiveHint": destructive,
+        "idempotentHint": False,
+        "openWorldHint": False,
+    }
 
 
 def list_tool_contracts():
     return {
         "bridge_version": BRIDGE_VERSION,
-        "tools": TOOL_CONTRACTS,
+        "schema_version": CONTRACT_SCHEMA_VERSION,
+        "tools": {
+            name: normalized_tool_contract(name, contract)
+            for name, contract in TOOL_CONTRACTS.items()
+        },
     }
 
 

@@ -856,6 +856,16 @@ def draft_script(context, args):
     )
 
 
+def run_approved_script(context, args):
+    prefs = preferences.get_preferences(context)
+    return script_runner.run_externally_approved_script(
+        context,
+        str(args.get("approval_token") or ""),
+        checkpoint_enabled=bool(getattr(prefs, "checkpoints_enabled", True)),
+        checkpoint_dir=getattr(prefs, "checkpoint_dir", None),
+    )
+
+
 def commit_preview(context, args):
     return live_preview.commit(context)
 
@@ -915,6 +925,7 @@ TOOL_FUNCTIONS = {
     "create_camera_orbit": create_camera_orbit,
     "search_blender_docs": search_blender_docs,
     "draft_script": draft_script,
+    "run_approved_script": run_approved_script,
     "commit_preview": commit_preview,
     "revert_preview": revert_preview,
 }

@@ -10,11 +10,145 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+try:
+    from . import audit_log, anthropic_client, bridge_protocol
+except ImportError:  # Allows direct execution as addon/claude_blender/mcp_server.py.
+    package_parent = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    if package_parent not in sys.path:
+        sys.path.insert(0, package_parent)
+    try:
+        from claude_blender import audit_log, anthropic_client, bridge_protocol
+    except ImportError:
+        import audit_log
+        import bridge_protocol
+
+        anthropic_client = None
+
 
 PROTOCOL_VERSION = "2025-06-18"
+SUPPORTED_PROTOCOL_VERSIONS = (PROTOCOL_VERSION,)
 SERVER_NAME = "claude-blender"
 SERVER_VERSION = "0.1.0"
 DEFAULT_BRIDGE_URL = "http://127.0.0.1:8765"
+DEFAULT_PAGE_SIZE = 100
+MAX_PAGE_SIZE = 100
+FULL_TOOL_LIST_ENV = "BLENDER_MCP_FULL_TOOL_LIST"
+COMPACT_DIRECT_TOOL_NAMES = ("list_scene_objects",)
+COMPACT_TOOL_NAMES = {
+    "blender_bridge_status",
+    "search_blender_tools",
+    "get_blender_tool_schema",
+    "invoke_blender_tool",
+    *COMPACT_DIRECT_TOOL_NAMES,
+}
+
+GENERIC_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "ok": {"type": "boolean"},
+        "message": {"type": "string"},
+    },
+    "additionalProperties": True,
+}
+
+STATUS_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "ok": {"type": "boolean"},
+        "bridge_url": {"type": "string"},
+        "message": {"type": "string"},
+        "bridge_version": {"type": "string"},
+        "blender_version": {"type": "string"},
+        "scene": {"type": "string"},
+    },
+    "required": ["ok"],
+    "additionalProperties": True,
+}
+
+RESOURCE_TEMPLATES = [
+    {
+        "uriTemplate": "blender://scene/{resource}",
+        "name": "scene-resource",
+        "title": "Blender Scene Resource",
+        "description": "Scene resources such as status or context exposed by the running Blender bridge.",
+        "mimeType": "application/json",
+    },
+    {
+        "uriTemplate": "blender://tools/{resource}",
+        "name": "tool-resource",
+        "title": "Blender Tool Resource",
+        "description": "Tool metadata resources such as the normalized contract registry.",
+        "mimeType": "application/json",
+    },
+    {
+        "uriTemplate": "blender://transcript/{resource}",
+        "name": "transcript-resource",
+        "title": "Blender Transcript Resource",
+        "description": "Transcript resources from the Blender add-on.",
+        "mimeType": "text/plain",
+    },
+    {
+        "uriTemplate": "blender://audit/{resource}",
+        "name": "audit-resource",
+        "title": "Blender Audit Resource",
+        "description": "Recent local audit events for MCP and bridge tool calls.",
+        "mimeType": "application/json",
+    },
+]
+
+PROMPTS = {
+    "inspect_scene": {
+        "name": "inspect_scene",
+        "title": "Inspect Blender Scene",
+        "description": "Ask an MCP client to inspect the active Blender scene before making changes.",
+        "arguments": [
+            {
+                "name": "goal",
+                "description": "Optional user goal or question to focus the inspection.",
+                "required": False,
+            }
+        ],
+        "template": (
+            "Inspect the current Blender scene using read-only tools first. "
+            "Summarize the relevant objects, materials, animation, camera, lights, and render context. "
+            "User goal: {goal}"
+        ),
+    },
+    "safe_scene_change": {
+        "name": "safe_scene_change",
+        "title": "Plan Safe Blender Change",
+        "description": "Plan a scene change using reversible helper tools before approval-gated Python.",
+        "arguments": [
+            {
+                "name": "goal",
+                "description": "The scene change the user wants.",
+                "required": True,
+            }
+        ],
+        "template": (
+            "Make this Blender change safely: {goal}\n\n"
+            "Use read-only inspection first if needed. Prefer typed reversible helper tools for common edits. "
+            "Only call draft_script when helper tools cannot express the change."
+        ),
+    },
+    "draft_approved_script": {
+        "name": "draft_approved_script",
+        "title": "Draft Approval-Gated Blender Python",
+        "description": "Draft Blender Python for explicit user approval inside Blender.",
+        "arguments": [
+            {
+                "name": "goal",
+                "description": "The scripted Blender task.",
+                "required": True,
+            }
+        ],
+        "template": (
+            "Draft Blender Python for this task without running it: {goal}\n\n"
+            "Search Blender docs before unfamiliar APIs. Call draft_script with complete code, intent, "
+            "expected_changes, risk_level, and target_objects. Do not claim the script has executed."
+        ),
+    },
+}
 
 
 def _json_dumps(value):
@@ -23,6 +157,349 @@ def _json_dumps(value):
 
 def _stderr(message):
     print(message, file=sys.stderr, flush=True)
+
+
+def _decode_cursor(cursor):
+    if cursor in (None, ""):
+        return 0
+    try:
+        return max(0, int(str(cursor)))
+    except ValueError:
+        return 0
+
+
+def _page_items(items, params, result_key):
+    params = params or {}
+    start = _decode_cursor(params.get("cursor"))
+    try:
+        requested_limit = int(params.get("limit") or DEFAULT_PAGE_SIZE)
+    except (TypeError, ValueError):
+        requested_limit = DEFAULT_PAGE_SIZE
+    limit = max(1, min(MAX_PAGE_SIZE, requested_limit))
+    end = min(len(items), start + limit)
+    result = {result_key: items[start:end]}
+    if end < len(items):
+        result["nextCursor"] = str(end)
+    return result
+
+
+def _schema_types(schema):
+    schema_type = schema.get("type")
+    if isinstance(schema_type, list):
+        return set(str(item) for item in schema_type)
+    if isinstance(schema_type, str):
+        return {schema_type}
+    return set()
+
+
+def _matches_json_type(value, schema_type):
+    if schema_type == "object":
+        return isinstance(value, dict)
+    if schema_type == "array":
+        return isinstance(value, list)
+    if schema_type == "string":
+        return isinstance(value, str)
+    if schema_type == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if schema_type == "number":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if schema_type == "boolean":
+        return isinstance(value, bool)
+    if schema_type == "null":
+        return value is None
+    return True
+
+
+def _integer_schema_value(schema, key):
+    value = schema.get(key)
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    return None
+
+
+def _validate_schema(value, schema, path="$"):
+    """Validate the JSON Schema subset used by this project without dependencies."""
+
+    if not isinstance(schema, dict):
+        return []
+    errors = []
+    schema_types = _schema_types(schema)
+    if schema_types and not any(_matches_json_type(value, item) for item in schema_types):
+        errors.append(f"{path}: expected {', '.join(sorted(schema_types))}")
+        return errors
+    if "enum" in schema and value not in schema.get("enum", []):
+        errors.append(f"{path}: expected one of {schema.get('enum')}")
+        return errors
+    if isinstance(value, dict):
+        properties = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
+        required = schema.get("required") if isinstance(schema.get("required"), list) else []
+        for key in required:
+            if key not in value:
+                errors.append(f"{path}.{key}: required property is missing")
+        if schema.get("additionalProperties") is False:
+            for key in value:
+                if key not in properties:
+                    errors.append(f"{path}.{key}: additional property is not allowed")
+        for key, child_schema in properties.items():
+            if key in value:
+                errors.extend(_validate_schema(value[key], child_schema, f"{path}.{key}"))
+    if isinstance(value, list):
+        min_items = _integer_schema_value(schema, "minItems")
+        max_items = _integer_schema_value(schema, "maxItems")
+        if min_items is not None and len(value) < min_items:
+            errors.append(f"{path}: expected at least {min_items} item(s)")
+        if max_items is not None and len(value) > max_items:
+            errors.append(f"{path}: expected at most {max_items} item(s)")
+        if isinstance(schema.get("items"), dict):
+            item_schema = schema["items"]
+            for index, item in enumerate(value):
+                errors.extend(_validate_schema(item, item_schema, f"{path}[{index}]"))
+    if isinstance(value, str):
+        min_length = _integer_schema_value(schema, "minLength")
+        max_length = _integer_schema_value(schema, "maxLength")
+        if min_length is not None and len(value) < min_length:
+            errors.append(f"{path}: expected at least {min_length} character(s)")
+        if max_length is not None and len(value) > max_length:
+            errors.append(f"{path}: expected at most {max_length} character(s)")
+    return errors
+
+
+def _normalize_tool_definition(tool):
+    result = dict(tool or {})
+    result.setdefault("inputSchema", result.pop("input_schema", {"type": "object"}))
+    result.setdefault("outputSchema", GENERIC_OUTPUT_SCHEMA)
+    result.setdefault("annotations", {})
+    return result
+
+
+def _contract_tool_definition(name, contract):
+    normalized = bridge_protocol.normalized_tool_contract(name, contract)
+    return {
+        "name": name,
+        "title": normalized.get("title") or name.replace("_", " ").title(),
+        "description": normalized.get("description", ""),
+        "inputSchema": normalized.get("input_schema") or {"type": "object", "properties": {}, "additionalProperties": True},
+        "outputSchema": normalized.get("output_schema") or GENERIC_OUTPUT_SCHEMA,
+        "annotations": bridge_protocol.mcp_annotations_for_tool(name),
+    }
+
+
+def _read_only_annotations(permissions=None):
+    return {
+        "mutatesScene": False,
+        "hasSideEffects": False,
+        "requiresApproval": False,
+        "requiresLivePreview": False,
+        "riskLevel": "read",
+        "permissions": list(permissions or ["tools:read"]),
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    }
+
+
+def _compact_tool_definitions():
+    return [
+        {
+            "name": "search_blender_tools",
+            "title": "Search Blender Tools",
+            "description": "Search the full Blender MCP tool catalog by name, description, risk, and permissions.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search text such as material, camera, script, or preview"},
+                    "limit": {"type": "integer", "description": "Maximum matching tools to return"},
+                    "mutates_scene": {"type": "boolean", "description": "Filter by whether tools can mutate the scene"},
+                    "requires_approval": {"type": "boolean", "description": "Filter by approval requirement"},
+                    "risk_level": {"type": "string", "description": "Filter by risk level such as read, preview, or approval"},
+                },
+                "additionalProperties": False,
+            },
+            "outputSchema": {
+                "type": "object",
+                "properties": {
+                    "ok": {"type": "boolean"},
+                    "tools": {"type": "array"},
+                    "count": {"type": "integer"},
+                },
+                "required": ["ok", "tools"],
+                "additionalProperties": True,
+            },
+            "annotations": _read_only_annotations(),
+        },
+        {
+            "name": "get_blender_tool_schema",
+            "title": "Get Blender Tool Schema",
+            "description": "Return the input schema, output schema, and safety annotations for one Blender tool.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"name": {"type": "string", "minLength": 1}},
+                "required": ["name"],
+                "additionalProperties": False,
+            },
+            "outputSchema": {
+                "type": "object",
+                "properties": {
+                    "ok": {"type": "boolean"},
+                    "tool": {"type": "object"},
+                },
+                "required": ["ok"],
+                "additionalProperties": True,
+            },
+            "annotations": _read_only_annotations(),
+        },
+        {
+            "name": "invoke_blender_tool",
+            "title": "Invoke Blender Tool",
+            "description": (
+                "Invoke a tool from the full Blender MCP catalog after looking up its schema. "
+                "The target tool schema is validated before forwarding to Blender."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "minLength": 1},
+                    "arguments": {"type": "object", "additionalProperties": True},
+                },
+                "required": ["name"],
+                "additionalProperties": False,
+            },
+            "outputSchema": GENERIC_OUTPUT_SCHEMA,
+            "annotations": {
+                "mutatesScene": True,
+                "hasSideEffects": True,
+                "requiresApproval": False,
+                "requiresLivePreview": False,
+                "riskLevel": "dynamic",
+                "permissions": ["scene:read", "scene:mutate", "script:stage"],
+                "readOnlyHint": False,
+                "destructiveHint": False,
+                "idempotentHint": False,
+                "openWorldHint": False,
+            },
+        },
+    ]
+
+
+def _static_tool_definitions():
+    tools = []
+    seen = set()
+    if anthropic_client is not None:
+        try:
+            for tool in anthropic_client.blender_tool_definitions():
+                name = str(tool.get("name") or "")
+                if not name:
+                    continue
+                contract = bridge_protocol.normalized_tool_contract(
+                    name,
+                    bridge_protocol.TOOL_CONTRACTS.get(name, {}),
+                )
+                tools.append(
+                    {
+                        "name": name,
+                        "title": contract.get("title") or name.replace("_", " ").title(),
+                        "description": tool.get("description", contract.get("description", "")),
+                        "inputSchema": tool.get("input_schema") or tool.get("inputSchema") or {"type": "object"},
+                        "outputSchema": contract.get("output_schema") or GENERIC_OUTPUT_SCHEMA,
+                        "annotations": bridge_protocol.mcp_annotations_for_tool(name),
+                    }
+                )
+                seen.add(name)
+        except Exception as exc:
+            _stderr(f"static tools warning: {exc}")
+    for name, contract in bridge_protocol.TOOL_CONTRACTS.items():
+        if name not in seen:
+            tools.append(_contract_tool_definition(name, contract))
+            seen.add(name)
+    return tools
+
+
+def _merge_tool_definitions(primary, fallback):
+    merged = []
+    seen = set()
+    for tool in list(primary or []) + list(fallback or []):
+        name = str((tool or {}).get("name") or "")
+        if not name or name in seen:
+            continue
+        merged.append(_normalize_tool_definition(tool))
+        seen.add(name)
+    return merged
+
+
+def _truthy_env(name):
+    return str(os.environ.get(name) or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _tool_search_text(tool):
+    annotations = tool.get("annotations") or {}
+    parts = [
+        tool.get("name", ""),
+        tool.get("title", ""),
+        tool.get("description", ""),
+        annotations.get("riskLevel", ""),
+        " ".join(str(item) for item in annotations.get("permissions", []) or []),
+    ]
+    return " ".join(str(part).lower() for part in parts if part)
+
+
+def _tool_summary(tool):
+    annotations = dict(tool.get("annotations") or {})
+    return {
+        "name": tool.get("name", ""),
+        "title": tool.get("title", ""),
+        "description": tool.get("description", ""),
+        "annotations": annotations,
+        "input_schema": tool.get("inputSchema") or {},
+    }
+
+
+def _bounded_limit(value, default=12, maximum=50):
+    try:
+        result = int(value)
+    except (TypeError, ValueError):
+        result = int(default)
+    return max(1, min(int(maximum), result))
+
+
+def _tool_result(content_text, structured, *, is_error=False):
+    if not isinstance(structured, dict):
+        structured = {"ok": not is_error, "text": str(content_text)}
+    structured.setdefault("ok", not is_error)
+    return {
+        "content": [{"type": "text", "text": str(content_text)}],
+        "structuredContent": structured,
+        "isError": bool(is_error),
+    }
+
+
+def _tool_error(message, *, code="tool_error", data=None):
+    structured = {"ok": False, "code": str(code), "message": str(message)}
+    if data is not None:
+        structured["data"] = data
+    return _tool_result(json.dumps(structured, indent=2, sort_keys=True), structured, is_error=True)
+
+
+def _audit_tool_call(name, arguments, result, *, tool=None):
+    try:
+        structured = result.get("structuredContent") if isinstance(result, dict) else {}
+        annotations = (tool or {}).get("annotations") or {}
+        audit_log.append_event(
+            "mcp_tool_call",
+            source="mcp",
+            tool_name=str(name or ""),
+            ok=bool(structured.get("ok", False)) if isinstance(structured, dict) else False,
+            is_error=bool(result.get("isError", True)) if isinstance(result, dict) else True,
+            code=structured.get("code", "") if isinstance(structured, dict) else "",
+            risk_level=annotations.get("riskLevel", ""),
+            mutates_scene=bool(annotations.get("mutatesScene", False)),
+            requires_approval=bool(annotations.get("requiresApproval", False)),
+            arguments=audit_log.summarize_arguments(arguments),
+        )
+    except Exception as exc:
+        _stderr(f"audit warning: {exc}")
 
 
 class BridgeClient:
@@ -73,14 +550,21 @@ class BridgeClient:
 class BlenderMCPServer:
     def __init__(self, bridge):
         self.bridge = bridge
+        self._tool_cache = None
+        self._full_tool_cache = None
+        self._log_level = "info"
+        self._full_tool_list = _truthy_env(FULL_TOOL_LIST_ENV)
 
     def initialize(self, params):
         requested = (params or {}).get("protocolVersion") or PROTOCOL_VERSION
+        protocol = requested if requested in SUPPORTED_PROTOCOL_VERSIONS else PROTOCOL_VERSION
         return {
-            "protocolVersion": requested if isinstance(requested, str) else PROTOCOL_VERSION,
+            "protocolVersion": protocol,
             "capabilities": {
                 "tools": {"listChanged": False},
                 "resources": {"listChanged": False},
+                "prompts": {"listChanged": False},
+                "logging": {},
             },
             "serverInfo": {
                 "name": SERVER_NAME,
@@ -89,7 +573,9 @@ class BlenderMCPServer:
             },
             "instructions": (
                 "Connects AI clients to the running Blender scene through the Claude for Blender localhost bridge. "
-                "Start the bridge inside Blender before using scene tools. Mutating tools affect the live scene and may leave preview changes pending."
+                "Start the bridge inside Blender before using scene tools. By default, this server exposes a compact "
+                "tool surface; use search_blender_tools, get_blender_tool_schema, and invoke_blender_tool for the full "
+                "Blender helper catalog. Mutating tools affect the live scene and may leave preview changes pending."
             ),
         }
 
@@ -99,38 +585,199 @@ class BlenderMCPServer:
             "title": "Blender Bridge Status",
             "description": "Check whether the MCP server can reach the running Blender localhost bridge.",
             "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
-            "annotations": {"mutatesScene": False},
+            "outputSchema": STATUS_OUTPUT_SCHEMA,
+            "annotations": {
+                "mutatesScene": False,
+                "riskLevel": "read",
+                "permissions": ["bridge:status"],
+                "readOnlyHint": True,
+                "destructiveHint": False,
+                "idempotentHint": True,
+                "openWorldHint": False,
+            },
         }
 
-    def tools_list(self):
-        tools = [self._bridge_status_tool()]
+    def _load_full_tools(self):
+        bridge_tools = []
         try:
             response = self.bridge.get("/tools")
-            tools.extend(response.get("tools") or [])
+            bridge_tools = response.get("tools") or []
         except Exception as exc:
             _stderr(f"tools/list bridge warning: {exc}")
-        return {"tools": tools}
+        tools = _merge_tool_definitions(bridge_tools, _static_tool_definitions())
+        self._full_tool_cache = tools
+        return tools
+
+    def _full_tool_definition(self, name):
+        tools = self._full_tool_cache or self._load_full_tools()
+        for tool in tools:
+            if tool.get("name") == name:
+                return tool
+        tools = self._load_full_tools()
+        for tool in tools:
+            if tool.get("name") == name:
+                return tool
+        return None
+
+    def _load_tools(self):
+        if self._full_tool_list:
+            tools = [self._bridge_status_tool()]
+            tools.extend(self._load_full_tools())
+        else:
+            tools = [self._bridge_status_tool()]
+            compact = {tool["name"]: tool for tool in _compact_tool_definitions()}
+            for name in COMPACT_DIRECT_TOOL_NAMES:
+                tool = self._full_tool_definition(name)
+                if tool:
+                    compact[name] = tool
+            for name in ("search_blender_tools", "get_blender_tool_schema", "invoke_blender_tool", *COMPACT_DIRECT_TOOL_NAMES):
+                if name in compact:
+                    tools.append(_normalize_tool_definition(compact[name]))
+        self._tool_cache = tools
+        return tools
+
+    def _tool_definition(self, name):
+        tools = self._tool_cache or self._load_tools()
+        for tool in tools:
+            if tool.get("name") == name:
+                return tool
+        tools = self._load_tools()
+        for tool in tools:
+            if tool.get("name") == name:
+                return tool
+        return None
+
+    def tools_list(self, params=None):
+        return _page_items(self._load_tools(), params, "tools")
 
     def tools_call(self, params):
         params = params or {}
         name = params.get("name")
-        arguments = params.get("arguments") or {}
+        arguments = params.get("arguments")
+        if arguments is None:
+            arguments = {}
+        if not isinstance(name, str) or not name:
+            result = _tool_error("Missing tool name", code="invalid_request")
+            _audit_tool_call(name, arguments, result)
+            return result
+        if not isinstance(arguments, dict):
+            result = _tool_error("Tool arguments must be a JSON object", code="invalid_arguments")
+            _audit_tool_call(name, arguments, result)
+            return result
+        tool = self._tool_definition(name)
+        if tool is None:
+            result = _tool_error(f"Unknown tool: {name}", code="unknown_tool")
+            _audit_tool_call(name, arguments, result)
+            return result
+        validation_errors = _validate_schema(arguments, tool.get("inputSchema") or {"type": "object"})
+        if validation_errors:
+            result = _tool_error(
+                "Tool arguments failed schema validation",
+                code="invalid_arguments",
+                data={"errors": validation_errors},
+            )
+            _audit_tool_call(name, arguments, result, tool=tool)
+            return result
         if name == "blender_bridge_status":
             status = self._bridge_status()
-            return {
-                "content": [{"type": "text", "text": json.dumps(status, indent=2, sort_keys=True)}],
-                "structuredContent": status,
-                "isError": not bool(status.get("ok")),
-            }
-        response = self.bridge.post("/tool", {"name": name, "arguments": arguments})
+            result = _tool_result(
+                json.dumps(status, indent=2, sort_keys=True),
+                status,
+                is_error=not bool(status.get("ok")),
+            )
+            _audit_tool_call(name, arguments, result, tool=tool)
+            return result
+        if name == "search_blender_tools":
+            result = self._search_blender_tools(arguments)
+            _audit_tool_call(name, arguments, result, tool=tool)
+            return result
+        if name == "get_blender_tool_schema":
+            result = self._get_blender_tool_schema(arguments)
+            _audit_tool_call(name, arguments, result, tool=tool)
+            return result
+        if name == "invoke_blender_tool":
+            result = self._invoke_blender_tool(arguments)
+            _audit_tool_call(name, arguments, result, tool=tool)
+            return result
+        try:
+            response = self.bridge.post("/tool", {"name": name, "arguments": arguments})
+        except Exception as exc:
+            result = _tool_error(str(exc), code="bridge_unavailable")
+            _audit_tool_call(name, arguments, result, tool=tool)
+            return result
         result = response.get("result", response)
         ok = bool(response.get("ok", True)) and bool(result.get("ok", True) if isinstance(result, dict) else True)
         text = json.dumps(result, indent=2, sort_keys=True, default=str)
-        return {
-            "content": [{"type": "text", "text": text}],
-            "structuredContent": result if isinstance(result, dict) else {"text": text},
-            "isError": not ok,
-        }
+        tool_result = _tool_result(text, result if isinstance(result, dict) else {"text": text}, is_error=not ok)
+        _audit_tool_call(name, arguments, tool_result, tool=tool)
+        return tool_result
+
+    def _search_blender_tools(self, arguments):
+        query = str(arguments.get("query") or "").strip().lower()
+        terms = [term for term in query.split() if term]
+        limit = _bounded_limit(arguments.get("limit"), default=12, maximum=50)
+        has_mutates_filter = isinstance(arguments.get("mutates_scene"), bool)
+        has_approval_filter = isinstance(arguments.get("requires_approval"), bool)
+        risk_filter = str(arguments.get("risk_level") or "").strip().lower()
+        matches = []
+        for tool in self._load_full_tools():
+            annotations = tool.get("annotations") or {}
+            if has_mutates_filter and bool(annotations.get("mutatesScene", False)) is not arguments["mutates_scene"]:
+                continue
+            if has_approval_filter and bool(annotations.get("requiresApproval", False)) is not arguments["requires_approval"]:
+                continue
+            if risk_filter and str(annotations.get("riskLevel") or "").lower() != risk_filter:
+                continue
+            text = _tool_search_text(tool)
+            if terms and not any(term in text for term in terms):
+                continue
+            score = sum(text.count(term) for term in terms) if terms else 0
+            if query and str(tool.get("name") or "").lower() == query:
+                score += 100
+            matches.append((score, str(tool.get("name") or ""), tool))
+        matches.sort(key=lambda item: (-item[0], item[1]))
+        tools = [_tool_summary(tool) for _, _, tool in matches[:limit]]
+        structured = {"ok": True, "count": len(tools), "tools": tools}
+        return _tool_result(json.dumps(structured, indent=2, sort_keys=True), structured)
+
+    def _get_blender_tool_schema(self, arguments):
+        name = str(arguments.get("name") or "").strip()
+        tool = self._full_tool_definition(name)
+        if tool is None:
+            return _tool_error(f"Unknown Blender tool: {name}", code="unknown_tool")
+        structured = {"ok": True, "tool": _normalize_tool_definition(tool)}
+        return _tool_result(json.dumps(structured, indent=2, sort_keys=True), structured)
+
+    def _invoke_blender_tool(self, arguments):
+        target_name = str(arguments.get("name") or "").strip()
+        if target_name in {"blender_bridge_status", "search_blender_tools", "get_blender_tool_schema", "invoke_blender_tool"}:
+            return _tool_error(f"Cannot invoke MCP wrapper tool through invoke_blender_tool: {target_name}", code="invalid_target")
+        target_args = arguments.get("arguments") or {}
+        if not isinstance(target_args, dict):
+            return _tool_error("Target tool arguments must be a JSON object", code="invalid_arguments")
+        target_tool = self._full_tool_definition(target_name)
+        if target_tool is None:
+            return _tool_error(f"Unknown Blender tool: {target_name}", code="unknown_tool")
+        validation_errors = _validate_schema(target_args, target_tool.get("inputSchema") or {"type": "object"})
+        if validation_errors:
+            return _tool_error(
+                "Target tool arguments failed schema validation",
+                code="invalid_arguments",
+                data={"target": target_name, "errors": validation_errors},
+            )
+        try:
+            response = self.bridge.post("/tool", {"name": target_name, "arguments": target_args})
+        except Exception as exc:
+            return _tool_error(str(exc), code="bridge_unavailable")
+        result = response.get("result", response)
+        ok = bool(response.get("ok", True)) and bool(result.get("ok", True) if isinstance(result, dict) else True)
+        if isinstance(result, dict):
+            result.setdefault("invoked_tool", target_name)
+            structured = result
+        else:
+            structured = {"ok": ok, "text": str(result), "invoked_tool": target_name}
+        text = json.dumps(structured, indent=2, sort_keys=True, default=str)
+        return _tool_result(text, structured, is_error=not ok)
 
     def _bridge_status(self):
         try:
@@ -138,7 +785,7 @@ class BlenderMCPServer:
         except Exception as exc:
             return {"ok": False, "bridge_url": self.bridge.base_url, "message": str(exc)}
 
-    def resources_list(self):
+    def resources_list(self, params=None):
         resources = [
             {
                 "uri": "blender://bridge/status",
@@ -153,7 +800,7 @@ class BlenderMCPServer:
             resources.extend(response.get("resources") or [])
         except Exception as exc:
             _stderr(f"resources/list bridge warning: {exc}")
-        return {"resources": resources}
+        return _page_items(resources, params, "resources")
 
     def resources_read(self, params):
         uri = (params or {}).get("uri")
@@ -179,6 +826,48 @@ class BlenderMCPServer:
             ]
         }
 
+    def resource_templates_list(self, params=None):
+        return _page_items(RESOURCE_TEMPLATES, params, "resourceTemplates")
+
+    def prompts_list(self, params=None):
+        prompts = [
+            {
+                "name": prompt["name"],
+                "title": prompt.get("title", prompt["name"]),
+                "description": prompt.get("description", ""),
+                "arguments": prompt.get("arguments", []),
+            }
+            for prompt in PROMPTS.values()
+        ]
+        return _page_items(prompts, params, "prompts")
+
+    def prompts_get(self, params):
+        params = params or {}
+        name = params.get("name")
+        prompt = PROMPTS.get(name)
+        if prompt is None:
+            raise KeyError(f"Prompt not found: {name}")
+        arguments = params.get("arguments") or {}
+        if not isinstance(arguments, dict):
+            arguments = {}
+        required = [item["name"] for item in prompt.get("arguments", []) if item.get("required")]
+        missing = [key for key in required if not str(arguments.get(key) or "").strip()]
+        if missing:
+            raise ValueError(f"Missing required prompt arguments: {', '.join(missing)}")
+        values = {item["name"]: str(arguments.get(item["name"]) or "") for item in prompt.get("arguments", [])}
+        return {
+            "description": prompt.get("description", ""),
+            "messages": [
+                {
+                    "role": "user",
+                    "content": {
+                        "type": "text",
+                        "text": prompt["template"].format(**values),
+                    },
+                }
+            ],
+        }
+
     def handle_request(self, message):
         method = message.get("method")
         params = message.get("params") or {}
@@ -186,16 +875,23 @@ class BlenderMCPServer:
             return self.initialize(params)
         if method == "ping":
             return {}
+        if method == "logging/setLevel":
+            self._log_level = str(params.get("level") or "info")
+            return {}
         if method == "tools/list":
-            return self.tools_list()
+            return self.tools_list(params)
         if method == "tools/call":
             return self.tools_call(params)
         if method == "resources/list":
-            return self.resources_list()
+            return self.resources_list(params)
         if method == "resources/read":
             return self.resources_read(params)
         if method == "resources/templates/list":
-            return {"resourceTemplates": []}
+            return self.resource_templates_list(params)
+        if method == "prompts/list":
+            return self.prompts_list(params)
+        if method == "prompts/get":
+            return self.prompts_get(params)
         raise KeyError(f"Method not found: {method}")
 
 
@@ -242,9 +938,11 @@ def serve(server, input_stream=None, output_stream=None):
 
 
 def _handle_one(server, message):
+    if not isinstance(message, dict):
+        return _response(None, error=_error(-32600, "Invalid Request"))
     request_id = message.get("id")
     method = message.get("method")
-    if method == "notifications/initialized":
+    if method in {"notifications/initialized", "notifications/cancelled", "$/cancelRequest"}:
         return None
     if request_id is None:
         return None

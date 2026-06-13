@@ -23,6 +23,8 @@ _MODULE_NAMES = (
     "context_bundle",
     "context_planner",
     "world_model",
+    "audit_log",
+    "script_analysis",
     "advanced_helpers",
     "viewport_capture",
     "bridge_protocol",

@@ -325,6 +325,8 @@ class CLAUDEBLENDER_OT_undo_last(bpy.types.Operator):
             return {"CANCELLED"}
         state.pending_preview = False
         state.pending_preview_label = ""
+        state.pending_preview_summary = ""
+        state.pending_preview_warnings = ""
         live_preview.redraw(context)
         state.status = "Undo complete" if "FINISHED" in result else "Nothing to undo"
         return {"FINISHED"} if "FINISHED" in result else {"CANCELLED"}
@@ -377,6 +379,16 @@ def _draw_ask_section(layout, state, prefs):
     else:
         bridge_row.operator("claude_blender.start_bridge", text="Start Bridge")
     bridge_row.operator("claude_blender.copy_mcp_config", text="Copy MCP")
+    trust_active = script_runner.external_script_trust_active(bpy.context, state=state)
+    trust_status = script_runner.external_script_trust_status(bpy.context, state=state)
+    trust_row = ask_box.row(align=True)
+    trust = trust_row.operator("claude_blender.approve_external_script_trust", text="Trust 15 Min", icon="KEYTYPE_KEYFRAME_VEC")
+    trust.ttl_seconds = script_runner.EXTERNAL_TRUST_TTL_SECONDS
+    revoke_row = trust_row.row(align=True)
+    revoke_row.enabled = trust_active or trust_status == "External script trust window expired"
+    revoke_row.operator("claude_blender.revoke_external_script_trust", text="Revoke Trust", icon="CANCEL")
+    if trust_status != script_runner.NO_EXTERNAL_TRUST_STATUS:
+        _draw_field(ask_box, "Script Trust", trust_status, width=44, max_lines=2)
 
     ask_box.prop(state, "prompt", text="")
 
@@ -448,11 +460,19 @@ def _draw_preview_section(layout, state):
     preview = _draw_section(layout, "Live Changes")
     if state.pending_preview:
         _draw_field(preview, "Pending", state.pending_preview_label or "Live preview", max_lines=3)
+        if state.pending_preview_summary:
+            _draw_field(preview, "Rollback", state.pending_preview_summary, width=42, max_lines=4)
+        if state.pending_preview_warnings:
+            _draw_field(preview, "Warnings", state.pending_preview_warnings, width=42, max_lines=4)
         row = preview.row(align=True)
         row.operator("claude_blender.commit_preview", icon="CHECKMARK")
         row.operator("claude_blender.revert_preview", icon="LOOP_BACK")
     else:
         preview.label(text="No pending live changes")
+        if state.last_preview_summary:
+            _draw_field(preview, "Last Preview", state.last_preview_summary, width=42, max_lines=3)
+        if state.last_preview_warnings:
+            _draw_field(preview, "Last Warnings", state.last_preview_warnings, width=42, max_lines=4)
     preview.operator("claude_blender.undo_last", text="Undo Last", icon="LOOP_BACK")
 
 
@@ -465,27 +485,6 @@ def _draw_docs_section(layout, state):
     build_row.enabled = not state.docs_cache_building
     build = build_row.operator("claude_blender.build_docs_cache", text="Build", icon="FILE_REFRESH")
     build.force = False
-
-
-def _draw_bridge_section(layout, state, prefs):
-    bridge_box = _draw_section(layout, "External Bridge")
-    running = bridge_server.is_running()
-    status = f"Bridge running at {bridge_server.bridge_url()}" if running else "Bridge stopped"
-    _draw_wrapped(bridge_box, status, max_lines=2)
-    if running:
-        _draw_wrapped(bridge_box, bridge_server.bridge_url(), max_lines=1)
-    if prefs:
-        bridge_box.label(text=f"Port: {getattr(prefs, 'bridge_port', bridge_server.DEFAULT_PORT)}")
-        token_note = "Token: set" if getattr(prefs, "bridge_auth_token", "") else "Token: none"
-        bridge_box.label(text=token_note)
-    row = bridge_box.row(align=True)
-    start_row = row.row(align=True)
-    start_row.enabled = not running
-    start_row.operator("claude_blender.start_bridge", text="Start")
-    stop_row = row.row(align=True)
-    stop_row.enabled = running
-    stop_row.operator("claude_blender.stop_bridge", text="Stop")
-    bridge_box.operator("claude_blender.copy_mcp_config", text="Copy MCP Config")
 
 
 def _draw_script_section(layout, state):
@@ -508,7 +507,14 @@ def _draw_script_section(layout, state):
         run_row = script_box.row(align=True)
         run_row.enabled = not state.pending_script_blocked
         run_row.operator("claude_blender.run_approved_script", icon="PLAY")
+        external_row = script_box.row(align=True)
+        external_row.enabled = not state.pending_script_blocked
+        external_row.operator("claude_blender.approve_external_script_run", icon="KEYINGSET")
         script_box.operator("claude_blender.reject_script", icon="LOOP_BACK")
+        if state.pending_script_external_approval_status != "No external script approval":
+            _draw_field(script_box, "External Approval", state.pending_script_external_approval_status, width=42, max_lines=2)
+        if script_runner.external_script_trust_active(bpy.context, state=state):
+            _draw_field(script_box, "Trust Window", script_runner.external_script_trust_status(bpy.context, state=state), width=42, max_lines=2)
 
         if state.pending_script_status == "Script failed" or state.last_script_error_summary:
             script_box.operator("claude_blender.repair_script", icon="FILE_REFRESH")
@@ -522,6 +528,12 @@ def _draw_script_section(layout, state):
     checkpoint = state.last_checkpoint_path or state.last_checkpoint_status
     if checkpoint and checkpoint != "No script checkpoint yet":
         _draw_field(script_box, "Checkpoint", checkpoint, width=42, max_lines=3)
+        restore_row = script_box.row(align=True)
+        restore_row.enabled = bool(state.last_checkpoint_path)
+        restore_row.operator("claude_blender.restore_last_checkpoint", icon="FILE_REFRESH")
+    if state.last_checkpoint_restored_path or state.last_checkpoint_restored_status != "No checkpoint restored":
+        restored = state.last_checkpoint_restored_path or state.last_checkpoint_restored_status
+        _draw_field(script_box, "Restored", restored, width=42, max_lines=2)
 
 
 def _draw_action_center(layout, state):
@@ -554,7 +566,14 @@ def _draw_action_center(layout, state):
         row = actions.row(align=True)
         row.enabled = not state.pending_script_blocked
         row.operator("claude_blender.run_approved_script", text="Run", icon="PLAY")
+        external_row = actions.row(align=True)
+        external_row.enabled = not state.pending_script_blocked
+        external_row.operator("claude_blender.approve_external_script_run", text="Approve External", icon="KEYINGSET")
         actions.operator("claude_blender.reject_script", text="Reject", icon="LOOP_BACK")
+        if state.pending_script_external_approval_status != "No external script approval":
+            _draw_field(actions, "External Approval", state.pending_script_external_approval_status, width=44, max_lines=2)
+        if script_runner.external_script_trust_active(bpy.context, state=state):
+            _draw_field(actions, "Trust Window", script_runner.external_script_trust_status(bpy.context, state=state), width=44, max_lines=2)
         if state.pending_script_status == "Script failed" or state.last_script_error_summary:
             actions.operator("claude_blender.repair_script", text="Repair", icon="FILE_REFRESH")
             if state.last_script_error_summary:
@@ -566,9 +585,16 @@ def _draw_action_center(layout, state):
     if state.pending_preview:
         has_action = True
         _draw_field(actions, "Live Preview", state.pending_preview_label or "Pending live changes", max_lines=2)
+        if state.pending_preview_summary:
+            _draw_field(actions, "Rollback", state.pending_preview_summary, width=44, max_lines=4)
+        if state.pending_preview_warnings:
+            _draw_field(actions, "Warnings", state.pending_preview_warnings, width=44, max_lines=4)
         row = actions.row(align=True)
         row.operator("claude_blender.commit_preview", text="Commit", icon="CHECKMARK")
         row.operator("claude_blender.revert_preview", text="Revert", icon="LOOP_BACK")
+    elif state.last_preview_warnings:
+        has_action = True
+        _draw_field(actions, "Last Preview Warnings", state.last_preview_warnings, width=44, max_lines=4)
     actions.operator("claude_blender.undo_last", text="Undo Last", icon="LOOP_BACK")
 
     screenshot_line = state.last_screenshot_status or "No viewport screenshot captured"
@@ -602,7 +628,11 @@ def _draw_action_center(layout, state):
 
     checkpoint = state.last_checkpoint_path or state.last_checkpoint_status
     if checkpoint and checkpoint != "No script checkpoint yet":
+        has_action = True
         _draw_field(actions, "Checkpoint", checkpoint, width=44, max_lines=2)
+        restore_row = actions.row(align=True)
+        restore_row.enabled = bool(state.last_checkpoint_path)
+        restore_row.operator("claude_blender.restore_last_checkpoint", text="Restore Checkpoint", icon="FILE_REFRESH")
 
     if not has_action and not state.active_tool_name:
         actions.label(text="No pending agent actions")
@@ -683,6 +713,80 @@ class CLAUDEBLENDER_OT_run_approved_script(bpy.types.Operator):
         return {"FINISHED"} if result.get("ok") else {"CANCELLED"}
 
 
+class CLAUDEBLENDER_OT_approve_external_script_run(bpy.types.Operator):
+    bl_idname = "claude_blender.approve_external_script_run"
+    bl_label = "Approve External Run"
+    bl_description = "Issue a one-time token for an external client to run the pending script"
+    bl_options = {"REGISTER"}
+
+    def execute(self, context):
+        state = context.scene.claude_blender
+        result = script_runner.approve_pending_script_for_external_run(context)
+        message = result.get("message", "External approval finished")
+        if result.get("ok"):
+            context.window_manager.clipboard = result.get("approval_token", "")
+            state.last_response = (
+                "External script run approved.\n"
+                "The one-time token was copied to the clipboard and is not shown in chat history.\n"
+                f"Expires in {result.get('ttl_seconds', script_runner.EXTERNAL_APPROVAL_TTL_SECONDS)} second(s)."
+            )
+            self.report({"INFO"}, "External run token copied to clipboard")
+            return {"FINISHED"}
+        state.last_response = f"External script run was not approved.\n{message}"
+        self.report({"ERROR"}, message)
+        return {"CANCELLED"}
+
+
+class CLAUDEBLENDER_OT_approve_external_script_trust(bpy.types.Operator):
+    bl_idname = "claude_blender.approve_external_script_trust"
+    bl_label = "Trust External Scripts"
+    bl_description = "Allow external clients to run staged, static-check-passing scripts for a limited time"
+    bl_options = {"REGISTER"}
+
+    ttl_seconds: bpy.props.IntProperty(
+        name="Seconds",
+        default=script_runner.EXTERNAL_TRUST_TTL_SECONDS,
+        min=1,
+    )
+
+    def execute(self, context):
+        state = context.scene.claude_blender
+        result = script_runner.approve_external_script_trust_window(
+            context,
+            ttl_seconds=self.ttl_seconds,
+        )
+        message = result.get("message", "External script trust window finished")
+        if result.get("ok"):
+            state.last_response = (
+                "External script trust window approved.\n"
+                "External clients can run staged scripts without a per-script token while this window is active.\n"
+                f"Expires in {result.get('ttl_seconds', script_runner.EXTERNAL_TRUST_TTL_SECONDS)} second(s)."
+            )
+            self.report({"INFO"}, "External script trust window approved")
+            return {"FINISHED"}
+        state.last_response = f"External script trust window was not approved.\n{message}"
+        self.report({"ERROR"}, message)
+        return {"CANCELLED"}
+
+
+class CLAUDEBLENDER_OT_revoke_external_script_trust(bpy.types.Operator):
+    bl_idname = "claude_blender.revoke_external_script_trust"
+    bl_label = "Revoke External Trust"
+    bl_description = "Revoke the timed external script trust window"
+    bl_options = {"REGISTER"}
+
+    def execute(self, context):
+        state = context.scene.claude_blender
+        result = script_runner.revoke_external_script_trust_window(context)
+        message = result.get("message", "External script trust window revoked")
+        state.last_response = message
+        if result.get("ok"):
+            self.report({"INFO"}, message)
+            return {"FINISHED"}
+        self.report({"ERROR"}, message)
+        return {"CANCELLED"}
+
+
 class CLAUDEBLENDER_OT_reject_script(bpy.types.Operator):
     bl_idname = "claude_blender.reject_script"
     bl_label = "Reject Script"
@@ -694,6 +798,22 @@ class CLAUDEBLENDER_OT_reject_script(bpy.types.Operator):
         state.status = result.get("message", "Pending script rejected")
         state.last_response = state.status
         return {"FINISHED"}
+
+
+class CLAUDEBLENDER_OT_restore_last_checkpoint(bpy.types.Operator):
+    bl_idname = "claude_blender.restore_last_checkpoint"
+    bl_label = "Restore Checkpoint"
+    bl_description = "Open the last saved script checkpoint blend file"
+    bl_options = {"REGISTER"}
+
+    def execute(self, context):
+        result = script_runner.restore_checkpoint(context)
+        state = getattr(getattr(bpy.context, "scene", None), "claude_blender", None)
+        message = result.get("message", "Checkpoint restore finished")
+        if state:
+            state.last_response = message
+        self.report({"INFO"} if result.get("ok") else {"ERROR"}, message)
+        return {"FINISHED"} if result.get("ok") else {"CANCELLED"}
 
 
 class CLAUDEBLENDER_OT_repair_script(bpy.types.Operator):
@@ -926,7 +1046,11 @@ classes = (
     CLAUDEBLENDER_OT_copy_chat_history,
     CLAUDEBLENDER_OT_copy_last_response,
     CLAUDEBLENDER_OT_run_approved_script,
+    CLAUDEBLENDER_OT_approve_external_script_run,
+    CLAUDEBLENDER_OT_approve_external_script_trust,
+    CLAUDEBLENDER_OT_revoke_external_script_trust,
     CLAUDEBLENDER_OT_reject_script,
+    CLAUDEBLENDER_OT_restore_last_checkpoint,
     CLAUDEBLENDER_OT_repair_script,
     CLAUDEBLENDER_OT_capture_viewport_preview,
     CLAUDEBLENDER_OT_open_last_screenshot,

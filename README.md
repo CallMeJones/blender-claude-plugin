@@ -44,13 +44,13 @@ Requests now pass through a token-aware context planner before Claude is called.
 
 Tool schemas are also selected per request. The agent loop keeps a small core set of inspection/docs tools, then adds only the helper groups that match the prompt and recent memory, such as animation, materials, camera/rendering, geometry nodes, rigging, particles, or vehicle refinement. The request context includes a `tool_selection` summary with selected tool names and schema token estimates, so Claude knows which actions are available without carrying the whole toolbox every turn.
 
-The extension now includes an External Bridge section. Press `Start` to expose a localhost-only JSON bridge from Blender, then `Copy MCP Config` to copy a stdio MCP server config for clients that support local MCP servers. See [EXTERNAL_BRIDGE_MCP.md](docs/EXTERNAL_BRIDGE_MCP.md).
+The extension now includes an External Bridge section. Press `Start` to expose a localhost-only JSON bridge from Blender, then `Copy MCP Config` to copy a stdio MCP server config for clients that support local MCP servers. The MCP surface is compact by default: use `search_blender_tools`, `get_blender_tool_schema`, and `invoke_blender_tool` to access the full Blender helper catalog. See [EXTERNAL_BRIDGE_MCP.md](docs/EXTERNAL_BRIDGE_MCP.md).
 
 The sidebar is chat-oriented: `Send` starts a new instruction and clears the input box, `Continue` asks Claude to keep working from the current scene and memory, and short prompts like `ok`/`continue` are expanded into a real continuation request. Recent messages are stored in the `Claude Chat History` Text datablock and shown in the Conversation section. They do not approve or run generated Python.
 
 The Action Center groups the current agent state: running tool, pending script approval, live preview commit/revert, screenshot capture/open, docs cache controls, checkpoint status, and retry actions when Claude needs to stage a script again.
 
-Generated Python now uses an approval gate. If Claude needs Blender API code beyond the live helper tools, it can call `draft_script`, which writes the proposed code to the `Claude Pending Script` Text datablock and shows status, risk, intent, and expected changes in the sidebar. The script runs only when the user presses `Run Approved Script`; blocked scripts can be inspected but not executed from the UI.
+Generated Python now uses an approval gate. If Claude needs Blender API code beyond the live helper tools, it can call `draft_script`, which writes the proposed code to the `Claude Pending Script` Text datablock and shows status, risk, intent, and expected changes in the sidebar. The script runs only when the user presses `Run Approved Script`; blocked scripts can be inspected but not executed from the UI. External clients can run a pending script after the user presses `Approve External Run` in Blender and gives that client the short-lived one-time token, or while a runtime-only Blender-side 15-minute external script trust window is active.
 When checkpoints are enabled, approved scripts save a timestamped `.blend` copy before execution. Failed scripts keep their traceback in `Claude Script Log` and expose a `Repair Script` button that asks Claude to draft a corrected pending script.
 Complex helper-driven builds have a larger tool-call budget and end with a readable summary instead of raw API JSON if the budget is reached. For many-object scenes, ask Claude to stage one cohesive approved script instead of issuing a long chain of live helper calls.
 
@@ -112,6 +112,7 @@ docs/
 
 ## Reference Docs
 
+- Development workflow: [DEVELOPMENT.md](docs/DEVELOPMENT.md)
 - Anthropic tool use: https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview
 - Anthropic vision: https://platform.claude.com/docs/en/build-with-claude/vision
 - Anthropic Files API: https://platform.claude.com/docs/en/build-with-claude/files

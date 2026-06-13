@@ -13,7 +13,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(ROOT, "addon"))
 
 import claude_blender  # noqa: E402
-from claude_blender import anthropic_client, context_bundle, tool_dispatcher  # noqa: E402
+from claude_blender import anthropic_client, context_bundle, live_preview, tool_dispatcher  # noqa: E402
 
 
 ADVANCED_TOOLS = {
@@ -68,12 +68,41 @@ def _snapshot(scene, cube, camera):
     }
 
 
+def _material_topology(material):
+    if not material or not material.use_nodes or not material.node_tree:
+        return {"use_nodes": bool(material and material.use_nodes), "nodes": [], "links": []}
+    return {
+        "use_nodes": bool(material.use_nodes),
+        "nodes": sorted(node.name for node in material.node_tree.nodes),
+        "links": sorted(
+            (
+                link.from_node.name,
+                getattr(link.from_socket, "identifier", link.from_socket.name),
+                link.to_node.name,
+                getattr(link.to_socket, "identifier", link.to_socket.name),
+            )
+            for link in material.node_tree.links
+        ),
+    }
+
+
 def main():
     claude_blender.register()
     context = bpy.context
     scene = context.scene
     cube = bpy.data.objects["Cube"]
     camera = bpy.data.objects["Camera"]
+    existing_material = bpy.data.materials.new("Claude Existing Node Material")
+    existing_material.use_nodes = True
+    nodes = existing_material.node_tree.nodes
+    for node in list(nodes):
+        nodes.remove(node)
+    diffuse = nodes.new(type="ShaderNodeBsdfDiffuse")
+    output = nodes.new(type="ShaderNodeOutputMaterial")
+    existing_material.node_tree.links.new(diffuse.outputs["BSDF"], output.inputs["Surface"])
+    cube.data.materials.clear()
+    cube.data.materials.append(existing_material)
+    existing_topology = _material_topology(existing_material)
     initial = _snapshot(scene, cube, camera)
 
     try:
@@ -97,6 +126,20 @@ def main():
         )
         assert material["material"] in bpy.data.materials
         assert cube.material_slots[0].material.name == material["material"]
+        existing_update = _execute(
+            context,
+            "create_shader_material",
+            {
+                "name": existing_material.name,
+                "base_color": [0.7, 0.2, 0.2, 1.0],
+                "metallic": 0.4,
+                "roughness": 0.35,
+            },
+        )
+        assert existing_update["material"] == existing_material.name
+        shader_snapshot = live_preview.current_transaction()["before_state"][f"material:{existing_material.name}:shader"]
+        assert "Principled BSDF" not in shader_snapshot["node_names"], shader_snapshot
+        assert _material_topology(existing_material) != existing_topology
 
         geometry_nodes = _execute(
             context,
@@ -188,6 +231,11 @@ def main():
         _execute(context, "revert_preview", {})
         final = _snapshot(scene, cube, camera)
         assert final == initial, {"initial": initial, "final": final}
+        restored_topology = _material_topology(existing_material)
+        assert restored_topology == existing_topology, {
+            "expected": existing_topology,
+            "actual": restored_topology,
+        }
         print("smoke_advanced_helpers: ok")
     finally:
         claude_blender.unregister()

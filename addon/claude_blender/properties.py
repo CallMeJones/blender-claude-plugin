@@ -109,6 +109,22 @@ class CLAUDEBLENDER_PG_scene_state(bpy.types.PropertyGroup):
         name="Preview",
         default="",
     )
+    pending_preview_summary: bpy.props.StringProperty(
+        name="Preview Rollback Summary",
+        default="",
+    )
+    pending_preview_warnings: bpy.props.StringProperty(
+        name="Preview Rollback Warnings",
+        default="",
+    )
+    last_preview_summary: bpy.props.StringProperty(
+        name="Last Preview Summary",
+        default="",
+    )
+    last_preview_warnings: bpy.props.StringProperty(
+        name="Last Preview Warnings",
+        default="",
+    )
     pending_script: bpy.props.BoolProperty(
         name="Pending Script",
         default=False,
@@ -145,6 +161,34 @@ class CLAUDEBLENDER_PG_scene_state(bpy.types.PropertyGroup):
         name="Script Warnings",
         default="",
     )
+    pending_script_external_approval_status: bpy.props.StringProperty(
+        name="External Script Approval Status",
+        default="No external script approval",
+    )
+    pending_script_external_approval_hash: bpy.props.StringProperty(
+        name="External Script Approval Hash",
+        default="",
+    )
+    pending_script_external_approval_text_name: bpy.props.StringProperty(
+        name="External Script Approval Text",
+        default="",
+    )
+    pending_script_external_approval_source_hash: bpy.props.StringProperty(
+        name="External Script Approval Source Hash",
+        default="",
+    )
+    pending_script_external_approval_expires_at: bpy.props.StringProperty(
+        name="External Script Approval Expires",
+        default="",
+    )
+    external_script_trust_status: bpy.props.StringProperty(
+        name="External Script Trust Status",
+        default="No external script trust window",
+    )
+    external_script_trust_expires_at: bpy.props.StringProperty(
+        name="External Script Trust Expires",
+        default="",
+    )
     last_script_error_summary: bpy.props.StringProperty(
         name="Last Script Error",
         default="",
@@ -159,6 +203,14 @@ class CLAUDEBLENDER_PG_scene_state(bpy.types.PropertyGroup):
     )
     last_checkpoint_path: bpy.props.StringProperty(
         name="Checkpoint Path",
+        default="",
+    )
+    last_checkpoint_restored_status: bpy.props.StringProperty(
+        name="Checkpoint Restore Status",
+        default="No checkpoint restored",
+    )
+    last_checkpoint_restored_path: bpy.props.StringProperty(
+        name="Restored Checkpoint Path",
         default="",
     )
     docs_cache_status: bpy.props.StringProperty(

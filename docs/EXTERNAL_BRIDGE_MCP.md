@@ -83,9 +83,24 @@ The stdio MCP server implements:
 - `resources/list`
 - `resources/read`
 - `resources/templates/list`
+- `prompts/list`
+- `prompts/get`
+- `logging/setLevel`
 - `ping`
 
-It exposes a local-only status tool named `blender_bridge_status` plus the Blender tool catalog forwarded from the running add-on.
+By default it exposes a compact, client-friendly tool surface:
+
+- `blender_bridge_status`
+- `search_blender_tools`
+- `get_blender_tool_schema`
+- `invoke_blender_tool`
+- `list_scene_objects`
+
+Use `search_blender_tools` to discover the full Blender helper catalog, `get_blender_tool_schema` to inspect one tool's schema and safety annotations, and `invoke_blender_tool` to call that tool by name. `invoke_blender_tool` validates arguments against the target tool schema before forwarding calls to Blender.
+
+Set `BLENDER_MCP_FULL_TOOL_LIST=1` in the MCP server environment to expose every Blender helper as a top-level MCP tool for legacy clients or debugging.
+
+`tools/list`, `resources/list`, `resources/templates/list`, and `prompts/list` support cursor pagination. Tool definitions include `inputSchema`, `outputSchema`, and risk/permission annotations derived from the bridge contract.
 
 ## Resources
 
@@ -96,6 +111,11 @@ Current resources:
 - `blender://scene/context`
 - `blender://tools/contracts`
 - `blender://transcript/latest`
+- `blender://audit/latest`
+
+## Prompts
+
+The MCP server exposes prompt templates for common safe workflows: scene inspection, reversible scene changes, and approval-gated Python drafts.
 
 ## Safety
 
@@ -104,12 +124,15 @@ MCP tools are model-controlled, so the external client must make tool use visibl
 - Read-only tools inspect scene context and docs.
 - Live helper tools mutate the scene through preview rollback.
 - Generated arbitrary Python is still staged with `draft_script` and requires approval inside Blender.
+- External `run_approved_script` calls normally include a one-time token minted by the Blender sidebar's `Approve External Run` action. Tokens are short-lived, bound to the current pending script text, and consumed after one call.
+- For iterative sessions, the Blender sidebar can also grant a 15-minute external script trust window. While active, external clients may call `run_approved_script` without `approval_token`, or with an empty token string; Blender still requires a staged pending script, reruns static checks, refuses blocked scripts, and records the call in the audit log. Use `Revoke Trust` to end the window early. Trust grants are runtime-only and are cleared on add-on reload, file load, and bridge start.
 - The bridge is off until started and binds to localhost only.
 - Optional bearer token auth is available through add-on preferences.
+- MCP and bridge tool calls are recorded in a local JSONL audit log at `~/.claude_blender/audit.jsonl` by default, with code/token-like arguments redacted.
 
 ## Limitations
 
 - The first MCP server uses stdio only, because it is the most widely supported local MCP transport.
 - The localhost bridge is HTTP JSON, not MCP streamable HTTP. MCP clients should launch `mcp_server.py`.
-- Tool schemas are currently listed as the full Blender tool catalog over MCP. The in-Blender Anthropic loop still uses dynamic request-specific tool selection.
-- External clients cannot bypass Blender's approval gate for generated Python.
+- The default MCP surface is compact because some clients do not handle large dynamic catalogs well. Full top-level exposure is still available with `BLENDER_MCP_FULL_TOOL_LIST=1`.
+- External clients cannot bypass Blender's approval gate for generated Python; they can only consume an approval token that the user created inside Blender.

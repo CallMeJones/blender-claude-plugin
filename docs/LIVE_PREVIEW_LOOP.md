@@ -33,6 +33,8 @@ preview_transaction
 
 The transaction manager should capture enough previous state to revert common helper changes. For large or risky changes, it should also save a `.blend` checkpoint.
 
+Commit and revert results include a compact transaction manifest with created datablocks, modified datablocks, rollback scopes, changed datablocks, and applied step count. Revert also returns `rollback_warnings` when a target object, material, collection, socket, or node link could not be restored exactly.
+
 ## Immediate Helper Changes
 
 These are good candidates for live preview:
@@ -84,6 +86,7 @@ Expected implementation responsibilities:
 - Apply helper changes on the main thread.
 - Record rollback state before mutation.
 - Push undo/checkpoint state at transaction boundaries.
+- Include rollback coverage in tool results so external clients and the sidebar can show what was protected.
 - Update scene/view layer state after mutation.
 - Request redraw for 3D View, Timeline, Graph Editor, Dope Sheet, and Properties areas when relevant.
 - Report success/failure back into the Claude tool loop.

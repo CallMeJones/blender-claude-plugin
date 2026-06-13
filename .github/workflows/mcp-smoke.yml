@@ -1,0 +1,48 @@
+name: MCP smoke
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  mcp-smoke:
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Compile MCP bridge modules
+        run: >
+          python -m py_compile
+          addon\claude_blender\mcp_server.py
+          addon\claude_blender\bridge_protocol.py
+          addon\claude_blender\bridge_server.py
+          addon\claude_blender\audit_log.py
+          addon\claude_blender\script_analysis.py
+          scripts\build_extension_zip.py
+          tests\smoke_audit_log.py
+          tests\smoke_build_extension_zip.py
+          tests\smoke_script_analysis.py
+          tests\smoke_mcp_server.py
+
+      - name: Run audit log smoke test
+        run: python tests\smoke_audit_log.py
+
+      - name: Run script analysis smoke test
+        run: python tests\smoke_script_analysis.py
+
+      - name: Run extension build smoke test
+        run: python tests\smoke_build_extension_zip.py
+
+      - name: Run stdio MCP smoke test
+        run: python tests\smoke_mcp_server.py
+
+      - name: Build extension zip
+        run: python scripts\build_extension_zip.py

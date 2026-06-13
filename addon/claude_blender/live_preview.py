@@ -30,6 +30,158 @@ def _coerce_vector(value, fallback):
     return tuple(float(component) for component in result)
 
 
+def _snapshot_kind(before):
+    if before.get("created"):
+        return f"created_{before.get('kind', 'datablock')}"
+    if before.get("kind"):
+        return str(before["kind"])
+    if before.get("object_name") and "location" in before:
+        return "object_transform"
+    if before.get("object_name") and "materials" in before:
+        return "object_material_slots"
+    if before.get("object_name") and "collections" in before:
+        return "object_collections"
+    if before.get("material_name") and "diffuse_color" in before:
+        return "material_diffuse"
+    if before.get("scene_name") and "camera_name" in before:
+        return "scene_camera"
+    if before.get("scene_name") and "frame_start" in before:
+        return "scene_timeline"
+    if before.get("object_name") and "had_animation_data" in before:
+        return "object_animation"
+    return "unknown"
+
+
+def transaction_manifest(transaction=None):
+    """Return a compact manifest of rollback coverage for UI/logging."""
+
+    transaction = transaction or current_transaction()
+    if not transaction:
+        return {
+            "transaction_id": "",
+            "status": "none",
+            "applied_step_count": 0,
+            "snapshot_count": 0,
+            "created": {},
+            "modified": {},
+            "rollback_scopes": [],
+            "changed_data_blocks": [],
+        }
+
+    created = {}
+    modified = {}
+    scopes = set()
+    for before in transaction.get("before_state", {}).values():
+        kind = _snapshot_kind(before)
+        scopes.add(kind)
+        name = (
+            before.get("name")
+            or before.get("object_name")
+            or before.get("material_name")
+            or before.get("mesh_name")
+            or before.get("scene_name")
+            or before.get("world_name")
+            or before.get("camera_name")
+            or "unnamed"
+        )
+        bucket = created if before.get("created") else modified
+        bucket.setdefault(kind, [])
+        if name not in bucket[kind]:
+            bucket[kind].append(name)
+
+    return {
+        "transaction_id": transaction.get("id", ""),
+        "status": transaction.get("status", "unknown"),
+        "user_request": transaction.get("user_request", ""),
+        "applied_step_count": len(transaction.get("applied_steps", [])),
+        "snapshot_count": len(transaction.get("before_state", {})),
+        "created": created,
+        "modified": modified,
+        "rollback_scopes": sorted(scopes),
+        "changed_data_blocks": sorted(set(transaction.get("changed_data_blocks", []))),
+    }
+
+
+def _count_manifest_items(items):
+    return sum(len(values) for values in (items or {}).values())
+
+
+def _preview_manifest_summary(manifest=None, *, warnings=None):
+    manifest = manifest or transaction_manifest()
+    status = manifest.get("status", "unknown")
+    if status == "none":
+        return "No preview transaction"
+    scopes = ", ".join((manifest.get("rollback_scopes") or [])[:8]) or "none"
+    changed = ", ".join((manifest.get("changed_data_blocks") or [])[:8]) or "none"
+    summary = (
+        f"{status}: {manifest.get('applied_step_count', 0)} step(s), "
+        f"{manifest.get('snapshot_count', 0)} rollback snapshot(s), "
+        f"{_count_manifest_items(manifest.get('created'))} created, "
+        f"{_count_manifest_items(manifest.get('modified'))} modified. "
+        f"Scopes: {scopes}. Changed: {changed}."
+    )
+    if warnings:
+        summary += f" Rollback warnings: {len(warnings)}."
+    return summary[:1200]
+
+
+def _rollback_warning_summary(warnings):
+    warnings = [str(warning) for warning in (warnings or []) if str(warning)]
+    if not warnings:
+        return ""
+    lines = [f"- {warning}" for warning in warnings[:6]]
+    if len(warnings) > len(lines):
+        lines.append(f"- ... {len(warnings) - len(lines)} more")
+    return "\n".join(lines)[:1200]
+
+
+def _clear_pending_preview_state(state):
+    state.pending_preview = False
+    state.pending_preview_label = ""
+    state.pending_preview_summary = ""
+    state.pending_preview_warnings = ""
+
+
+def _socket_by_saved_name(sockets, saved):
+    identifier = saved.get("identifier")
+    name = saved.get("name")
+    if identifier and sockets.get(identifier):
+        return sockets.get(identifier)
+    if name and sockets.get(name):
+        return sockets.get(name)
+    return None
+
+
+def _restore_node_tree_links(material, before):
+    if not material.use_nodes or not material.node_tree:
+        return []
+    warnings = []
+    nodes = material.node_tree.nodes
+    links = material.node_tree.links
+    original_names = set(before.get("node_names") or [])
+    for link in list(links):
+        links.remove(link)
+    for node in list(nodes):
+        if node.name not in original_names:
+            nodes.remove(node)
+    for saved in before.get("links", []):
+        from_node = nodes.get(saved.get("from_node", ""))
+        to_node = nodes.get(saved.get("to_node", ""))
+        if not from_node or not to_node:
+            warnings.append(f"Skipped missing node link {saved}")
+            continue
+        from_socket = _socket_by_saved_name(from_node.outputs, saved.get("from_socket", {}))
+        to_socket = _socket_by_saved_name(to_node.inputs, saved.get("to_socket", {}))
+        if not from_socket or not to_socket:
+            warnings.append(f"Skipped missing socket link {saved}")
+            continue
+        try:
+            links.new(from_socket, to_socket)
+        except Exception as exc:
+            warnings.append(f"Could not restore material link: {type(exc).__name__}: {exc}")
+    return warnings
+
+
 def _record_created_id(kind, name):
     transaction = begin()
     key = f"created:{kind}:{name}"
@@ -68,11 +220,73 @@ def _record_created_constraint(obj, constraint):
         transaction["changed_data_blocks"].append(obj.name)
 
 
+def _record_selection_state(transaction, context):
+    scene = getattr(context, "scene", None)
+    view_layer = getattr(context, "view_layer", None)
+    if scene is None or view_layer is None:
+        return
+    key = f"scene:{scene.name}:selection"
+    if key in transaction["before_state"]:
+        return
+    selected = []
+    for obj in getattr(context, "selected_objects", []) or []:
+        if obj and obj.name not in selected:
+            selected.append(obj.name)
+    active = getattr(getattr(view_layer, "objects", None), "active", None)
+    transaction["before_state"][key] = {
+        "kind": "selection_state",
+        "scene_name": scene.name,
+        "selected_object_names": selected,
+        "active_object_name": active.name if active else None,
+    }
+    transaction["changed_data_blocks"].append(scene.name)
+
+
+def _view_layer_object(view_layer, name):
+    if not name or view_layer is None:
+        return None
+    objects = getattr(view_layer, "objects", None)
+    if objects is not None and hasattr(objects, "get"):
+        return objects.get(name)
+    return bpy.data.objects.get(name)
+
+
+def _restore_selection_state(context, before, warnings):
+    view_layer = getattr(context, "view_layer", None)
+    if view_layer is None:
+        warnings.append("Could not restore selection: missing view layer")
+        return
+    try:
+        for obj in list(getattr(view_layer, "objects", [])):
+            if obj:
+                obj.select_set(False)
+        for name in before.get("selected_object_names", []):
+            obj = _view_layer_object(view_layer, name)
+            if obj:
+                obj.select_set(True)
+            else:
+                warnings.append(f"Missing selected object for selection restore: {name}")
+        active_name = before.get("active_object_name")
+        if active_name:
+            active = _view_layer_object(view_layer, active_name)
+            if active:
+                view_layer.objects.active = active
+            else:
+                warnings.append(f"Missing active object for selection restore: {active_name}")
+        else:
+            view_layer.objects.active = None
+    except Exception as exc:
+        warnings.append(f"Could not restore selection: {type(exc).__name__}: {exc}")
+
+
 def _mark_pending(context, label):
     scene = getattr(context, "scene", None)
     if scene and hasattr(scene, "claude_blender"):
+        manifest = transaction_manifest()
         scene.claude_blender.pending_preview = True
         scene.claude_blender.pending_preview_label = label
+        scene.claude_blender.pending_preview_summary = _preview_manifest_summary(manifest)
+        scene.claude_blender.pending_preview_warnings = ""
         scene.claude_blender.status = label
 
 
@@ -80,9 +294,11 @@ def current_transaction():
     return _current_transaction
 
 
-def begin(user_request=""):
+def begin(user_request="", context=None):
     global _current_transaction
+    context = context or bpy.context
     if _current_transaction and _current_transaction["status"] == "pending":
+        _record_selection_state(_current_transaction, context)
         return _current_transaction
     _current_transaction = {
         "id": str(uuid.uuid4()),
@@ -93,6 +309,7 @@ def begin(user_request=""):
         "applied_steps": [],
         "status": "pending",
     }
+    _record_selection_state(_current_transaction, context)
     return _current_transaction
 
 
@@ -214,7 +431,7 @@ def apply_location_delta(context, delta, *, label="Move selected objects"):
             "ok": False,
             "message": "No selected objects to move",
         }
-    transaction = begin(label)
+    transaction = begin(label, context)
     for obj in selected:
         _record_object_transform(obj)
         obj.location.x += float(delta[0])
@@ -244,7 +461,7 @@ def set_selected_transform(context, *, location=None, rotation=None, scale=None,
     if location is None and rotation is None and scale is None:
         return {"ok": False, "message": "No transform values were provided"}
 
-    transaction = begin(label)
+    transaction = begin(label, context)
     changed = []
     for obj in selected:
         _record_object_transform(obj)
@@ -289,7 +506,7 @@ def create_primitive(
     if primitive_type not in {"CUBE", "UV_SPHERE", "ICO_SPHERE", "CYLINDER", "CONE", "PLANE", "TORUS"}:
         return {"ok": False, "message": f"Unsupported primitive type: {primitive_type}"}
 
-    transaction = begin(label)
+    transaction = begin(label, context)
     loc = _coerce_vector(location, (0.0, 0.0, 0.0))
     rot = _coerce_vector(rotation, (0.0, 0.0, 0.0))
 
@@ -343,7 +560,7 @@ def assign_material_to_selected(context, *, name, color, label="Assign material"
     if not selected:
         return {"ok": False, "message": "No selected mesh objects for material assignment"}
 
-    transaction = begin(label)
+    transaction = begin(label, context)
     material = bpy.data.materials.get(name)
     if material is None:
         material = bpy.data.materials.new(name)
@@ -385,7 +602,7 @@ def assign_emission_material_to_selected(context, *, name, color, strength, labe
     if not selected:
         return {"ok": False, "message": "No selected mesh objects for emission material assignment"}
 
-    transaction = begin(label)
+    transaction = begin(label, context)
     material = bpy.data.materials.new(name=name or "Claude Emission Material")
     _record_created_id("material", material.name)
     material.diffuse_color = (
@@ -432,7 +649,7 @@ def assign_emission_material_to_selected(context, *, name, color, strength, labe
 
 def create_collection(context, *, name, label="Create collection"):
     name = str(name or "Claude Collection")
-    transaction = begin(label)
+    transaction = begin(label, context)
     collection = bpy.data.collections.get(name)
     created = collection is None
     if collection is None:
@@ -461,7 +678,7 @@ def link_selected_to_collection(context, *, collection_name, label="Link selecte
     selected = list(context.selected_objects)
     if not selected:
         return {"ok": False, "message": "No selected objects to link to a collection"}
-    transaction = begin(label)
+    transaction = begin(label, context)
     collection = bpy.data.collections.get(collection_name)
     created = collection is None
     if collection is None:
@@ -512,7 +729,7 @@ def add_modifier_to_selected(
     if not selected:
         return {"ok": False, "message": "No selected mesh objects for modifier"}
 
-    transaction = begin(label)
+    transaction = begin(label, context)
     changed = []
     for obj in selected:
         modifier = obj.modifiers.new(name=name or f"Claude {modifier_type.title()}", type=modifier_type)
@@ -568,7 +785,7 @@ def add_track_to_constraint(
     track_axis = track_axis if track_axis in valid_track else "TRACK_NEGATIVE_Z"
     up_axis = up_axis if up_axis in valid_up else "UP_Y"
 
-    transaction = begin(label)
+    transaction = begin(label, context)
     changed = []
     for obj in selected:
         constraint = obj.constraints.new(type="TRACK_TO")
@@ -597,7 +814,7 @@ def add_track_to_constraint(
 
 
 def add_light(context, *, light_type, name, location, energy, color, label="Add light"):
-    transaction = begin(label)
+    transaction = begin(label, context)
     data = bpy.data.lights.new(name=name, type=light_type)
     data.energy = float(energy)
     data.color = (float(color[0]), float(color[1]), float(color[2]))
@@ -620,7 +837,7 @@ def add_light(context, *, light_type, name, location, energy, color, label="Add 
 
 
 def add_camera(context, *, name, location, rotation, lens, label="Add camera"):
-    transaction = begin(label)
+    transaction = begin(label, context)
     _record_scene_camera(context.scene)
     data = bpy.data.cameras.new(name=name)
     data.lens = float(lens)
@@ -648,7 +865,7 @@ def set_scene_frame_range(context, *, frame_start, frame_end, current_frame=None
     frame_end = int(frame_end)
     if frame_start > frame_end:
         return {"ok": False, "message": "frame_start must be less than or equal to frame_end"}
-    transaction = begin(label)
+    transaction = begin(label, context)
     scene = context.scene
     _record_scene_timeline(scene)
     scene.frame_start = frame_start
@@ -682,7 +899,7 @@ def set_active_camera(context, *, camera_name, label="Set active camera"):
         return {"ok": False, "message": f"Camera object not found: {camera_name}"}
     if camera.type != "CAMERA":
         return {"ok": False, "message": f"Object is not a camera: {camera.name}"}
-    transaction = begin(label)
+    transaction = begin(label, context)
     _record_scene_camera(context.scene)
     context.scene.camera = camera
     transaction["applied_steps"].append(
@@ -734,7 +951,7 @@ def animate_selected_transform(
     if not animated_paths:
         return {"ok": False, "message": "No animated transform values were provided"}
 
-    transaction = begin(label)
+    transaction = begin(label, context)
     scene = context.scene
     _record_scene_timeline(scene)
     scene.frame_start = min(scene.frame_start, frame_start)
@@ -812,7 +1029,7 @@ def create_camera_orbit(
     if frame_start > frame_end:
         frame_start, frame_end = frame_end, frame_start
 
-    transaction = begin(label)
+    transaction = begin(label, context)
     scene = context.scene
     _record_scene_camera(scene)
     _record_scene_timeline(scene)
@@ -884,21 +1101,32 @@ def commit(context):
     if not transaction or transaction["status"] != "pending":
         return {"ok": False, "message": "No pending preview transaction"}
     transaction["status"] = "committed"
+    manifest = transaction_manifest(transaction)
+    summary = _preview_manifest_summary(manifest)
     if hasattr(context.scene, "claude_blender"):
-        context.scene.claude_blender.pending_preview = False
-        context.scene.claude_blender.pending_preview_label = ""
+        state = context.scene.claude_blender
+        _clear_pending_preview_state(state)
+        state.last_preview_summary = summary
+        state.last_preview_warnings = ""
     redraw(context)
-    return {"ok": True, "message": "Preview committed"}
+    return {
+        "ok": True,
+        "message": "Preview committed",
+        "manifest": manifest,
+        "manifest_summary": summary,
+    }
 
 
 def revert(context):
     transaction = current_transaction()
     if not transaction or transaction["status"] != "pending":
         return {"ok": False, "message": "No pending preview transaction"}
+    rollback_warnings = []
     for before in list(transaction["before_state"].values()):
         if before.get("object_name") and "location" in before:
             obj = bpy.data.objects.get(before["object_name"])
             if obj is None:
+                rollback_warnings.append(f"Missing object for transform restore: {before['object_name']}")
                 continue
             _set_vector(obj.location, before["location"])
             _set_vector(obj.rotation_euler, before["rotation_euler"])
@@ -906,6 +1134,7 @@ def revert(context):
         elif before.get("object_name") and "materials" in before:
             obj = bpy.data.objects.get(before["object_name"])
             if obj is None or obj.type != "MESH":
+                rollback_warnings.append(f"Missing mesh object for material restore: {before['object_name']}")
                 continue
             obj.data.materials.clear()
             for material_name in before["materials"]:
@@ -913,15 +1142,20 @@ def revert(context):
                     material = bpy.data.materials.get(material_name)
                     if material:
                         obj.data.materials.append(material)
+                    else:
+                        rollback_warnings.append(f"Missing material for slot restore: {material_name}")
         elif before.get("object_name") and "collections" in before:
             obj = bpy.data.objects.get(before["object_name"])
             if obj is None:
+                rollback_warnings.append(f"Missing object for collection restore: {before['object_name']}")
                 continue
             original_names = set(before["collections"])
             for collection_name in original_names:
                 collection = bpy.data.collections.get(collection_name)
                 if collection and collection.objects.get(obj.name) is None:
                     collection.objects.link(obj)
+                elif collection is None:
+                    rollback_warnings.append(f"Missing collection for link restore: {collection_name}")
             for collection in list(obj.users_collection):
                 if collection.name not in original_names and len(obj.users_collection) > 1:
                     collection.objects.unlink(obj)
@@ -979,6 +1213,8 @@ def revert(context):
                 camera.dof.use_dof = before["use_dof"]
                 camera.dof.focus_object = bpy.data.objects.get(before["focus_object"]) if before["focus_object"] else None
                 camera.dof.aperture_fstop = before["aperture_fstop"]
+        elif before.get("kind") == "selection_state":
+            continue
         elif before.get("kind") == "mesh_smoothing":
             mesh = bpy.data.meshes.get(before["mesh_name"])
             if mesh:
@@ -1006,6 +1242,8 @@ def revert(context):
                                     current[index] = value[index]
                             else:
                                 socket.default_value = value
+            else:
+                rollback_warnings.append(f"Missing material for shader restore: {before['material_name']}")
         elif before.get("kind") == "shape_keys":
             obj = bpy.data.objects.get(before["object_name"])
             if obj is None or obj.type != "MESH" or obj.data is None:
@@ -1042,14 +1280,14 @@ def revert(context):
                 animation_data.action = bpy.data.actions.get(before["action_name"]) if before["action_name"] else None
             else:
                 obj.animation_data_clear()
-        elif before.get("created") and before.get("kind") == "object":
-            obj = bpy.data.objects.get(before["name"])
-            if obj:
-                bpy.data.objects.remove(obj, do_unlink=True)
     for before in list(transaction["before_state"].values()):
         if not before.get("created"):
             continue
-        if before.get("kind") == "material":
+        if before.get("kind") == "object":
+            obj = bpy.data.objects.get(before["name"])
+            if obj:
+                bpy.data.objects.remove(obj, do_unlink=True)
+        elif before.get("kind") == "material":
             material = bpy.data.materials.get(before["name"])
             if material:
                 bpy.data.materials.remove(material, do_unlink=True)
@@ -1099,12 +1337,34 @@ def revert(context):
                     if scene.collection.children.get(collection.name):
                         scene.collection.children.unlink(collection)
                 bpy.data.collections.remove(collection)
+    for before in list(transaction["before_state"].values()):
+        if before.get("kind") != "shader_material":
+            continue
+        material = bpy.data.materials.get(before["material_name"])
+        if material:
+            rollback_warnings.extend(_restore_node_tree_links(material, before))
+    for before in list(transaction["before_state"].values()):
+        if before.get("kind") == "selection_state":
+            _restore_selection_state(context, before, rollback_warnings)
     transaction["status"] = "reverted"
+    transaction["rollback_warnings"] = rollback_warnings
+    manifest = transaction_manifest(transaction)
+    summary = _preview_manifest_summary(manifest, warnings=rollback_warnings)
+    warning_summary = _rollback_warning_summary(rollback_warnings)
     if hasattr(context.scene, "claude_blender"):
-        context.scene.claude_blender.pending_preview = False
-        context.scene.claude_blender.pending_preview_label = ""
+        state = context.scene.claude_blender
+        _clear_pending_preview_state(state)
+        state.last_preview_summary = summary
+        state.last_preview_warnings = warning_summary
     redraw(context)
-    return {"ok": True, "message": "Preview reverted"}
+    return {
+        "ok": True,
+        "message": "Preview reverted",
+        "manifest": manifest,
+        "manifest_summary": summary,
+        "rollback_warnings": rollback_warnings,
+        "rollback_warning_summary": warning_summary,
+    }
 
 
 def redraw(context):

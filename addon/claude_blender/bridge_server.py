@@ -11,7 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import bpy
 
-from . import anthropic_client, bridge_protocol, context_bundle, tool_dispatcher, transcript
+from . import audit_log, anthropic_client, bridge_protocol, context_bundle, script_runner, tool_dispatcher, transcript
 
 
 DEFAULT_HOST = "127.0.0.1"
@@ -36,6 +36,8 @@ def _public_context():
 def _scene_status():
     bundle = context_bundle.build_context_bundle(bpy.context)
     state = getattr(bpy.context.scene, "claude_blender", None)
+    trust_active = script_runner.external_script_trust_active(bpy.context, state=state) if state else False
+    trust_status = script_runner.external_script_trust_status(bpy.context, state=state) if state else ""
     return {
         "ok": True,
         "bridge_version": bridge_protocol.BRIDGE_VERSION,
@@ -45,26 +47,41 @@ def _scene_status():
         "ui_status": getattr(state, "status", "") if state else "",
         "pending_preview": bool(getattr(state, "pending_preview", False)) if state else False,
         "pending_script": bool(getattr(state, "pending_script", False)) if state else False,
+        "external_script_trust": bool(trust_active),
+        "external_script_trust_status": trust_status,
     }
 
 
 def _tool_definitions():
     contracts = bridge_protocol.TOOL_CONTRACTS
     result = []
+    seen = set()
     for tool in anthropic_client.blender_tool_definitions():
         name = tool["name"]
-        contract = contracts.get(name, {})
+        contract = bridge_protocol.normalized_tool_contract(name, contracts.get(name, {}))
+        seen.add(name)
         result.append(
             {
                 "name": name,
-                "title": name.replace("_", " ").title(),
+                "title": contract.get("title") or name.replace("_", " ").title(),
                 "description": tool.get("description", contract.get("description", "")),
                 "inputSchema": tool.get("input_schema") or tool.get("inputSchema") or {"type": "object"},
-                "annotations": {
-                    "mutatesScene": bool(contract.get("mutates_scene", False)),
-                    "requiresApproval": bool(contract.get("requires_approval", False)),
-                    "requiresLivePreview": bool(contract.get("requires_live_preview", False)),
-                },
+                "outputSchema": contract.get("output_schema") or bridge_protocol.DEFAULT_OUTPUT_SCHEMA,
+                "annotations": bridge_protocol.mcp_annotations_for_tool(name),
+            }
+        )
+    for name, raw_contract in contracts.items():
+        if name in seen or not raw_contract.get("external_only"):
+            continue
+        contract = bridge_protocol.normalized_tool_contract(name, raw_contract)
+        result.append(
+            {
+                "name": name,
+                "title": contract.get("title") or name.replace("_", " ").title(),
+                "description": contract.get("description", ""),
+                "inputSchema": contract.get("input_schema") or {"type": "object"},
+                "outputSchema": contract.get("output_schema") or bridge_protocol.DEFAULT_OUTPUT_SCHEMA,
+                "annotations": bridge_protocol.mcp_annotations_for_tool(name),
             }
         )
     return result
@@ -100,6 +117,13 @@ def _resources():
             "description": "Local transcript Text datablock contents",
             "mimeType": "text/plain",
         },
+        {
+            "uri": "blender://audit/latest",
+            "name": "latest-audit-log",
+            "title": "Claude for Blender Audit Log",
+            "description": "Recent local JSON audit events for bridge and MCP tool calls",
+            "mimeType": "application/json",
+        },
     ]
 
 
@@ -115,6 +139,11 @@ def _read_resource(uri):
         }
     if uri == "blender://transcript/latest":
         return {"mimeType": "text/plain", "text": transcript.transcript_text()}
+    if uri == "blender://audit/latest":
+        return {
+            "mimeType": "application/json",
+            "text": json.dumps({"ok": True, "events": audit_log.read_recent(80)}, indent=2, sort_keys=True),
+        }
     return None
 
 
@@ -130,7 +159,22 @@ def _execute_tool(payload):
         result = json.loads(result_text)
     except json.JSONDecodeError:
         result = {"ok": True, "text": result_text}
-    return {"ok": bool(result.get("ok", True)), "result": result}
+    ok = bool(result.get("ok", True))
+    try:
+        contract = bridge_protocol.normalized_tool_contract(name)
+        audit_log.append_event(
+            "bridge_tool_call",
+            source="bridge",
+            tool_name=name,
+            ok=ok,
+            risk_level=contract.get("risk_level", ""),
+            mutates_scene=bool(contract.get("mutates_scene", False)),
+            requires_approval=bool(contract.get("requires_approval", False)),
+            arguments=audit_log.summarize_arguments(args),
+        )
+    except Exception:
+        pass
+    return {"ok": ok, "result": result}
 
 
 def _call_on_main(fn, timeout=REQUEST_TIMEOUT_SECONDS):
@@ -271,6 +315,10 @@ def start_bridge(*, host=DEFAULT_HOST, port=DEFAULT_PORT, auth_token=""):
         _server = server
         _thread = thread
     url = bridge_url()
+    script_runner.clear_external_script_trust_for_all_scenes(
+        status=script_runner.NO_EXTERNAL_TRUST_STATUS,
+        audit_action="clear_on_bridge_start",
+    )
     _set_scene_bridge_state(running=True, url=url, status=f"Bridge running at {url}")
     return {"ok": True, "message": f"Bridge running at {url}", "url": url}
 

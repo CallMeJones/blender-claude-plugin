@@ -55,6 +55,25 @@ def _record_shader_material(material):
             socket = principled.inputs.get(socket_name)
             if socket and hasattr(socket, "default_value"):
                 sockets[socket_name] = _socket_value(socket.default_value)
+    node_names = []
+    links = []
+    if material.use_nodes and material.node_tree:
+        node_names = [node.name for node in material.node_tree.nodes]
+        links = [
+            {
+                "from_node": link.from_node.name,
+                "from_socket": {
+                    "name": link.from_socket.name,
+                    "identifier": getattr(link.from_socket, "identifier", link.from_socket.name),
+                },
+                "to_node": link.to_node.name,
+                "to_socket": {
+                    "name": link.to_socket.name,
+                    "identifier": getattr(link.to_socket, "identifier", link.to_socket.name),
+                },
+            }
+            for link in material.node_tree.links
+        ]
     transaction["before_state"][key] = {
         "kind": "shader_material",
         "material_name": material.name,
@@ -63,6 +82,8 @@ def _record_shader_material(material):
         "blend_method": getattr(material, "blend_method", None),
         "surface_render_method": getattr(material, "surface_render_method", None),
         "principled_socket_values": sockets,
+        "node_names": node_names,
+        "links": links,
     }
     transaction["changed_data_blocks"].append(material.name)
 

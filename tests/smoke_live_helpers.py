@@ -49,6 +49,8 @@ def main():
         "fps": scene.render.fps,
         "cube_location": tuple(cube.location),
         "default_camera_constraints": len(bpy.data.objects["Camera"].constraints),
+        "selected": [obj.name for obj in context.selected_objects],
+        "active": context.view_layer.objects.active.name if context.view_layer.objects.active else None,
     }
 
     created = _execute(
@@ -116,7 +118,19 @@ def main():
 
     assert "Claude Smoke Sphere" in bpy.data.objects
     assert scene.camera and scene.camera.name.startswith("Claude Smoke Orbit Camera")
-    _execute(context, "revert_preview", {})
+    state = scene.claude_blender
+    assert state.pending_preview
+    assert state.pending_preview_summary, "Missing pending preview rollback summary"
+    assert "rollback snapshot" in state.pending_preview_summary, state.pending_preview_summary
+
+    reverted = _execute(context, "revert_preview", {})
+    assert reverted.get("manifest_summary"), reverted
+    assert not reverted.get("rollback_warnings"), reverted
+    assert not state.pending_preview
+    assert not state.pending_preview_summary
+    assert state.last_preview_summary, "Missing last preview rollback summary"
+    assert "reverted" in state.last_preview_summary, state.last_preview_summary
+    assert not state.last_preview_warnings, state.last_preview_warnings
 
     assert set(bpy.data.objects.keys()) == initial["objects"]
     assert set(bpy.data.meshes.keys()) == initial["meshes"]
@@ -131,6 +145,19 @@ def main():
     assert scene.render.fps == initial["fps"]
     assert tuple(cube.location) == initial["cube_location"]
     assert len(bpy.data.objects["Camera"].constraints) == initial["default_camera_constraints"]
+    final_selected = [obj.name for obj in context.selected_objects]
+    final_active = context.view_layer.objects.active.name if context.view_layer.objects.active else None
+    assert final_selected == initial["selected"], {
+        "expected_selected": initial["selected"],
+        "actual_selected": final_selected,
+        "active": final_active,
+        "warnings": reverted.get("rollback_warnings"),
+    }
+    assert final_active == initial["active"], {
+        "expected_active": initial["active"],
+        "actual_active": final_active,
+        "warnings": reverted.get("rollback_warnings"),
+    }
 
     claude_blender.unregister()
     print("smoke_live_helpers: ok")
