@@ -174,19 +174,42 @@ print("created", obj.name)
         assert trusted["ok"], trusted
         assert trusted["ttl_seconds"] == 900, trusted
         assert script_runner.external_script_trust_active(context, state=state)
+        trust_snapshot = script_runner.external_script_trust_snapshot(context, state=state)
+        assert trust_snapshot["active"], trust_snapshot
+        assert trust_snapshot["can_run_without_token"], trust_snapshot
+        assert 1 <= trust_snapshot["seconds_remaining"] <= 900, trust_snapshot
+        assert "remaining" in trust_snapshot["status"], trust_snapshot
+        bridge_status = bridge_server._scene_status()
+        assert bridge_status["external_script_trust"] is True, bridge_status
+        assert bridge_status["external_script_trust_can_run_without_token"] is True, bridge_status
+        assert 1 <= bridge_status["external_script_trust_seconds_remaining"] <= 900, bridge_status
+        assert "MCP client" in bridge_status["mcp_client_refresh_hint"], bridge_status
 
         script_runner._runtime_external_trust_expires_at = time.time() - 1
         assert not script_runner.external_script_trust_active(context, state=state)
+        expired_snapshot = script_runner.external_script_trust_snapshot(context, state=state)
+        assert expired_snapshot["expired"], expired_snapshot
+        assert expired_snapshot["seconds_remaining"] == 0, expired_snapshot
         assert "expired" in script_runner.external_script_trust_status(context, state=state).lower()
         expired = script_runner.expire_external_script_trust_if_needed(context, state=state)
         assert expired
-        assert state.external_script_trust_status == "External script trust window expired"
+        assert state.external_script_trust_status == script_runner.EXTERNAL_TRUST_EXPIRED_STATUS
+        post_expire_snapshot = script_runner.external_script_trust_snapshot(context, state=state)
+        assert post_expire_snapshot["expired"], post_expire_snapshot
+        assert not post_expire_snapshot["active"], post_expire_snapshot
+        assert post_expire_snapshot["status"] == script_runner.EXTERNAL_TRUST_EXPIRED_STATUS, post_expire_snapshot
+        post_expire_bridge_status = bridge_server._scene_status()
+        assert post_expire_bridge_status["external_script_trust"] is False, post_expire_bridge_status
+        assert post_expire_bridge_status["external_script_trust_status"] == script_runner.EXTERNAL_TRUST_EXPIRED_STATUS, post_expire_bridge_status
 
         cleared_expired = script_runner.clear_external_script_trust_for_all_scenes()
         assert cleared_expired >= 1
-        state.external_script_trust_status = "External script trust active for 900 second(s)"
+        state.external_script_trust_status = "External script trust active: 15m 00s remaining"
         state.external_script_trust_expires_at = f"{time.time() + 900:.6f}"
         assert not script_runner.external_script_trust_active(context, state=state)
+        stale_snapshot = script_runner.external_script_trust_snapshot(context, state=state)
+        assert stale_snapshot["stale_scene_state"], stale_snapshot
+        assert stale_snapshot["status"] == script_runner.NO_EXTERNAL_TRUST_STATUS
         assert script_runner.external_script_trust_status(context, state=state) == script_runner.NO_EXTERNAL_TRUST_STATUS
         cleared_stale = script_runner.clear_external_script_trust_for_all_scenes()
         assert cleared_stale >= 1

@@ -27,6 +27,7 @@ MAX_STATE_TEXT_CHARS = 1800
 EXTERNAL_APPROVAL_TTL_SECONDS = 300
 EXTERNAL_TRUST_TTL_SECONDS = 15 * 60
 NO_EXTERNAL_TRUST_STATUS = "No external script trust window"
+EXTERNAL_TRUST_EXPIRED_STATUS = "External script trust window expired"
 CHECKPOINT_FILENAME_RE = re.compile(r"-claude-\d{8}-\d{6}\.blend$", re.IGNORECASE)
 
 _runtime_external_trust_expires_at = 0.0
@@ -112,6 +113,45 @@ def _external_trust_expires_at(state):
     return float(_runtime_external_trust_expires_at or 0.0)
 
 
+def _trust_duration_label(seconds):
+    seconds = max(0, int(seconds))
+    if seconds >= 60:
+        minutes, remaining_seconds = divmod(seconds, 60)
+        return f"{minutes}m {remaining_seconds:02d}s"
+    return f"{seconds}s"
+
+
+def external_script_trust_snapshot(context=None, *, state=None):
+    state = state or _scene_state(context)
+    now = time.time()
+    expires_at = _external_trust_expires_at(state)
+    stored_status = getattr(state, "external_script_trust_status", NO_EXTERNAL_TRUST_STATUS) if state else NO_EXTERNAL_TRUST_STATUS
+    stored_expires_at = getattr(state, "external_script_trust_expires_at", "") if state else ""
+    seconds_remaining = max(0, int(expires_at - now + 0.999)) if expires_at else 0
+    stored_expired = stored_status == EXTERNAL_TRUST_EXPIRED_STATUS
+    active = bool(state and expires_at and seconds_remaining > 0)
+    expired = bool(state and ((expires_at and not active) or stored_expired))
+    stale_scene_state = bool(stored_expires_at and not expires_at)
+    if active:
+        status = f"External script trust active: {_trust_duration_label(seconds_remaining)} remaining"
+    elif expired:
+        status = EXTERNAL_TRUST_EXPIRED_STATUS
+    elif str(stored_status).startswith("External script trust active"):
+        status = NO_EXTERNAL_TRUST_STATUS
+    else:
+        status = stored_status or NO_EXTERNAL_TRUST_STATUS
+    return {
+        "active": active,
+        "expired": expired,
+        "status": status,
+        "expires_at": expires_at if expires_at else 0.0,
+        "seconds_remaining": seconds_remaining,
+        "can_run_without_token": active,
+        "runtime_only": True,
+        "stale_scene_state": stale_scene_state,
+    }
+
+
 def clear_external_script_trust(context=None, *, state=None, status=NO_EXTERNAL_TRUST_STATUS):
     global _runtime_external_trust_expires_at
     state = state or _scene_state(context)
@@ -131,28 +171,11 @@ def _coerce_ttl_seconds(value, default):
 
 
 def external_script_trust_active(context=None, *, state=None):
-    state = state or _scene_state(context)
-    if not state:
-        return False
-    expires_at = _external_trust_expires_at(state)
-    if not expires_at:
-        return False
-    return time.time() <= expires_at
+    return bool(external_script_trust_snapshot(context, state=state)["active"])
 
 
 def external_script_trust_status(context=None, *, state=None):
-    state = state or _scene_state(context)
-    expires_at = _external_trust_expires_at(state)
-    if expires_at and time.time() > expires_at:
-        return "External script trust window expired"
-    if expires_at:
-        remaining = max(0, int(expires_at - time.time()))
-        stored = getattr(state, "external_script_trust_status", "") if state else ""
-        return stored or f"External script trust active for {remaining} second(s)"
-    stored = getattr(state, "external_script_trust_status", NO_EXTERNAL_TRUST_STATUS) if state else NO_EXTERNAL_TRUST_STATUS
-    if str(stored).startswith("External script trust active"):
-        return NO_EXTERNAL_TRUST_STATUS
-    return stored
+    return external_script_trust_snapshot(context, state=state)["status"]
 
 
 def _audit_external_script_trust(action, *, state=None, ttl_seconds=None, expires_at=None, status=""):
@@ -172,15 +195,16 @@ def _audit_external_script_trust(action, *, state=None, ttl_seconds=None, expire
 
 def expire_external_script_trust_if_needed(context=None, *, state=None):
     state = state or _scene_state(context)
-    expires_at = _external_trust_expires_at(state)
-    if not expires_at or time.time() <= expires_at:
+    snapshot = external_script_trust_snapshot(state=state)
+    expires_at = snapshot["expires_at"]
+    if not expires_at or not snapshot["expired"]:
         return False
-    clear_external_script_trust(state=state, status="External script trust window expired")
+    clear_external_script_trust(state=state, status=EXTERNAL_TRUST_EXPIRED_STATUS)
     _audit_external_script_trust(
         "expire",
         state=state,
         expires_at=expires_at,
-        status="External script trust window expired",
+        status=EXTERNAL_TRUST_EXPIRED_STATUS,
     )
     return True
 
@@ -216,7 +240,7 @@ def approve_external_script_trust_window(context, *, ttl_seconds=EXTERNAL_TRUST_
     expires_at = time.time() + ttl
     _runtime_external_trust_expires_at = expires_at
     state.external_script_trust_expires_at = f"{expires_at:.6f}"
-    state.external_script_trust_status = f"External script trust active for {ttl} second(s)"
+    state.external_script_trust_status = external_script_trust_status(state=state)
     state.status = state.external_script_trust_status
     _audit_external_script_trust(
         "grant",

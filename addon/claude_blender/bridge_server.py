@@ -36,8 +36,7 @@ def _public_context():
 def _scene_status():
     bundle = context_bundle.build_context_bundle(bpy.context)
     state = getattr(bpy.context.scene, "claude_blender", None)
-    trust_active = script_runner.external_script_trust_active(bpy.context, state=state) if state else False
-    trust_status = script_runner.external_script_trust_status(bpy.context, state=state) if state else ""
+    trust = script_runner.external_script_trust_snapshot(bpy.context, state=state) if state else {}
     return {
         "ok": True,
         "bridge_version": bridge_protocol.BRIDGE_VERSION,
@@ -47,8 +46,15 @@ def _scene_status():
         "ui_status": getattr(state, "status", "") if state else "",
         "pending_preview": bool(getattr(state, "pending_preview", False)) if state else False,
         "pending_script": bool(getattr(state, "pending_script", False)) if state else False,
-        "external_script_trust": bool(trust_active),
-        "external_script_trust_status": trust_status,
+        "external_script_trust": bool(trust.get("active", False)),
+        "external_script_trust_status": str(trust.get("status", "")),
+        "external_script_trust_expires_at": float(trust.get("expires_at", 0.0) or 0.0),
+        "external_script_trust_seconds_remaining": int(trust.get("seconds_remaining", 0) or 0),
+        "external_script_trust_can_run_without_token": bool(trust.get("can_run_without_token", False)),
+        "external_script_trust_stale_scene_state": bool(trust.get("stale_scene_state", False)),
+        "mcp_client_refresh_hint": (
+            "Restart or refresh the MCP client if newly added Blender tools are missing from its callable tool list."
+        ),
     }
 
 

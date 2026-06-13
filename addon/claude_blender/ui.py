@@ -379,13 +379,14 @@ def _draw_ask_section(layout, state, prefs):
     else:
         bridge_row.operator("claude_blender.start_bridge", text="Start Bridge")
     bridge_row.operator("claude_blender.copy_mcp_config", text="Copy MCP")
-    trust_active = script_runner.external_script_trust_active(bpy.context, state=state)
-    trust_status = script_runner.external_script_trust_status(bpy.context, state=state)
+    trust_snapshot = script_runner.external_script_trust_snapshot(bpy.context, state=state)
+    trust_active = trust_snapshot["active"]
+    trust_status = trust_snapshot["status"]
     trust_row = ask_box.row(align=True)
     trust = trust_row.operator("claude_blender.approve_external_script_trust", text="Trust 15 Min", icon="KEYTYPE_KEYFRAME_VEC")
     trust.ttl_seconds = script_runner.EXTERNAL_TRUST_TTL_SECONDS
     revoke_row = trust_row.row(align=True)
-    revoke_row.enabled = trust_active or trust_status == "External script trust window expired"
+    revoke_row.enabled = trust_active or trust_snapshot["expired"]
     revoke_row.operator("claude_blender.revoke_external_script_trust", text="Revoke Trust", icon="CANCEL")
     if trust_status != script_runner.NO_EXTERNAL_TRUST_STATUS:
         _draw_field(ask_box, "Script Trust", trust_status, width=44, max_lines=2)
@@ -513,8 +514,9 @@ def _draw_script_section(layout, state):
         script_box.operator("claude_blender.reject_script", icon="LOOP_BACK")
         if state.pending_script_external_approval_status != "No external script approval":
             _draw_field(script_box, "External Approval", state.pending_script_external_approval_status, width=42, max_lines=2)
-        if script_runner.external_script_trust_active(bpy.context, state=state):
-            _draw_field(script_box, "Trust Window", script_runner.external_script_trust_status(bpy.context, state=state), width=42, max_lines=2)
+        trust_snapshot = script_runner.external_script_trust_snapshot(bpy.context, state=state)
+        if trust_snapshot["active"] or trust_snapshot["expired"]:
+            _draw_field(script_box, "Trust Window", trust_snapshot["status"], width=42, max_lines=2)
 
         if state.pending_script_status == "Script failed" or state.last_script_error_summary:
             script_box.operator("claude_blender.repair_script", icon="FILE_REFRESH")
@@ -572,8 +574,9 @@ def _draw_action_center(layout, state):
         actions.operator("claude_blender.reject_script", text="Reject", icon="LOOP_BACK")
         if state.pending_script_external_approval_status != "No external script approval":
             _draw_field(actions, "External Approval", state.pending_script_external_approval_status, width=44, max_lines=2)
-        if script_runner.external_script_trust_active(bpy.context, state=state):
-            _draw_field(actions, "Trust Window", script_runner.external_script_trust_status(bpy.context, state=state), width=44, max_lines=2)
+        trust_snapshot = script_runner.external_script_trust_snapshot(bpy.context, state=state)
+        if trust_snapshot["active"] or trust_snapshot["expired"]:
+            _draw_field(actions, "Trust Window", trust_snapshot["status"], width=44, max_lines=2)
         if state.pending_script_status == "Script failed" or state.last_script_error_summary:
             actions.operator("claude_blender.repair_script", text="Repair", icon="FILE_REFRESH")
             if state.last_script_error_summary:

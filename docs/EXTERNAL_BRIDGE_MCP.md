@@ -110,6 +110,8 @@ Set `BLENDER_MCP_FULL_TOOL_LIST=1` in the MCP server environment to expose every
 
 `tools/list`, `resources/list`, `resources/templates/list`, and `prompts/list` support cursor pagination. Tool definitions include `inputSchema`, `outputSchema`, and risk/permission annotations derived from the bridge contract.
 
+`blender_bridge_status` also reports the current external script trust snapshot, including whether tokenless external script runs are allowed, seconds remaining, the runtime expiry timestamp, and whether saved scene trust state is stale. Some MCP clients cache callable tools aggressively; if a newly added Blender tool is missing, restart or refresh the MCP client after copying the latest config.
+
 ## Resources
 
 Current resources:

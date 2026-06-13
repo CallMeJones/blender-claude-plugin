@@ -162,6 +162,10 @@ def _assert_compact_tools_visible(proc):
     }.issubset(names), listed
     assert "draft_script" not in names, listed
     assert "run_approved_script" not in names, listed
+    status_tool = next(tool for tool in listed["result"]["tools"] if tool["name"] == "blender_bridge_status")
+    status_properties = status_tool["outputSchema"]["properties"]
+    assert "external_script_trust_seconds_remaining" in status_properties, status_tool
+    assert "mcp_client_refresh_hint" in status_properties, status_tool
     scene_tool = next(tool for tool in listed["result"]["tools"] if tool["name"] == "list_scene_objects")
     assert scene_tool["outputSchema"]["type"] == "object", scene_tool
     catalog_tool = next(tool for tool in listed["result"]["tools"] if tool["name"] == "blender_tool_catalog")
