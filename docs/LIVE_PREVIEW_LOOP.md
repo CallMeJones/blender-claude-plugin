@@ -53,6 +53,8 @@ Current implemented helper actions:
 - Move selected objects by location delta.
 - Set selected object location, rotation, and/or scale.
 - Create mesh primitives.
+- Create empty helper objects.
+- Set object visibility and viewport display settings.
 - Assign/create material for selected mesh objects.
 - Assign new emission material node setups.
 - Create collections and link selected objects to them.

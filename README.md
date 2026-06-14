@@ -16,7 +16,7 @@ The extension should feel like a scene-aware creative collaborator inside Blende
 - It can use bounded advanced helpers for shader materials, Geometry Nodes starter groups, shape keys, text/curves, particle systems, armatures, copy-transform constraints, render settings, camera settings, and world background colors before falling back to approved Python.
 - It can expose the running Blender scene over an optional localhost bridge plus stdio MCP server, so external MCP clients can inspect resources and call Blender tools.
 - It can apply approved low-risk changes immediately so the viewport and timeline update as Claude works.
-- It can let Claude call safe Blender tools for object listing/selection, playhead changes, selected-object movement, absolute transforms, primitive creation, material assignment, emission materials, collections, modifiers, Track To constraints, timeline setup, active camera selection, transform keyframes, lights, cameras, and camera orbits.
+- It can let Claude call safe Blender tools for object listing/selection, playhead changes, selected-object movement, absolute transforms, primitive/empty creation, object visibility/display, material assignment, emission materials, collections, modifiers, Track To constraints, timeline setup, active camera selection, transform keyframes, lights, cameras, and camera orbits.
 
 ## Initial Direction
 
@@ -59,6 +59,9 @@ Complex helper-driven builds have a larger tool-call budget and end with a reada
 Advanced live helpers are now available for common deeper Blender systems:
 
 - `create_shader_material`
+- `create_empty`
+- `set_object_visibility`
+- `set_object_display`
 - `add_geometry_nodes_modifier`
 - `create_shape_key`
 - `animate_shape_key`

@@ -802,6 +802,123 @@ def create_follow_path_animation(context, args):
     )
 
 
+def set_action_interpolation(context, args):
+    return advanced_helpers.set_action_interpolation(
+        context,
+        action_names=_name_list(args.get("action_names")),
+        object_names=_name_list(args.get("object_names")),
+        selected_only=bool(args.get("selected_only", False)),
+        interpolation=str(args.get("interpolation") or "LINEAR"),
+        easing=str(args.get("easing") or ""),
+        label=args.get("label", "Set action interpolation"),
+    )
+
+
+def retime_actions(context, args):
+    return advanced_helpers.retime_actions(
+        context,
+        action_names=_name_list(args.get("action_names")),
+        object_names=_name_list(args.get("object_names")),
+        selected_only=bool(args.get("selected_only", False)),
+        frame_start=int(args.get("frame_start", context.scene.frame_start)),
+        frame_end=int(args.get("frame_end", context.scene.frame_end)),
+        snap_to_integer=bool(args.get("snap_to_integer", True)),
+        label=args.get("label", "Retime actions"),
+    )
+
+
+def add_action_cycles(context, args):
+    return advanced_helpers.add_action_cycles(
+        context,
+        action_names=_name_list(args.get("action_names")),
+        object_names=_name_list(args.get("object_names")),
+        selected_only=bool(args.get("selected_only", False)),
+        mode_before=str(args.get("mode_before") or "NONE"),
+        mode_after=str(args.get("mode_after") or "REPEAT"),
+        replace_existing=bool(args.get("replace_existing", False)),
+        label=args.get("label", "Add action cycles"),
+    )
+
+
+def clear_animation(context, args):
+    return advanced_helpers.clear_animation(
+        context,
+        object_names=_name_list(args.get("object_names")),
+        selected_only=bool(args.get("selected_only", True)),
+        include_object_animation=bool(args.get("include_object_animation", True)),
+        include_data_animation=bool(args.get("include_data_animation", True)),
+        include_shape_key_animation=bool(args.get("include_shape_key_animation", True)),
+        include_material_animation=bool(args.get("include_material_animation", False)),
+        label=args.get("label", "Clear animation"),
+    )
+
+
+def set_animation_preview_range(context, args):
+    return advanced_helpers.set_animation_preview_range(
+        context,
+        frame_start=int(args.get("frame_start", context.scene.frame_start)),
+        frame_end=int(args.get("frame_end", context.scene.frame_end)),
+        current_frame=args.get("current_frame"),
+        use_preview_range=bool(args.get("use_preview_range", True)),
+        label=args.get("label", "Set animation preview range"),
+    )
+
+
+def create_turntable_animation(context, args):
+    active = context.active_object.name if context.active_object else ""
+    return advanced_helpers.create_turntable_animation(
+        context,
+        object_name=str(args.get("object_name") or active),
+        frame_start=int(args.get("frame_start", context.scene.frame_start)),
+        frame_end=int(args.get("frame_end", context.scene.frame_end)),
+        axis=str(args.get("axis") or "Z"),
+        revolutions=float(args.get("revolutions", 1.0)),
+        add_cycles=bool(args.get("add_cycles", False)),
+        label=args.get("label", "Create turntable animation"),
+    )
+
+
+def create_pulse_animation(context, args):
+    active = context.active_object.name if context.active_object else ""
+    emission_strength_end = args.get("emission_strength_end")
+    return advanced_helpers.create_pulse_animation(
+        context,
+        object_name=str(args.get("object_name") or active),
+        frame_start=int(args.get("frame_start", context.scene.frame_start)),
+        frame_end=int(args.get("frame_end", context.scene.frame_end)),
+        scale_factor=float(args.get("scale_factor", 1.15)),
+        emission_strength_end=float(emission_strength_end) if emission_strength_end is not None else None,
+        label=args.get("label", "Create pulse animation"),
+    )
+
+
+def create_reveal_animation(context, args):
+    active = context.active_object.name if context.active_object else ""
+    return advanced_helpers.create_reveal_animation(
+        context,
+        object_name=str(args.get("object_name") or active),
+        frame_start=int(args.get("frame_start", context.scene.frame_start)),
+        frame_end=int(args.get("frame_end", context.scene.frame_end)),
+        scale_start=float(args.get("scale_start", 0.01)),
+        scale_end=float(args.get("scale_end", 1.0)),
+        fade_material=bool(args.get("fade_material", True)),
+        label=args.get("label", "Create reveal animation"),
+    )
+
+
+def create_staggered_motion(context, args):
+    return advanced_helpers.create_staggered_motion(
+        context,
+        object_names=_name_list(args.get("object_names")),
+        frame_start=int(args.get("frame_start", context.scene.frame_start)),
+        duration=_bounded_int(args.get("duration"), 24, minimum=1, maximum=10000),
+        frame_step=_bounded_int(args.get("frame_step"), 6, minimum=0, maximum=10000),
+        location_delta=_float_list(args.get("location_delta"), 3, (0.0, 0.0, 1.0)),
+        interpolation=str(args.get("interpolation") or "BEZIER"),
+        label=args.get("label", "Create staggered motion"),
+    )
+
+
 def create_text_object(context, args):
     return advanced_helpers.create_text_object(
         context,
@@ -899,6 +1016,48 @@ def set_world_background(context, args):
         context,
         color=_float_list(args.get("color"), 3, (0.05, 0.05, 0.07)),
         label=args.get("label", "Set world background"),
+    )
+
+
+def create_empty(context, args):
+    return advanced_helpers.create_empty(
+        context,
+        name=str(args.get("name") or "Claude Empty"),
+        location=_float_list(args.get("location"), 3, (0.0, 0.0, 0.0)),
+        rotation=_float_list(args.get("rotation"), 3, (0.0, 0.0, 0.0)),
+        scale=_float_list(args.get("scale"), 3, (1.0, 1.0, 1.0)),
+        empty_display_type=str(args.get("empty_display_type") or "PLAIN_AXES"),
+        empty_display_size=float(args.get("empty_display_size", 1.0)),
+        select_new=bool(args.get("select_new", True)),
+        label=args.get("label", "Create empty"),
+    )
+
+
+def set_object_visibility(context, args):
+    return advanced_helpers.set_object_visibility(
+        context,
+        object_names=_name_list(args.get("object_names")),
+        selected_only=bool(args.get("selected_only", True)),
+        hide_viewport=args.get("hide_viewport"),
+        hide_render=args.get("hide_render"),
+        hide_select=args.get("hide_select"),
+        label=args.get("label", "Set object visibility"),
+    )
+
+
+def set_object_display(context, args):
+    return advanced_helpers.set_object_display(
+        context,
+        object_names=_name_list(args.get("object_names")),
+        selected_only=bool(args.get("selected_only", True)),
+        display_type=str(args.get("display_type") or ""),
+        show_name=args.get("show_name"),
+        show_wire=args.get("show_wire"),
+        show_in_front=args.get("show_in_front"),
+        color=_optional_float_list(args.get("color"), 4, (1.0, 1.0, 1.0, 1.0)),
+        empty_display_type=str(args.get("empty_display_type") or ""),
+        empty_display_size=args.get("empty_display_size"),
+        label=args.get("label", "Set object display"),
     )
 
 
@@ -1165,6 +1324,15 @@ TOOL_FUNCTIONS = {
     "animate_material_property": animate_material_property,
     "animate_light_property": animate_light_property,
     "create_follow_path_animation": create_follow_path_animation,
+    "set_action_interpolation": set_action_interpolation,
+    "retime_actions": retime_actions,
+    "add_action_cycles": add_action_cycles,
+    "clear_animation": clear_animation,
+    "set_animation_preview_range": set_animation_preview_range,
+    "create_turntable_animation": create_turntable_animation,
+    "create_pulse_animation": create_pulse_animation,
+    "create_reveal_animation": create_reveal_animation,
+    "create_staggered_motion": create_staggered_motion,
     "create_text_object": create_text_object,
     "create_curve_path": create_curve_path,
     "add_particle_system_to_selected": add_particle_system_to_selected,
@@ -1173,6 +1341,9 @@ TOOL_FUNCTIONS = {
     "set_render_settings": set_render_settings,
     "set_camera_settings": set_camera_settings,
     "set_world_background": set_world_background,
+    "create_empty": create_empty,
+    "set_object_visibility": set_object_visibility,
+    "set_object_display": set_object_display,
     "duplicate_selected_objects": duplicate_selected_objects,
     "parent_selected_to_empty": parent_selected_to_empty,
     "align_selected_objects": align_selected_objects,

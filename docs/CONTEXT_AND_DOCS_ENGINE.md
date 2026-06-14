@@ -165,6 +165,9 @@ Initial helpers:
 - `select_objects(object_names, active_object_name, extend)`
 - `set_current_frame(frame)`
 - `create_primitive(primitive_type, name, location, rotation, scale)`
+- `create_empty(name, location, rotation, scale, empty_display_type)`
+- `set_object_visibility(object_names, hide_viewport, hide_render, hide_select)`
+- `set_object_display(object_names, display_type, show_name, show_wire, show_in_front, color)`
 - `set_selected_location_delta(delta)`
 - `set_selected_transform(location, rotation, scale)`
 - `assign_material_to_selected(name, color)`

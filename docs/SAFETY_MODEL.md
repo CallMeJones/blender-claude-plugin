@@ -44,7 +44,7 @@ Use this later for fast iterative workflows.
 
 Claude can apply low-risk helper changes immediately to the open scene. Each change must be part of a preview transaction with visible commit/revert controls.
 
-Use this for transforms, primitive creation, materials, lights, cameras, timeline settings, camera orbit setup, bounded keyframe edits, and bounded advanced helpers such as shader material setup, Geometry Nodes starter modifiers, shape keys, text/curve creation, simple particles, basic armatures, copy-transform constraints, render settings, camera settings, and world background color.
+Use this for transforms, primitive/empty creation, object visibility/display, materials, lights, cameras, timeline settings, camera orbit setup, bounded keyframe edits, and bounded advanced helpers such as shader material setup, Geometry Nodes starter modifiers, shape keys, text/curve creation, simple particles, basic armatures, copy-transform constraints, render settings, camera settings, and world background color.
 
 Advanced helpers are not a general Blender automation sandbox. They should create or edit narrow, reversible data-blocks. Custom geometry-node networks, production rigs, compositor graphs, simulations, destructive mesh operations, import/export, and broad scene edits should stay in approval-required Python.
 Refinement templates are also bounded live helpers. They may create multiple primitives/materials/curves at once, but every created data-block must be recorded in preview rollback. Templates should improve composition and detail without pretending to replace real topology modeling.

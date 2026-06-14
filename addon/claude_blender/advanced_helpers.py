@@ -10,8 +10,36 @@ from mathutils import Vector
 from . import live_preview
 
 
+KEYFRAME_INTERPOLATIONS = {
+    "CONSTANT",
+    "LINEAR",
+    "BEZIER",
+    "SINE",
+    "QUAD",
+    "CUBIC",
+    "QUART",
+    "QUINT",
+    "EXPO",
+    "CIRC",
+    "BACK",
+    "BOUNCE",
+    "ELASTIC",
+}
+
+EMPTY_DISPLAY_TYPES = {"PLAIN_AXES", "ARROWS", "SINGLE_ARROW", "CIRCLE", "CUBE", "SPHERE", "CONE", "IMAGE"}
+OBJECT_DISPLAY_TYPES = {"TEXTURED", "SOLID", "WIRE", "BOUNDS"}
+
+
 def _coerce_vector(value, fallback):
     return live_preview._coerce_vector(value, fallback)
+
+
+def _coerce_color(value, fallback=(1.0, 1.0, 1.0, 1.0)):
+    values = list(value) if value is not None else list(fallback)
+    result = values[:4]
+    while len(result) < 4:
+        result.append(fallback[len(result)])
+    return tuple(float(component) for component in result)
 
 
 def _record_shape_keys(obj):
@@ -199,7 +227,7 @@ def _normalize_frame_range(frame_start, frame_end, label):
 
 def _set_action_interpolation(action, interpolation="LINEAR"):
     interpolation = str(interpolation or "LINEAR").upper()
-    if interpolation not in {"CONSTANT", "LINEAR", "BEZIER"}:
+    if interpolation not in KEYFRAME_INTERPOLATIONS:
         interpolation = "LINEAR"
     for fcurve in live_preview._iter_action_fcurves(action):
         for point in fcurve.keyframe_points:
@@ -992,6 +1020,633 @@ def create_follow_path_animation(
     }
 
 
+def _animation_action_from(data_block):
+    animation_data = getattr(data_block, "animation_data", None)
+    return animation_data.action if animation_data else None
+
+
+def _object_animation_actions(obj):
+    actions = [_animation_action_from(obj)]
+    data = getattr(obj, "data", None)
+    if data:
+        actions.append(_animation_action_from(data))
+    if obj.type == "MESH" and data and getattr(data, "shape_keys", None):
+        actions.append(_animation_action_from(data.shape_keys))
+    for slot in getattr(obj, "material_slots", []):
+        material = slot.material
+        if material:
+            actions.append(_animation_action_from(material))
+            if material.use_nodes and material.node_tree:
+                actions.append(_animation_action_from(material.node_tree))
+    return [action for action in actions if action]
+
+
+def _resolve_animation_actions(context, *, action_names=None, object_names=None, selected_only=False, max_actions=32):
+    actions = []
+    missing_actions = []
+    missing_objects = []
+    seen = set()
+
+    def add_action(action):
+        if action and action.name not in seen:
+            seen.add(action.name)
+            actions.append(action)
+
+    for name in action_names or []:
+        action = bpy.data.actions.get(str(name))
+        if action:
+            add_action(action)
+        else:
+            missing_actions.append(str(name))
+
+    objects = []
+    if object_names:
+        for name in object_names:
+            obj = bpy.data.objects.get(str(name))
+            if obj:
+                objects.append(obj)
+            else:
+                missing_objects.append(str(name))
+    elif selected_only:
+        objects = list(context.selected_objects)
+    elif context.active_object and not actions:
+        objects = [context.active_object]
+
+    for obj in objects:
+        for action in _object_animation_actions(obj):
+            add_action(action)
+
+    return actions[: max(1, int(max_actions or 1))], missing_actions, missing_objects
+
+
+def _valid_interpolation(value):
+    interpolation = str(value or "LINEAR").upper()
+    return interpolation if interpolation in KEYFRAME_INTERPOLATIONS else "LINEAR"
+
+
+def _valid_easing(value):
+    easing = str(value or "").upper()
+    return easing if easing in {"AUTO", "EASE_IN", "EASE_OUT", "EASE_IN_OUT"} else ""
+
+
+def set_action_interpolation(
+    context,
+    *,
+    action_names=None,
+    object_names=None,
+    selected_only=False,
+    interpolation="LINEAR",
+    easing="",
+    label="Set action interpolation",
+):
+    actions, missing_actions, missing_objects = _resolve_animation_actions(
+        context,
+        action_names=action_names or [],
+        object_names=object_names or [],
+        selected_only=selected_only,
+    )
+    if not actions:
+        return {"ok": False, "message": "No actions found for interpolation update", "missing_action_names": missing_actions, "missing_object_names": missing_objects}
+    interpolation = _valid_interpolation(interpolation)
+    easing = _valid_easing(easing)
+    transaction = live_preview.begin(label, context)
+    changed = []
+    for action in actions:
+        live_preview._record_action_edit(action)
+        for fcurve in live_preview._iter_action_fcurves(action):
+            for point in fcurve.keyframe_points:
+                point.interpolation = interpolation
+                if easing and hasattr(point, "easing"):
+                    point.easing = easing
+            fcurve.update()
+        changed.append(action.name)
+    transaction["applied_steps"].append(
+        {"type": "set_action_interpolation", "label": label, "actions": changed, "interpolation": interpolation, "easing": easing}
+    )
+    live_preview.redraw(context)
+    live_preview._mark_pending(context, label)
+    return {
+        "ok": True,
+        "message": f"Updated interpolation on {len(changed)} action(s)",
+        "actions": changed,
+        "missing_action_names": missing_actions,
+        "missing_object_names": missing_objects,
+        "transaction_id": transaction["id"],
+    }
+
+
+def _action_frame_span(action):
+    frames = [
+        float(point.co.x)
+        for fcurve in live_preview._iter_action_fcurves(action)
+        for point in fcurve.keyframe_points
+    ]
+    if not frames:
+        return None
+    return min(frames), max(frames)
+
+
+def retime_actions(
+    context,
+    *,
+    action_names=None,
+    object_names=None,
+    selected_only=False,
+    frame_start,
+    frame_end,
+    snap_to_integer=True,
+    label="Retime actions",
+):
+    frame_start, frame_end, error = _normalize_frame_range(frame_start, frame_end, "Action retime")
+    if error:
+        return error
+    actions, missing_actions, missing_objects = _resolve_animation_actions(
+        context,
+        action_names=action_names or [],
+        object_names=object_names or [],
+        selected_only=selected_only,
+    )
+    if not actions:
+        return {"ok": False, "message": "No actions found for retiming", "missing_action_names": missing_actions, "missing_object_names": missing_objects}
+    retime_plan = []
+    skipped = []
+    for action in actions:
+        span = _action_frame_span(action)
+        if span is None or span[0] == span[1]:
+            skipped.append(action.name)
+            continue
+        retime_plan.append((action, span))
+    if not retime_plan:
+        return {
+            "ok": False,
+            "message": "No retimeable actions found",
+            "actions": [],
+            "skipped_actions": skipped,
+            "missing_action_names": missing_actions,
+            "missing_object_names": missing_objects,
+        }
+    transaction = live_preview.begin(label, context)
+    live_preview._record_scene_timeline(context.scene)
+    context.scene.frame_start = min(context.scene.frame_start, frame_start)
+    context.scene.frame_end = max(context.scene.frame_end, frame_end)
+    changed = []
+    for action, span in retime_plan:
+        old_start, old_end = span
+        scale = (frame_end - frame_start) / (old_end - old_start)
+        live_preview._record_action_edit(action)
+        for fcurve in live_preview._iter_action_fcurves(action):
+            for point in fcurve.keyframe_points:
+                old_x = float(point.co.x)
+                new_x = frame_start + (old_x - old_start) * scale
+                if snap_to_integer:
+                    new_x = round(new_x)
+                handle_left_dx = float(point.handle_left.x) - old_x
+                handle_right_dx = float(point.handle_right.x) - old_x
+                point.co.x = new_x
+                point.handle_left.x = new_x + handle_left_dx * scale
+                point.handle_right.x = new_x + handle_right_dx * scale
+            fcurve.update()
+        changed.append(action.name)
+    context.scene.frame_set(frame_start)
+    transaction["applied_steps"].append(
+        {
+            "type": "retime_actions",
+            "label": label,
+            "actions": changed,
+            "frame_start": frame_start,
+            "frame_end": frame_end,
+            "skipped_actions": skipped,
+        }
+    )
+    live_preview.redraw(context)
+    live_preview._mark_pending(context, label)
+    return {
+        "ok": bool(changed),
+        "message": f"Retimed {len(changed)} action(s)",
+        "actions": changed,
+        "skipped_actions": skipped,
+        "missing_action_names": missing_actions,
+        "missing_object_names": missing_objects,
+        "transaction_id": transaction["id"],
+    }
+
+
+def add_action_cycles(
+    context,
+    *,
+    action_names=None,
+    object_names=None,
+    selected_only=False,
+    mode_before="NONE",
+    mode_after="REPEAT",
+    replace_existing=False,
+    label="Add action cycles",
+):
+    actions, missing_actions, missing_objects = _resolve_animation_actions(
+        context,
+        action_names=action_names or [],
+        object_names=object_names or [],
+        selected_only=selected_only,
+    )
+    if not actions:
+        return {"ok": False, "message": "No actions found for cycles", "missing_action_names": missing_actions, "missing_object_names": missing_objects}
+    valid_modes = {"NONE", "REPEAT", "REPEAT_OFFSET", "MIRROR"}
+    mode_before = str(mode_before or "NONE").upper()
+    mode_after = str(mode_after or "REPEAT").upper()
+    if mode_before not in valid_modes:
+        mode_before = "NONE"
+    if mode_after not in valid_modes:
+        mode_after = "REPEAT"
+    cycles_plan = []
+    for action in actions:
+        fcurves_to_change = []
+        for fcurve in live_preview._iter_action_fcurves(action):
+            existing = [modifier for modifier in list(fcurve.modifiers) if modifier.type == "CYCLES"]
+            if existing and not replace_existing:
+                continue
+            fcurves_to_change.append((fcurve, existing))
+        if fcurves_to_change:
+            cycles_plan.append((action, fcurves_to_change))
+    if not cycles_plan:
+        return {
+            "ok": False,
+            "message": "No f-curves available for cycles update",
+            "actions": [],
+            "missing_action_names": missing_actions,
+            "missing_object_names": missing_objects,
+        }
+    transaction = live_preview.begin(label, context)
+    changed = []
+    for action, fcurves_to_change in cycles_plan:
+        live_preview._record_action_edit(action)
+        fcurve_count = 0
+        for fcurve, existing in fcurves_to_change:
+            for modifier in existing:
+                fcurve.modifiers.remove(modifier)
+            modifier = fcurve.modifiers.new(type="CYCLES")
+            modifier.mode_before = mode_before
+            modifier.mode_after = mode_after
+            fcurve_count += 1
+        if fcurve_count:
+            changed.append({"action": action.name, "fcurves": fcurve_count})
+    transaction["applied_steps"].append(
+        {"type": "add_action_cycles", "label": label, "actions": changed, "mode_before": mode_before, "mode_after": mode_after}
+    )
+    live_preview.redraw(context)
+    live_preview._mark_pending(context, label)
+    return {
+        "ok": bool(changed),
+        "message": f"Added cycles to {len(changed)} action(s)",
+        "actions": changed,
+        "missing_action_names": missing_actions,
+        "missing_object_names": missing_objects,
+        "transaction_id": transaction["id"],
+    }
+
+
+def _data_collection_for_object(obj):
+    if obj.type == "CAMERA":
+        return "cameras"
+    if obj.type == "LIGHT":
+        return "lights"
+    if obj.type == "MESH":
+        return "meshes"
+    if obj.type in {"CURVE", "FONT"}:
+        return "curves"
+    if obj.type == "ARMATURE":
+        return "armatures"
+    return ""
+
+
+def clear_animation(
+    context,
+    *,
+    object_names=None,
+    selected_only=True,
+    include_object_animation=True,
+    include_data_animation=True,
+    include_shape_key_animation=True,
+    include_material_animation=False,
+    label="Clear animation",
+):
+    names = [str(name) for name in object_names or [] if str(name).strip()]
+    if names:
+        objects = [bpy.data.objects.get(name) for name in names]
+        missing = [name for name, obj in zip(names, objects) if obj is None]
+        objects = [obj for obj in objects if obj]
+    elif selected_only:
+        objects = list(context.selected_objects)
+        missing = []
+    elif context.active_object:
+        objects = [context.active_object]
+        missing = []
+    else:
+        objects = []
+        missing = []
+    if not objects:
+        return {"ok": False, "message": "No objects found for animation clearing", "missing_object_names": missing}
+    has_clearable_animation = False
+    for obj in objects:
+        if include_object_animation and obj.animation_data:
+            has_clearable_animation = True
+            break
+        if include_data_animation and getattr(obj, "data", None) and obj.data.animation_data:
+            has_clearable_animation = True
+            break
+        if include_shape_key_animation and obj.type == "MESH" and obj.data and obj.data.shape_keys and obj.data.shape_keys.animation_data:
+            has_clearable_animation = True
+            break
+        if include_material_animation:
+            for slot in obj.material_slots:
+                material = slot.material
+                if not material:
+                    continue
+                if material.animation_data or (material.use_nodes and material.node_tree and material.node_tree.animation_data):
+                    has_clearable_animation = True
+                    break
+        if has_clearable_animation:
+            break
+    if not has_clearable_animation:
+        return {"ok": False, "message": "No animation found to clear", "cleared": [], "missing_object_names": missing}
+
+    transaction = live_preview.begin(label, context)
+    cleared = []
+    for obj in objects:
+        if include_object_animation and obj.animation_data:
+            live_preview._record_object_animation(obj)
+            obj.animation_data_clear()
+            cleared.append({"object": obj.name, "target": "object"})
+        if include_data_animation and getattr(obj, "data", None) and obj.data.animation_data:
+            collection = _data_collection_for_object(obj)
+            if collection:
+                live_preview._record_id_animation(obj.data, collection)
+                obj.data.animation_data_clear()
+                cleared.append({"object": obj.name, "target": "data"})
+        if include_shape_key_animation and obj.type == "MESH" and obj.data and obj.data.shape_keys and obj.data.shape_keys.animation_data:
+            _record_shape_keys(obj)
+            obj.data.shape_keys.animation_data_clear()
+            cleared.append({"object": obj.name, "target": "shape_keys"})
+        if include_material_animation:
+            for slot in obj.material_slots:
+                material = slot.material
+                if not material:
+                    continue
+                if material.animation_data:
+                    live_preview._record_id_animation(material, "materials")
+                    material.animation_data_clear()
+                    cleared.append({"object": obj.name, "target": f"material:{material.name}"})
+                if material.use_nodes and material.node_tree and material.node_tree.animation_data:
+                    _record_material_node_tree_animation(material)
+                    material.node_tree.animation_data_clear()
+                    cleared.append({"object": obj.name, "target": f"material_node_tree:{material.name}"})
+    transaction["applied_steps"].append({"type": "clear_animation", "label": label, "cleared": cleared})
+    live_preview.redraw(context)
+    live_preview._mark_pending(context, label)
+    return {
+        "ok": True,
+        "message": f"Cleared {len(cleared)} animation target(s)",
+        "cleared": cleared,
+        "missing_object_names": missing,
+        "transaction_id": transaction["id"],
+    }
+
+
+def set_animation_preview_range(
+    context,
+    *,
+    frame_start,
+    frame_end,
+    current_frame=None,
+    use_preview_range=True,
+    label="Set animation preview range",
+):
+    frame_start, frame_end, error = _normalize_frame_range(frame_start, frame_end, "Preview range")
+    if error:
+        return error
+    scene = context.scene
+    transaction = live_preview.begin(label, context)
+    live_preview._record_scene_playback(scene)
+    scene.use_preview_range = bool(use_preview_range)
+    scene.frame_preview_start = frame_start
+    scene.frame_preview_end = frame_end
+    if current_frame is not None:
+        scene.frame_set(int(current_frame))
+    transaction["applied_steps"].append(
+        {"type": "set_animation_preview_range", "label": label, "frame_start": frame_start, "frame_end": frame_end, "use_preview_range": bool(use_preview_range)}
+    )
+    live_preview.redraw(context)
+    live_preview._mark_pending(context, label)
+    return {"ok": True, "message": f"Set preview range to {frame_start}-{frame_end}", "transaction_id": transaction["id"]}
+
+
+def create_turntable_animation(
+    context,
+    *,
+    object_name="",
+    frame_start,
+    frame_end,
+    axis="Z",
+    revolutions=1.0,
+    add_cycles=False,
+    label="Create turntable animation",
+):
+    obj = bpy.data.objects.get(object_name) if object_name else context.active_object
+    if obj is None:
+        return {"ok": False, "message": "Object not found for turntable animation"}
+    frame_start, frame_end, error = _normalize_frame_range(frame_start, frame_end, "Turntable animation")
+    if error:
+        return error
+    axis_index, axis = _axis_index(axis)
+    transaction = live_preview.begin(label, context)
+    scene = context.scene
+    live_preview._record_scene_timeline(scene)
+    scene.frame_start = min(scene.frame_start, frame_start)
+    scene.frame_end = max(scene.frame_end, frame_end)
+    live_preview._record_object_transform(obj)
+    action = live_preview._assign_preview_action(obj)
+    base_rotation = [float(value) for value in obj.rotation_euler]
+    obj.rotation_euler = base_rotation
+    obj.keyframe_insert(data_path="rotation_euler", frame=frame_start)
+    end_rotation = list(base_rotation)
+    end_rotation[axis_index] += math.tau * float(revolutions)
+    obj.rotation_euler = end_rotation
+    obj.keyframe_insert(data_path="rotation_euler", frame=frame_end)
+    _set_action_interpolation(action, "LINEAR")
+    if add_cycles:
+        live_preview._record_action_edit(action)
+        for fcurve in live_preview._iter_action_fcurves(action):
+            modifier = fcurve.modifiers.new(type="CYCLES")
+            modifier.mode_before = "NONE"
+            modifier.mode_after = "REPEAT"
+    scene.frame_set(frame_start)
+    transaction["applied_steps"].append(
+        {"type": "create_turntable_animation", "label": label, "object": obj.name, "axis": axis, "revolutions": float(revolutions)}
+    )
+    live_preview.redraw(context)
+    live_preview._mark_pending(context, label)
+    return {"ok": True, "message": f"Created turntable animation for {obj.name}", "object": obj.name, "action": action.name, "transaction_id": transaction["id"]}
+
+
+def create_pulse_animation(
+    context,
+    *,
+    object_name="",
+    frame_start,
+    frame_end,
+    scale_factor=1.15,
+    emission_strength_end=None,
+    label="Create pulse animation",
+):
+    obj = bpy.data.objects.get(object_name) if object_name else context.active_object
+    if obj is None:
+        return {"ok": False, "message": "Object not found for pulse animation"}
+    frame_start, frame_end, error = _normalize_frame_range(frame_start, frame_end, "Pulse animation")
+    if error:
+        return error
+    frame_mid = int(round((frame_start + frame_end) / 2))
+    transaction = live_preview.begin(label, context)
+    scene = context.scene
+    live_preview._record_scene_timeline(scene)
+    scene.frame_start = min(scene.frame_start, frame_start)
+    scene.frame_end = max(scene.frame_end, frame_end)
+    live_preview._record_object_transform(obj)
+    action = live_preview._assign_preview_action(obj)
+    base_scale = [float(value) for value in obj.scale]
+    obj.scale = base_scale
+    obj.keyframe_insert(data_path="scale", frame=frame_start)
+    obj.scale = [value * float(scale_factor) for value in base_scale]
+    obj.keyframe_insert(data_path="scale", frame=frame_mid)
+    obj.scale = base_scale
+    obj.keyframe_insert(data_path="scale", frame=frame_end)
+    _set_action_interpolation(action, "SINE")
+    material_action = None
+    if emission_strength_end is not None:
+        material_result = animate_material_property(
+            context,
+            object_name=obj.name,
+            property_name="emission_strength",
+            frame_start=frame_start,
+            frame_end=frame_mid,
+            value_start=0.0,
+            value_end=float(emission_strength_end),
+            label=label,
+        )
+        material_action = material_result.get("action") if material_result.get("ok") else None
+    scene.frame_set(frame_start)
+    transaction["applied_steps"].append(
+        {"type": "create_pulse_animation", "label": label, "object": obj.name, "scale_factor": float(scale_factor), "material_action": material_action}
+    )
+    live_preview.redraw(context)
+    live_preview._mark_pending(context, label)
+    return {"ok": True, "message": f"Created pulse animation for {obj.name}", "object": obj.name, "action": action.name, "material_action": material_action, "transaction_id": transaction["id"]}
+
+
+def create_reveal_animation(
+    context,
+    *,
+    object_name="",
+    frame_start,
+    frame_end,
+    scale_start=0.01,
+    scale_end=1.0,
+    fade_material=True,
+    label="Create reveal animation",
+):
+    obj = bpy.data.objects.get(object_name) if object_name else context.active_object
+    if obj is None:
+        return {"ok": False, "message": "Object not found for reveal animation"}
+    frame_start, frame_end, error = _normalize_frame_range(frame_start, frame_end, "Reveal animation")
+    if error:
+        return error
+    transaction = live_preview.begin(label, context)
+    scene = context.scene
+    live_preview._record_scene_timeline(scene)
+    scene.frame_start = min(scene.frame_start, frame_start)
+    scene.frame_end = max(scene.frame_end, frame_end)
+    live_preview._record_object_transform(obj)
+    action = live_preview._assign_preview_action(obj)
+    base_scale = [float(value) for value in obj.scale]
+    obj.scale = [value * float(scale_start) for value in base_scale]
+    obj.keyframe_insert(data_path="scale", frame=frame_start)
+    obj.scale = [value * float(scale_end) for value in base_scale]
+    obj.keyframe_insert(data_path="scale", frame=frame_end)
+    _set_action_interpolation(action, "BEZIER")
+    material_action = None
+    if fade_material and obj.type == "MESH":
+        material_result = animate_material_property(
+            context,
+            object_name=obj.name,
+            property_name="alpha",
+            frame_start=frame_start,
+            frame_end=frame_end,
+            value_start=0.0,
+            value_end=1.0,
+            label=label,
+        )
+        material_action = material_result.get("action") if material_result.get("ok") else None
+    scene.frame_set(frame_start)
+    transaction["applied_steps"].append(
+        {"type": "create_reveal_animation", "label": label, "object": obj.name, "material_action": material_action}
+    )
+    live_preview.redraw(context)
+    live_preview._mark_pending(context, label)
+    return {"ok": True, "message": f"Created reveal animation for {obj.name}", "object": obj.name, "action": action.name, "material_action": material_action, "transaction_id": transaction["id"]}
+
+
+def create_staggered_motion(
+    context,
+    *,
+    object_names=None,
+    frame_start,
+    duration=24,
+    frame_step=6,
+    location_delta=(0.0, 0.0, 1.0),
+    interpolation="BEZIER",
+    label="Create staggered motion",
+):
+    names = [str(name) for name in object_names or [] if str(name).strip()]
+    if names:
+        objects = [bpy.data.objects.get(name) for name in names]
+        missing = [name for name, obj in zip(names, objects) if obj is None]
+        objects = [obj for obj in objects if obj]
+    else:
+        objects = list(context.selected_objects)
+        missing = []
+    if not objects:
+        return {"ok": False, "message": "No objects found for staggered motion", "missing_object_names": missing}
+    frame_start = int(frame_start)
+    duration = max(1, int(duration))
+    frame_step = max(0, int(frame_step))
+    delta = _coerce_vector(location_delta, (0.0, 0.0, 1.0))
+    transaction = live_preview.begin(label, context)
+    scene = context.scene
+    live_preview._record_scene_timeline(scene)
+    end_frame = frame_start + (len(objects) - 1) * frame_step + duration
+    scene.frame_start = min(scene.frame_start, frame_start)
+    scene.frame_end = max(scene.frame_end, end_frame)
+    animated = []
+    for index, obj in enumerate(objects):
+        start = frame_start + index * frame_step
+        end = start + duration
+        live_preview._record_object_transform(obj)
+        action = live_preview._assign_preview_action(obj)
+        start_location = [float(value) for value in obj.location]
+        end_location = [start_location[0] + delta[0], start_location[1] + delta[1], start_location[2] + delta[2]]
+        obj.location = start_location
+        obj.keyframe_insert(data_path="location", frame=start)
+        obj.location = end_location
+        obj.keyframe_insert(data_path="location", frame=end)
+        _set_action_interpolation(action, interpolation)
+        animated.append({"object": obj.name, "action": action.name, "frame_start": start, "frame_end": end})
+    scene.frame_set(frame_start)
+    transaction["applied_steps"].append(
+        {"type": "create_staggered_motion", "label": label, "objects": animated, "location_delta": list(delta)}
+    )
+    live_preview.redraw(context)
+    live_preview._mark_pending(context, label)
+    return {"ok": True, "message": f"Created staggered motion for {len(animated)} object(s)", "objects": animated, "missing_object_names": missing, "transaction_id": transaction["id"]}
+
+
 def create_text_object(
     context,
     *,
@@ -1275,6 +1930,154 @@ def _link_object_like_source(context, source, duplicate):
         collections = [context.collection or context.scene.collection]
     for collection in collections:
         collection.objects.link(duplicate)
+
+
+def _resolve_edit_objects(context, *, object_names=None, selected_only=True, include_active=False, max_objects=64):
+    names = [str(name) for name in object_names or [] if str(name).strip()]
+    missing = []
+    if names:
+        objects = []
+        for name in names:
+            obj = bpy.data.objects.get(name)
+            if obj:
+                objects.append(obj)
+            else:
+                missing.append(name)
+        return objects[: max(1, int(max_objects or 1))], missing
+    if selected_only:
+        return list(context.selected_objects)[: max(1, int(max_objects or 1))], missing
+    if include_active and context.active_object:
+        return [context.active_object], missing
+    return [], missing
+
+
+def create_empty(
+    context,
+    *,
+    name="Claude Empty",
+    location=(0.0, 0.0, 0.0),
+    rotation=(0.0, 0.0, 0.0),
+    scale=(1.0, 1.0, 1.0),
+    empty_display_type="PLAIN_AXES",
+    empty_display_size=1.0,
+    select_new=True,
+    label="Create empty",
+):
+    transaction = live_preview.begin(label, context)
+    obj = bpy.data.objects.new(name or "Claude Empty", object_data=None)
+    display_type = str(empty_display_type or "PLAIN_AXES").upper()
+    obj.empty_display_type = display_type if display_type in EMPTY_DISPLAY_TYPES else "PLAIN_AXES"
+    obj.empty_display_size = max(0.01, float(empty_display_size))
+    obj.location = _coerce_vector(location, (0.0, 0.0, 0.0))
+    obj.rotation_euler = _coerce_vector(rotation, (0.0, 0.0, 0.0))
+    obj.scale = _coerce_vector(scale, (1.0, 1.0, 1.0))
+    context.scene.collection.objects.link(obj)
+    live_preview._record_created_id("object", obj.name)
+    if select_new:
+        bpy.ops.object.select_all(action="DESELECT")
+        obj.select_set(True)
+        context.view_layer.objects.active = obj
+    transaction["applied_steps"].append({"type": "create_empty", "label": label, "object": obj.name})
+    live_preview.redraw(context)
+    live_preview._mark_pending(context, label)
+    return {"ok": True, "message": f"Created empty {obj.name}", "object": obj.name, "transaction_id": transaction["id"]}
+
+
+def set_object_visibility(
+    context,
+    *,
+    object_names=None,
+    selected_only=True,
+    hide_viewport=None,
+    hide_render=None,
+    hide_select=None,
+    label="Set object visibility",
+):
+    if hide_viewport is None and hide_render is None and hide_select is None:
+        return {"ok": False, "message": "At least one visibility flag is required"}
+    objects, missing = _resolve_edit_objects(context, object_names=object_names, selected_only=selected_only)
+    if not objects:
+        return {"ok": False, "message": "No objects found for visibility update", "missing_object_names": missing}
+    transaction = live_preview.begin(label, context)
+    changed = []
+    warnings = []
+    for obj in objects:
+        live_preview._record_object_visibility(obj)
+        if hide_viewport is not None:
+            value = bool(hide_viewport)
+            obj.hide_viewport = value
+            try:
+                obj.hide_set(value)
+            except Exception as exc:
+                warnings.append(f"Could not set viewport hide state for {obj.name}: {type(exc).__name__}: {exc}")
+        if hide_render is not None:
+            obj.hide_render = bool(hide_render)
+        if hide_select is not None:
+            obj.hide_select = bool(hide_select)
+        changed.append(obj.name)
+    transaction["applied_steps"].append({"type": "set_object_visibility", "label": label, "objects": changed})
+    live_preview.redraw(context)
+    live_preview._mark_pending(context, label)
+    return {
+        "ok": True,
+        "message": f"Updated visibility for {len(changed)} object(s)",
+        "objects": changed,
+        "missing_object_names": missing,
+        "warnings": warnings,
+        "transaction_id": transaction["id"],
+    }
+
+
+def set_object_display(
+    context,
+    *,
+    object_names=None,
+    selected_only=True,
+    display_type="",
+    show_name=None,
+    show_wire=None,
+    show_in_front=None,
+    color=None,
+    empty_display_type="",
+    empty_display_size=None,
+    label="Set object display",
+):
+    has_change = any(
+        value is not None and value != ""
+        for value in (display_type, show_name, show_wire, show_in_front, color, empty_display_type, empty_display_size)
+    )
+    if not has_change:
+        return {"ok": False, "message": "At least one display setting is required"}
+    objects, missing = _resolve_edit_objects(context, object_names=object_names, selected_only=selected_only)
+    if not objects:
+        return {"ok": False, "message": "No objects found for display update", "missing_object_names": missing}
+    display_type = str(display_type or "").upper()
+    empty_display_type = str(empty_display_type or "").upper()
+    display_color = _coerce_color(color) if color is not None else None
+    transaction = live_preview.begin(label, context)
+    changed = []
+    for obj in objects:
+        live_preview._record_object_display(obj)
+        if display_type:
+            obj.display_type = display_type if display_type in OBJECT_DISPLAY_TYPES else "TEXTURED"
+        if show_name is not None:
+            obj.show_name = bool(show_name)
+        if show_wire is not None and hasattr(obj, "show_wire"):
+            obj.show_wire = bool(show_wire)
+        if show_in_front is not None:
+            obj.show_in_front = bool(show_in_front)
+        if display_color is not None:
+            obj.color = display_color
+        if obj.type == "EMPTY":
+            if empty_display_type:
+                obj.empty_display_type = empty_display_type if empty_display_type in EMPTY_DISPLAY_TYPES else "PLAIN_AXES"
+            if empty_display_size is not None:
+                obj.empty_display_size = max(0.01, float(empty_display_size))
+        changed.append(obj.name)
+    transaction["applied_steps"].append({"type": "set_object_display", "label": label, "objects": changed})
+    live_preview.redraw(context)
+    live_preview._mark_pending(context, label)
+    return {"ok": True, "message": f"Updated display settings for {len(changed)} object(s)", "objects": changed, "missing_object_names": missing, "transaction_id": transaction["id"]}
 
 
 def duplicate_selected_objects(

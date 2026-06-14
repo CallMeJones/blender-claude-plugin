@@ -333,6 +333,43 @@ def _record_object_transform(obj):
         transaction["changed_data_blocks"].append(obj.name)
 
 
+def _record_object_visibility(obj):
+    transaction = begin()
+    key = f"object:{obj.name}:visibility"
+    if key not in transaction["before_state"]:
+        try:
+            hide_get = bool(obj.hide_get())
+        except Exception:
+            hide_get = False
+        transaction["before_state"][key] = {
+            "kind": "object_visibility",
+            "object_name": obj.name,
+            "hide_get": hide_get,
+            "hide_viewport": bool(getattr(obj, "hide_viewport", False)),
+            "hide_render": bool(getattr(obj, "hide_render", False)),
+            "hide_select": bool(getattr(obj, "hide_select", False)),
+        }
+        transaction["changed_data_blocks"].append(obj.name)
+
+
+def _record_object_display(obj):
+    transaction = begin()
+    key = f"object:{obj.name}:display"
+    if key not in transaction["before_state"]:
+        transaction["before_state"][key] = {
+            "kind": "object_display",
+            "object_name": obj.name,
+            "display_type": getattr(obj, "display_type", None),
+            "show_name": getattr(obj, "show_name", None),
+            "show_wire": getattr(obj, "show_wire", None),
+            "show_in_front": getattr(obj, "show_in_front", None),
+            "color": _serialize_vector(getattr(obj, "color", (1.0, 1.0, 1.0, 1.0))),
+            "empty_display_type": getattr(obj, "empty_display_type", None),
+            "empty_display_size": getattr(obj, "empty_display_size", None),
+        }
+        transaction["changed_data_blocks"].append(obj.name)
+
+
 def _record_object_materials(obj):
     transaction = begin()
     key = f"object:{obj.name}:materials"
@@ -403,6 +440,20 @@ def _record_scene_timeline(scene):
         }
 
 
+def _record_scene_playback(scene):
+    transaction = begin()
+    key = f"scene:{scene.name}:playback"
+    if key not in transaction["before_state"]:
+        transaction["before_state"][key] = {
+            "kind": "scene_playback",
+            "scene_name": scene.name,
+            "use_preview_range": bool(scene.use_preview_range),
+            "frame_preview_start": int(scene.frame_preview_start),
+            "frame_preview_end": int(scene.frame_preview_end),
+            "frame_current": int(scene.frame_current),
+        }
+
+
 def _record_object_animation(obj):
     transaction = begin()
     key = f"object:{obj.name}:animation"
@@ -417,12 +468,82 @@ def _record_object_animation(obj):
         transaction["changed_data_blocks"].append(obj.name)
 
 
+def _record_id_animation(data_block, collection_name):
+    if data_block is None or not collection_name:
+        return
+    transaction = begin()
+    key = f"id:{collection_name}:{data_block.name}:animation"
+    if key in transaction["before_state"]:
+        return
+    animation_data = data_block.animation_data
+    action = animation_data.action if animation_data else None
+    transaction["before_state"][key] = {
+        "kind": "id_animation",
+        "collection_name": str(collection_name),
+        "data_block_name": data_block.name,
+        "had_animation_data": animation_data is not None,
+        "action_name": action.name if action else None,
+    }
+    transaction["changed_data_blocks"].append(data_block.name)
+
+
 def _assign_preview_action(obj):
     _record_object_animation(obj)
     action = bpy.data.actions.new(name=f"{obj.name} Claude Preview Action")
     obj.animation_data_create().action = action
     _record_created_id("action", action.name)
     return action
+
+
+def _fcurve_modifier_snapshot(modifier):
+    item = {
+        "type": modifier.type,
+        "mute": bool(getattr(modifier, "mute", False)),
+        "show_expanded": bool(getattr(modifier, "show_expanded", False)),
+    }
+    for attr in ("mode_before", "mode_after", "cycles_before", "cycles_after"):
+        if hasattr(modifier, attr):
+            value = getattr(modifier, attr)
+            item[attr] = int(value) if isinstance(value, int) else value
+    return item
+
+
+def _keyframe_point_snapshot(point):
+    return {
+        "co": _serialize_vector((point.co.x, point.co.y, 0.0))[:2],
+        "interpolation": getattr(point, "interpolation", None),
+        "easing": getattr(point, "easing", None),
+        "handle_left_type": getattr(point, "handle_left_type", None),
+        "handle_right_type": getattr(point, "handle_right_type", None),
+        "handle_left": _serialize_vector((point.handle_left.x, point.handle_left.y, 0.0))[:2],
+        "handle_right": _serialize_vector((point.handle_right.x, point.handle_right.y, 0.0))[:2],
+    }
+
+
+def _record_action_edit(action):
+    if action is None:
+        return
+    transaction = begin()
+    key = f"action:{action.name}:edit"
+    if key in transaction["before_state"]:
+        return
+    fcurves = _iter_action_fcurves(action)
+    transaction["before_state"][key] = {
+        "kind": "action_edit",
+        "action_name": action.name,
+        "fcurves": [
+            {
+                "data_path": fcurve.data_path,
+                "array_index": int(fcurve.array_index),
+                "extrapolation": getattr(fcurve, "extrapolation", None),
+                "mute": bool(getattr(fcurve, "mute", False)),
+                "keyframes": [_keyframe_point_snapshot(point) for point in fcurve.keyframe_points],
+                "modifiers": [_fcurve_modifier_snapshot(modifier) for modifier in list(getattr(fcurve, "modifiers", []) or [])],
+            }
+            for fcurve in fcurves
+        ],
+    }
+    transaction["changed_data_blocks"].append(action.name)
 
 
 def _iter_action_fcurves(action):
@@ -1143,7 +1264,13 @@ def revert(context):
     if not transaction or transaction["status"] != "pending":
         return {"ok": False, "message": "No pending preview transaction"}
     rollback_warnings = []
-    for before in list(transaction["before_state"].values()):
+    before_values = list(transaction["before_state"].values())
+    timeline_scene_names = {
+        before["scene_name"]
+        for before in before_values
+        if before.get("scene_name") and "frame_start" in before
+    }
+    for before in before_values:
         if before.get("object_name") and "location" in before:
             obj = bpy.data.objects.get(before["object_name"])
             if obj is None:
@@ -1200,6 +1327,29 @@ def revert(context):
                 constraint = obj.constraints.get(before["name"])
                 if constraint:
                     obj.constraints.remove(constraint)
+        elif before.get("kind") == "object_visibility":
+            obj = bpy.data.objects.get(before["object_name"])
+            if obj:
+                obj.hide_viewport = bool(before["hide_viewport"])
+                obj.hide_render = bool(before["hide_render"])
+                obj.hide_select = bool(before["hide_select"])
+                try:
+                    obj.hide_set(bool(before["hide_get"]))
+                except Exception as exc:
+                    rollback_warnings.append(f"Could not restore viewport hide state for {obj.name}: {type(exc).__name__}: {exc}")
+            else:
+                rollback_warnings.append(f"Missing object for visibility restore: {before['object_name']}")
+        elif before.get("kind") == "object_display":
+            obj = bpy.data.objects.get(before["object_name"])
+            if obj:
+                for attr in ("display_type", "show_name", "show_wire", "show_in_front", "empty_display_type", "empty_display_size"):
+                    value = before.get(attr)
+                    if value is not None and hasattr(obj, attr):
+                        setattr(obj, attr, value)
+                if before.get("color") is not None and hasattr(obj, "color"):
+                    obj.color = before["color"]
+            else:
+                rollback_warnings.append(f"Missing object for display restore: {before['object_name']}")
         elif before.get("material_name") and "diffuse_color" in before:
             material = bpy.data.materials.get(before["material_name"])
             if material:
@@ -1226,6 +1376,14 @@ def revert(context):
                 scene.frame_end = before["frame_end"]
                 scene.render.fps = before["fps"]
                 scene.frame_set(before["frame_current"])
+        elif before.get("kind") == "scene_playback":
+            scene = bpy.data.scenes.get(before["scene_name"])
+            if scene:
+                scene.use_preview_range = before["use_preview_range"]
+                scene.frame_preview_start = before["frame_preview_start"]
+                scene.frame_preview_end = before["frame_preview_end"]
+                if before["scene_name"] not in timeline_scene_names:
+                    scene.frame_set(before["frame_current"])
         elif before.get("kind") == "scene_world":
             scene = bpy.data.scenes.get(before["scene_name"])
             if scene:
@@ -1305,6 +1463,67 @@ def revert(context):
                     light.animation_data_clear()
             else:
                 rollback_warnings.append(f"Missing light data for animation restore: {before['light_data_name']}")
+        elif before.get("kind") == "action_edit":
+            action = bpy.data.actions.get(before["action_name"])
+            if action:
+                current_fcurves = _iter_action_fcurves(action)
+                for saved in before.get("fcurves", []):
+                    fcurve = next(
+                        (
+                            item
+                            for item in current_fcurves
+                            if item.data_path == saved["data_path"] and int(item.array_index) == int(saved["array_index"])
+                        ),
+                        None,
+                    )
+                    if fcurve is None:
+                        rollback_warnings.append(f"Missing f-curve for action restore: {action.name} {saved['data_path']}[{saved['array_index']}]")
+                        continue
+                    if saved.get("extrapolation") is not None:
+                        fcurve.extrapolation = saved["extrapolation"]
+                    fcurve.mute = bool(saved.get("mute", False))
+                    while len(fcurve.modifiers) > 0:
+                        fcurve.modifiers.remove(fcurve.modifiers[-1])
+                    for modifier_state in saved.get("modifiers", []):
+                        try:
+                            modifier = fcurve.modifiers.new(type=modifier_state["type"])
+                        except Exception as exc:
+                            rollback_warnings.append(f"Could not restore f-curve modifier: {type(exc).__name__}: {exc}")
+                            continue
+                        for attr, value in modifier_state.items():
+                            if attr == "type" or not hasattr(modifier, attr):
+                                continue
+                            setattr(modifier, attr, value)
+                    points = list(fcurve.keyframe_points)
+                    saved_points = saved.get("keyframes", [])
+                    if len(points) != len(saved_points):
+                        rollback_warnings.append(f"Keyframe count changed for action restore: {action.name} {saved['data_path']}[{saved['array_index']}]")
+                    for point, point_state in zip(points, saved_points):
+                        point.co = point_state["co"]
+                        if point_state.get("interpolation") is not None:
+                            point.interpolation = point_state["interpolation"]
+                        if point_state.get("easing") is not None and hasattr(point, "easing"):
+                            point.easing = point_state["easing"]
+                        if point_state.get("handle_left_type") is not None:
+                            point.handle_left_type = point_state["handle_left_type"]
+                        if point_state.get("handle_right_type") is not None:
+                            point.handle_right_type = point_state["handle_right_type"]
+                        point.handle_left = point_state["handle_left"]
+                        point.handle_right = point_state["handle_right"]
+                    fcurve.update()
+            else:
+                rollback_warnings.append(f"Missing action for action restore: {before['action_name']}")
+        elif before.get("kind") == "id_animation":
+            collection = getattr(bpy.data, before["collection_name"], None)
+            data_block = collection.get(before["data_block_name"]) if collection and hasattr(collection, "get") else None
+            if data_block:
+                if before["had_animation_data"]:
+                    animation_data = data_block.animation_data_create()
+                    animation_data.action = bpy.data.actions.get(before["action_name"]) if before["action_name"] else None
+                elif data_block.animation_data:
+                    data_block.animation_data_clear()
+            else:
+                rollback_warnings.append(f"Missing data-block for animation restore: {before['collection_name']}:{before['data_block_name']}")
         elif before.get("kind") == "shape_keys":
             obj = bpy.data.objects.get(before["object_name"])
             if obj is None or obj.type != "MESH" or obj.data is None:

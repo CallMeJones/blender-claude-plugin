@@ -108,6 +108,21 @@ TOOL_CONTRACTS = {
         "mutates_scene": True,
         "requires_live_preview": True,
     },
+    "create_empty": {
+        "description": "Create an empty helper object with transform and display settings",
+        "mutates_scene": True,
+        "requires_live_preview": True,
+    },
+    "set_object_visibility": {
+        "description": "Set viewport, render, or selection visibility flags for named or selected objects",
+        "mutates_scene": True,
+        "requires_live_preview": True,
+    },
+    "set_object_display": {
+        "description": "Set object viewport display type, name/wire/in-front flags, display color, and empty display settings",
+        "mutates_scene": True,
+        "requires_live_preview": True,
+    },
     "assign_material_to_selected": {
         "description": "Create or update a material and assign it to selected mesh objects",
         "mutates_scene": True,
@@ -170,6 +185,51 @@ TOOL_CONTRACTS = {
     },
     "create_follow_path_animation": {
         "description": "Animate an object along an existing curve or a new curve built from path points",
+        "mutates_scene": True,
+        "requires_live_preview": True,
+    },
+    "set_action_interpolation": {
+        "description": "Set interpolation and optional easing on action keyframes",
+        "mutates_scene": True,
+        "requires_live_preview": True,
+    },
+    "retime_actions": {
+        "description": "Scale existing action keyframes into a new frame range",
+        "mutates_scene": True,
+        "requires_live_preview": True,
+    },
+    "add_action_cycles": {
+        "description": "Add cycles modifiers to action f-curves for looping animation",
+        "mutates_scene": True,
+        "requires_live_preview": True,
+    },
+    "clear_animation": {
+        "description": "Clear object, data, shape-key, and optional material animation",
+        "mutates_scene": True,
+        "requires_live_preview": True,
+    },
+    "set_animation_preview_range": {
+        "description": "Set scene preview playback range and optional current frame",
+        "mutates_scene": True,
+        "requires_live_preview": True,
+    },
+    "create_turntable_animation": {
+        "description": "Create a rotating product/object turntable animation",
+        "mutates_scene": True,
+        "requires_live_preview": True,
+    },
+    "create_pulse_animation": {
+        "description": "Create a scale pulse and optional emission-strength pulse",
+        "mutates_scene": True,
+        "requires_live_preview": True,
+    },
+    "create_reveal_animation": {
+        "description": "Create a scale reveal and optional material alpha fade",
+        "mutates_scene": True,
+        "requires_live_preview": True,
+    },
+    "create_staggered_motion": {
+        "description": "Create staggered location animation across selected or named objects",
         "mutates_scene": True,
         "requires_live_preview": True,
     },

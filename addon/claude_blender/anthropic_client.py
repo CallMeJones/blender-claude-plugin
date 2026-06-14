@@ -55,10 +55,10 @@ SYSTEM_PROMPT = (
     "When target objects are unclear, use list_scene_objects and select_objects before applying selected-object tools. "
     "When the user asks to change the scene, use safe helper tools first so Blender changes immediately. "
     "Use direct Blender data concepts: objects, collections, materials, cameras, lights, actions, keyframes. "
-    "For scene building and layout, prefer create_primitive, duplicate_selected_objects, parent_selected_to_empty, align_selected_objects, distribute_selected_objects, assign_material_to_selected, assign_emission_material_to_selected, create_shader_material, create_text_object, create_curve_path, create_collection, link_selected_to_collection, add_light, add_camera, add_modifier_to_selected, add_geometry_nodes_modifier, add_track_to_constraint, add_copy_transform_constraint, create_basic_armature, add_particle_system_to_selected, set_render_settings, set_camera_settings, and set_world_background. "
+    "For scene building and layout, prefer create_primitive, create_empty, duplicate_selected_objects, parent_selected_to_empty, align_selected_objects, distribute_selected_objects, set_object_visibility, set_object_display, assign_material_to_selected, assign_emission_material_to_selected, create_shader_material, create_text_object, create_curve_path, create_collection, link_selected_to_collection, add_light, add_camera, add_modifier_to_selected, add_geometry_nodes_modifier, add_track_to_constraint, add_copy_transform_constraint, create_basic_armature, add_particle_system_to_selected, set_render_settings, set_camera_settings, and set_world_background. "
     "For model refinement, prefer shade_smooth_selected, add_bevel_and_subsurf, create_wheel_assembly, add_panel_seams, add_window_materials, and apply_vehicle_refinement_template when they fit the task. "
     "For shape-key animation, prefer create_shape_key and animate_shape_key before drafting Python. "
-    "For animation, prefer set_scene_frame_range, animate_selected_transform, animate_object_bounce, animate_material_property, animate_light_property, create_follow_path_animation, and create_camera_orbit. "
+    "For animation, prefer set_scene_frame_range, set_animation_preview_range, animate_selected_transform, animate_object_bounce, animate_material_property, animate_light_property, create_follow_path_animation, create_turntable_animation, create_pulse_animation, create_reveal_animation, create_staggered_motion, set_action_interpolation, retime_actions, add_action_cycles, clear_animation, and create_camera_orbit. "
     "For complex scene builds that need many objects or more than about eight helper calls, stage one cohesive Blender Python script with draft_script instead of making a long chain of helper calls. "
     "When helper tools cannot express the requested edit, use draft_script to stage Blender Python for user approval. "
     "When calling draft_script, put the complete Python source in the code field. Do not put script code in final chat text for the user to paste manually. "
@@ -703,6 +703,195 @@ def blender_tool_definitions():
             },
         },
         {
+            "name": "set_action_interpolation",
+            "description": "Set keyframe interpolation and optional easing for named actions or object-owned actions. Applies immediately with preview revert support.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "action_names": {"type": "array", "items": {"type": "string"}},
+                    "object_names": {"type": "array", "items": {"type": "string"}},
+                    "selected_only": {"type": "boolean"},
+                    "interpolation": {
+                        "type": "string",
+                        "enum": [
+                            "CONSTANT",
+                            "LINEAR",
+                            "BEZIER",
+                            "SINE",
+                            "QUAD",
+                            "CUBIC",
+                            "QUART",
+                            "QUINT",
+                            "EXPO",
+                            "CIRC",
+                            "BACK",
+                            "BOUNCE",
+                            "ELASTIC",
+                        ],
+                    },
+                    "easing": {"type": "string", "enum": ["AUTO", "EASE_IN", "EASE_OUT", "EASE_IN_OUT"]},
+                    "label": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "retime_actions",
+            "description": "Scale existing action keyframes into a new frame range. Applies immediately with preview revert support.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "action_names": {"type": "array", "items": {"type": "string"}},
+                    "object_names": {"type": "array", "items": {"type": "string"}},
+                    "selected_only": {"type": "boolean"},
+                    "frame_start": {"type": "integer"},
+                    "frame_end": {"type": "integer"},
+                    "snap_to_integer": {"type": "boolean"},
+                    "label": {"type": "string"},
+                },
+                "required": ["frame_start", "frame_end"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "add_action_cycles",
+            "description": "Add cycles modifiers to action f-curves so an animation loops. Applies immediately with preview revert support.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "action_names": {"type": "array", "items": {"type": "string"}},
+                    "object_names": {"type": "array", "items": {"type": "string"}},
+                    "selected_only": {"type": "boolean"},
+                    "mode_before": {"type": "string", "enum": ["NONE", "REPEAT", "REPEAT_OFFSET", "MIRROR"]},
+                    "mode_after": {"type": "string", "enum": ["NONE", "REPEAT", "REPEAT_OFFSET", "MIRROR"]},
+                    "replace_existing": {"type": "boolean"},
+                    "label": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "clear_animation",
+            "description": "Clear object, data, shape-key, and optionally material animation from selected or named objects. Applies immediately with preview revert support.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "object_names": {"type": "array", "items": {"type": "string"}},
+                    "selected_only": {"type": "boolean"},
+                    "include_object_animation": {"type": "boolean"},
+                    "include_data_animation": {"type": "boolean"},
+                    "include_shape_key_animation": {"type": "boolean"},
+                    "include_material_animation": {"type": "boolean"},
+                    "label": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "set_animation_preview_range",
+            "description": "Set scene preview playback range and optionally move the playhead. Applies immediately with preview revert support.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "frame_start": {"type": "integer"},
+                    "frame_end": {"type": "integer"},
+                    "current_frame": {"type": "integer"},
+                    "use_preview_range": {"type": "boolean"},
+                    "label": {"type": "string"},
+                },
+                "required": ["frame_start", "frame_end"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "create_turntable_animation",
+            "description": "Create a simple rotating product/object turntable animation. Applies immediately with preview revert support.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "object_name": {"type": "string"},
+                    "frame_start": {"type": "integer"},
+                    "frame_end": {"type": "integer"},
+                    "axis": {"type": "string", "enum": ["X", "Y", "Z"]},
+                    "revolutions": {"type": "number"},
+                    "add_cycles": {"type": "boolean"},
+                    "label": {"type": "string"},
+                },
+                "required": ["frame_start", "frame_end"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "create_pulse_animation",
+            "description": "Create a scale pulse and optional emission-strength pulse for an object. Applies immediately with preview revert support.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "object_name": {"type": "string"},
+                    "frame_start": {"type": "integer"},
+                    "frame_end": {"type": "integer"},
+                    "scale_factor": {"type": "number"},
+                    "emission_strength_end": {"type": "number"},
+                    "label": {"type": "string"},
+                },
+                "required": ["frame_start", "frame_end"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "create_reveal_animation",
+            "description": "Create a scale reveal and optional material alpha fade. Applies immediately with preview revert support.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "object_name": {"type": "string"},
+                    "frame_start": {"type": "integer"},
+                    "frame_end": {"type": "integer"},
+                    "scale_start": {"type": "number"},
+                    "scale_end": {"type": "number"},
+                    "fade_material": {"type": "boolean"},
+                    "label": {"type": "string"},
+                },
+                "required": ["frame_start", "frame_end"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "create_staggered_motion",
+            "description": "Create staggered location animation across selected or named objects. Applies immediately with preview revert support.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "object_names": {"type": "array", "items": {"type": "string"}},
+                    "frame_start": {"type": "integer"},
+                    "duration": {"type": "integer"},
+                    "frame_step": {"type": "integer"},
+                    "location_delta": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
+                    "interpolation": {
+                        "type": "string",
+                        "enum": [
+                            "CONSTANT",
+                            "LINEAR",
+                            "BEZIER",
+                            "SINE",
+                            "QUAD",
+                            "CUBIC",
+                            "QUART",
+                            "QUINT",
+                            "EXPO",
+                            "CIRC",
+                            "BACK",
+                            "BOUNCE",
+                            "ELASTIC",
+                        ],
+                    },
+                    "label": {"type": "string"},
+                },
+                "required": ["frame_start"],
+                "additionalProperties": False,
+            },
+        },
+        {
             "name": "create_text_object",
             "description": "Create a text object with transform, alignment, size, and optional simple material. Applies immediately with preview revert support.",
             "input_schema": {
@@ -839,6 +1028,67 @@ def blender_tool_definitions():
                     "label": {"type": "string"},
                 },
                 "required": ["color"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "create_empty",
+            "description": "Create an empty helper object with transform and display settings. Applies immediately with preview revert support.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "location": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
+                    "rotation": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "minItems": 3,
+                        "maxItems": 3,
+                        "description": "Euler rotation in radians",
+                    },
+                    "scale": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
+                    "empty_display_type": {"type": "string", "enum": ["PLAIN_AXES", "ARROWS", "SINGLE_ARROW", "CIRCLE", "CUBE", "SPHERE", "CONE", "IMAGE"]},
+                    "empty_display_size": {"type": "number"},
+                    "select_new": {"type": "boolean"},
+                    "label": {"type": "string"},
+                },
+                "required": ["name"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "set_object_visibility",
+            "description": "Set viewport, render, or selection visibility flags for named or selected objects. Applies immediately with preview revert support.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "object_names": {"type": "array", "items": {"type": "string"}},
+                    "selected_only": {"type": "boolean"},
+                    "hide_viewport": {"type": "boolean"},
+                    "hide_render": {"type": "boolean"},
+                    "hide_select": {"type": "boolean"},
+                    "label": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "set_object_display",
+            "description": "Set object viewport display type, name/wire/in-front flags, display color, and empty display settings. Applies immediately with preview revert support.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "object_names": {"type": "array", "items": {"type": "string"}},
+                    "selected_only": {"type": "boolean"},
+                    "display_type": {"type": "string", "enum": ["TEXTURED", "SOLID", "WIRE", "BOUNDS"]},
+                    "show_name": {"type": "boolean"},
+                    "show_wire": {"type": "boolean"},
+                    "show_in_front": {"type": "boolean"},
+                    "color": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 4},
+                    "empty_display_type": {"type": "string", "enum": ["PLAIN_AXES", "ARROWS", "SINGLE_ARROW", "CIRCLE", "CUBE", "SPHERE", "CONE", "IMAGE"]},
+                    "empty_display_size": {"type": "number"},
+                    "label": {"type": "string"},
+                },
                 "additionalProperties": False,
             },
         },
@@ -1188,7 +1438,7 @@ def blender_tool_definitions():
     ]
 
 
-TOOL_SCHEMA_CHAR_BUDGET = 26000
+TOOL_SCHEMA_CHAR_BUDGET = 32000
 
 _CORE_TOOL_NAMES = {
     "inspect_scene",
@@ -1206,6 +1456,9 @@ _TOOL_GROUPS = {
         "set_selected_location_delta",
         "set_selected_transform",
         "create_primitive",
+        "create_empty",
+        "set_object_visibility",
+        "set_object_display",
         "assign_material_to_selected",
         "create_collection",
         "link_selected_to_collection",
@@ -1233,6 +1486,15 @@ _TOOL_GROUPS = {
         "animate_material_property",
         "animate_light_property",
         "create_follow_path_animation",
+        "set_action_interpolation",
+        "retime_actions",
+        "add_action_cycles",
+        "clear_animation",
+        "set_animation_preview_range",
+        "create_turntable_animation",
+        "create_pulse_animation",
+        "create_reveal_animation",
+        "create_staggered_motion",
         "create_camera_orbit",
         "animate_shape_key",
     },
@@ -1242,6 +1504,7 @@ _TOOL_GROUPS = {
         "add_camera",
         "set_active_camera",
         "create_camera_orbit",
+        "create_turntable_animation",
         "set_render_settings",
         "set_camera_settings",
         "set_world_background",
@@ -1266,8 +1529,18 @@ _TOOL_GROUPS = {
         "animate_material_property",
         "animate_light_property",
         "create_follow_path_animation",
+        "set_action_interpolation",
+        "retime_actions",
+        "add_action_cycles",
+        "clear_animation",
+        "set_animation_preview_range",
+        "create_turntable_animation",
+        "create_pulse_animation",
+        "create_reveal_animation",
+        "create_staggered_motion",
         "create_text_object",
         "create_curve_path",
+        "create_empty",
         "add_particle_system_to_selected",
         "create_basic_armature",
         "add_copy_transform_constraint",
@@ -1303,9 +1576,9 @@ _TOOL_GROUPS = {
 
 _GROUP_KEYWORDS = {
     "selection": {"select", "selected", "active", "frame", "playhead", "inspect"},
-    "basic_edit": {"make", "create", "add", "move", "scale", "rotate", "transform", "object", "primitive", "collection", "duplicate", "copy", "parent", "align", "distribute", "layout", "arrange"},
+    "basic_edit": {"make", "create", "add", "move", "scale", "rotate", "transform", "object", "primitive", "empty", "marker", "collection", "duplicate", "copy", "parent", "align", "distribute", "layout", "arrange", "hide", "unhide", "visibility", "visible", "display", "wireframe", "show name", "in front"},
     "materials": {"material", "shader", "color", "colour", "red", "blue", "green", "metal", "metallic", "chrome", "glass", "emission", "glow", "window"},
-    "animation": {"animate", "animation", "keyframe", "timeline", "frame", "orbit", "bounce", "driver", "motion", "follow path", "path"},
+    "animation": {"animate", "animation", "keyframe", "timeline", "frame", "orbit", "bounce", "driver", "motion", "follow path", "path", "retime", "interpolation", "easing", "loop", "cycles", "turntable", "pulse", "reveal", "stagger"},
     "camera_render": {"camera", "render", "light", "lighting", "world", "background", "dof", "depth of field", "lens", "compositor", "resolution", "intensity"},
     "deep_inspect": {"inspect", "analyze", "analyse", "summarize", "summary", "details", "world model", "what", "list"},
     "advanced_create": {"geometry nodes", "shape key", "text", "curve", "particle", "armature", "constraint", "rig", "driver"},
@@ -1416,6 +1689,9 @@ TOOL_FUNCTIONS_FOR_MUTATION_COMPAT = {
     "set_selected_location_delta",
     "set_selected_transform",
     "create_primitive",
+    "create_empty",
+    "set_object_visibility",
+    "set_object_display",
     "assign_material_to_selected",
     "assign_emission_material_to_selected",
     "create_shader_material",
@@ -1423,6 +1699,15 @@ TOOL_FUNCTIONS_FOR_MUTATION_COMPAT = {
     "animate_material_property",
     "animate_light_property",
     "create_follow_path_animation",
+    "set_action_interpolation",
+    "retime_actions",
+    "add_action_cycles",
+    "clear_animation",
+    "set_animation_preview_range",
+    "create_turntable_animation",
+    "create_pulse_animation",
+    "create_reveal_animation",
+    "create_staggered_motion",
     "duplicate_selected_objects",
     "parent_selected_to_empty",
     "align_selected_objects",
