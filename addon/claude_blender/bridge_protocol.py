@@ -345,6 +345,26 @@ TOOL_CONTRACTS = {
         "mutates_scene": True,
         "requires_live_preview": True,
     },
+    "apply_lighting_preset": {
+        "description": "Create a bounded production lighting rig around a target object",
+        "mutates_scene": True,
+        "requires_live_preview": True,
+    },
+    "create_material_palette": {
+        "description": "Create a bounded material palette and optional swatch objects",
+        "mutates_scene": True,
+        "requires_live_preview": True,
+    },
+    "create_product_turntable_setup": {
+        "description": "Create product staging, turntable animation, and camera orbit around a target",
+        "mutates_scene": True,
+        "requires_live_preview": True,
+    },
+    "organize_scene_for_production": {
+        "description": "Link scene objects into production-oriented collections without deleting source links",
+        "mutates_scene": True,
+        "requires_live_preview": True,
+    },
     "add_track_to_constraint": {
         "description": "Add a Track To constraint from selected object(s) to a target object",
         "mutates_scene": True,
@@ -410,8 +430,8 @@ TOOL_CONTRACTS = {
                     "type": "string",
                     "description": (
                         "Optional one-time token copied from Blender after the user approves external execution. "
-                        "Omit this, or pass an empty string, only while a Blender-side timed external script trust "
-                        "window is active."
+                        "Omit this, or pass an empty string, only while a Blender-side external script trust "
+                        "grant is active."
                     ),
                 }
             },

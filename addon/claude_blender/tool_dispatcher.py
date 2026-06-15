@@ -1192,6 +1192,51 @@ def add_dimension_callouts(context, args):
     )
 
 
+def apply_lighting_preset(context, args):
+    return advanced_helpers.apply_lighting_preset(
+        context,
+        target_name=str(args.get("target_name") or ""),
+        preset=str(args.get("preset") or "product_softbox"),
+        rig_name=str(args.get("rig_name") or "Claude Lighting"),
+        label=args.get("label", "Apply lighting preset"),
+    )
+
+
+def create_material_palette(context, args):
+    return advanced_helpers.create_material_palette(
+        context,
+        palette_name=str(args.get("palette_name") or "Claude Material Palette"),
+        palette=str(args.get("palette") or "product_neutral"),
+        create_swatches=bool(args.get("create_swatches", True)),
+        assign_to_selected=bool(args.get("assign_to_selected", False)),
+        label=args.get("label", "Create material palette"),
+    )
+
+
+def create_product_turntable_setup(context, args):
+    return advanced_helpers.create_product_turntable_setup(
+        context,
+        target_name=str(args.get("target_name") or ""),
+        frame_start=int(args.get("frame_start", 1)),
+        frame_end=int(args.get("frame_end", 120)),
+        revolutions=float(args.get("revolutions", 1.0)),
+        radius=float(args.get("radius", 0.0)),
+        height=float(args.get("height", 0.0)),
+        setup_name=str(args.get("setup_name") or "Claude Product Turntable"),
+        create_stage=bool(args.get("create_stage", True)),
+        label=args.get("label", "Create product turntable setup"),
+    )
+
+
+def organize_scene_for_production(context, args):
+    return advanced_helpers.organize_scene_for_production(
+        context,
+        collection_prefix=str(args.get("collection_prefix") or "Claude Production"),
+        selected_only=bool(args.get("selected_only", False)),
+        label=args.get("label", "Organize scene for production"),
+    )
+
+
 def add_track_to_constraint(context, args):
     return live_preview.add_track_to_constraint(
         context,
@@ -1470,6 +1515,10 @@ TOOL_FUNCTIONS = {
     "apply_vehicle_refinement_template": apply_vehicle_refinement_template,
     "create_studio_product_stage": create_studio_product_stage,
     "add_dimension_callouts": add_dimension_callouts,
+    "apply_lighting_preset": apply_lighting_preset,
+    "create_material_palette": create_material_palette,
+    "create_product_turntable_setup": create_product_turntable_setup,
+    "organize_scene_for_production": organize_scene_for_production,
     "add_track_to_constraint": add_track_to_constraint,
     "add_light": add_light,
     "add_camera": add_camera,

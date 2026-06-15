@@ -28,9 +28,11 @@ EXTERNAL_APPROVAL_TTL_SECONDS = 300
 EXTERNAL_TRUST_TTL_SECONDS = 15 * 60
 NO_EXTERNAL_TRUST_STATUS = "No external script trust window"
 EXTERNAL_TRUST_EXPIRED_STATUS = "External script trust window expired"
+EXTERNAL_TRUST_SESSION_STATUS = "External script trust active for this Blender session"
 CHECKPOINT_FILENAME_RE = re.compile(r"-claude-\d{8}-\d{6}\.blend$", re.IGNORECASE)
 
 _runtime_external_trust_expires_at = 0.0
+_runtime_external_trust_session = False
 
 
 def _default_checkpoint_dir():
@@ -125,14 +127,17 @@ def external_script_trust_snapshot(context=None, *, state=None):
     state = state or _scene_state(context)
     now = time.time()
     expires_at = _external_trust_expires_at(state)
+    session_active = bool(state and _runtime_external_trust_session)
     stored_status = getattr(state, "external_script_trust_status", NO_EXTERNAL_TRUST_STATUS) if state else NO_EXTERNAL_TRUST_STATUS
     stored_expires_at = getattr(state, "external_script_trust_expires_at", "") if state else ""
     seconds_remaining = max(0, int(expires_at - now + 0.999)) if expires_at else 0
     stored_expired = stored_status == EXTERNAL_TRUST_EXPIRED_STATUS
-    active = bool(state and expires_at and seconds_remaining > 0)
+    active = bool(session_active or (state and expires_at and seconds_remaining > 0))
     expired = bool(state and ((expires_at and not active) or stored_expired))
-    stale_scene_state = bool(stored_expires_at and not expires_at)
-    if active:
+    stale_scene_state = bool(stored_expires_at and not expires_at and not session_active)
+    if session_active:
+        status = EXTERNAL_TRUST_SESSION_STATUS
+    elif active:
         status = f"External script trust active: {_trust_duration_label(seconds_remaining)} remaining"
     elif expired:
         status = EXTERNAL_TRUST_EXPIRED_STATUS
@@ -148,14 +153,16 @@ def external_script_trust_snapshot(context=None, *, state=None):
         "seconds_remaining": seconds_remaining,
         "can_run_without_token": active,
         "runtime_only": True,
+        "session": session_active,
         "stale_scene_state": stale_scene_state,
     }
 
 
 def clear_external_script_trust(context=None, *, state=None, status=NO_EXTERNAL_TRUST_STATUS):
-    global _runtime_external_trust_expires_at
+    global _runtime_external_trust_expires_at, _runtime_external_trust_session
     state = state or _scene_state(context)
     _runtime_external_trust_expires_at = 0.0
+    _runtime_external_trust_session = False
     if not state:
         return False
     state.external_script_trust_status = str(status or NO_EXTERNAL_TRUST_STATUS)
@@ -210,9 +217,10 @@ def expire_external_script_trust_if_needed(context=None, *, state=None):
 
 
 def clear_external_script_trust_for_all_scenes(*, status=NO_EXTERNAL_TRUST_STATUS, audit_action="clear"):
-    global _runtime_external_trust_expires_at
-    had_runtime_trust = bool(_runtime_external_trust_expires_at)
+    global _runtime_external_trust_expires_at, _runtime_external_trust_session
+    had_runtime_trust = bool(_runtime_external_trust_expires_at or _runtime_external_trust_session)
     _runtime_external_trust_expires_at = 0.0
+    _runtime_external_trust_session = False
     cleared = 0
     for scene in getattr(bpy.data, "scenes", []):
         state = getattr(scene, "claude_blender", None)
@@ -231,14 +239,41 @@ def clear_external_script_trust_for_all_scenes(*, status=NO_EXTERNAL_TRUST_STATU
     return cleared
 
 
-def approve_external_script_trust_window(context, *, ttl_seconds=EXTERNAL_TRUST_TTL_SECONDS):
-    global _runtime_external_trust_expires_at
+def approve_external_script_trust_window(context, *, ttl_seconds=EXTERNAL_TRUST_TTL_SECONDS, session=False):
+    global _runtime_external_trust_expires_at, _runtime_external_trust_session
     state = _scene_state(context)
     if not state:
         return {"ok": False, "message": "No Blender scene state is available"}
+    session = bool(session)
+    if session:
+        _runtime_external_trust_expires_at = 0.0
+        _runtime_external_trust_session = True
+        state.external_script_trust_expires_at = "session"
+        state.external_script_trust_status = external_script_trust_status(state=state)
+        state.status = state.external_script_trust_status
+        _audit_external_script_trust(
+            "grant",
+            state=state,
+            ttl_seconds=None,
+            expires_at=None,
+            status=state.external_script_trust_status,
+        )
+        transcript.record_system_message(
+            "User approved external script trust for this Blender session. "
+            "External clients may run staged scripts without a per-script token until revoke, reload, or bridge restart; "
+            "blocked scripts and failing static checks remain refused."
+        )
+        return {
+            "ok": True,
+            "message": "External script trust approved for this Blender session",
+            "expires_at": 0.0,
+            "ttl_seconds": 0,
+            "session": True,
+        }
     ttl = _coerce_ttl_seconds(ttl_seconds, EXTERNAL_TRUST_TTL_SECONDS)
     expires_at = time.time() + ttl
     _runtime_external_trust_expires_at = expires_at
+    _runtime_external_trust_session = False
     state.external_script_trust_expires_at = f"{expires_at:.6f}"
     state.external_script_trust_status = external_script_trust_status(state=state)
     state.status = state.external_script_trust_status
@@ -259,6 +294,7 @@ def approve_external_script_trust_window(context, *, ttl_seconds=EXTERNAL_TRUST_
         "message": "External script trust window approved",
         "expires_at": expires_at,
         "ttl_seconds": ttl,
+        "session": False,
     }
 
 

@@ -1,4 +1,4 @@
-"""Scene-level state for the Claude for Blender UI."""
+"""Scene-level state for the Blender Agent Bridge UI."""
 
 from __future__ import annotations
 
@@ -188,6 +188,17 @@ class CLAUDEBLENDER_PG_scene_state(bpy.types.PropertyGroup):
     external_script_trust_expires_at: bpy.props.StringProperty(
         name="External Script Trust Expires",
         default="",
+    )
+    external_script_trust_duration: bpy.props.EnumProperty(
+        name="Trust Duration",
+        description="How long external clients may run staged scripts without a per-script token",
+        items=[
+            ("MIN_15", "15 Min", "Trust external staged-script runs for 15 minutes"),
+            ("HOUR_1", "1 Hour", "Trust external staged-script runs for 1 hour"),
+            ("HOUR_4", "4 Hours", "Trust external staged-script runs for 4 hours"),
+            ("SESSION", "Session", "Trust external staged-script runs until revoke, reload, or bridge restart"),
+        ],
+        default="HOUR_1",
     )
     last_script_error_summary: bpy.props.StringProperty(
         name="Last Script Error",

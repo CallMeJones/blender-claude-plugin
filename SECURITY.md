@@ -1,6 +1,6 @@
 # Security
 
-Claude for Blender gives an assistant structured access to a live Blender scene. Treat generated Blender Python as powerful local code.
+Blender Agent Bridge gives AI agents structured access to a live Blender scene. Treat generated Blender Python as powerful local code.
 
 ## Supported Versions
 
@@ -18,6 +18,8 @@ Do not include API keys, bridge tokens, proprietary `.blend` files, or private s
 - The MCP bridge binds to `127.0.0.1` only and can require a bearer token.
 - Live helper tools are bounded and should use reversible preview transactions.
 - Checkpoints are saved before approved scripts when enabled.
+- Runtime external script trust presets allow iterative tokenless script runs only for staged scripts that still pass static checks. Trust is cleared by revoke, add-on reload, file load, or bridge restart depending on the preset.
+- MCP capture resources expose local viewport screenshots to connected MCP clients. Keep screenshots off when visual context is not needed, and treat project-local `.claude_blender/captures/` folders as generated artifacts.
 - Audit events are written locally to `~/.claude_blender/audit.jsonl` by default. Script/code-like arguments, tokens, keys, and passwords are redacted before logging.
 - Static script checks are guardrails, not a sandbox. Blender Python can still access local files, network, and process state if the user approves it.
 
@@ -27,3 +29,4 @@ Do not include API keys, bridge tokens, proprietary `.blend` files, or private s
 - Review `blender_manifest.toml` permissions.
 - Verify no secrets are present in docs, examples, generated zips, or logs.
 - Confirm generated Python cannot run through external MCP without in-Blender approval.
+- Confirm external script trust presets expire, revoke, and clear on bridge restart or reload.

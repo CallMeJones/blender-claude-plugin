@@ -26,6 +26,8 @@ If an installed copy already exists, the script moves it into `.dev-link-backups
 
 Disabling and re-enabling the extension may also work for small edits because `__init__.py` reloads the extension submodules during registration. Restarting Blender is safer after edits to registered Blender classes, properties, panels, operators, or module import order.
 
+With the link active, you do not need to reinstall the zip for normal local testing. Rebuild and reinstall the zip only when testing clean install/load behavior, release packaging, or a user's packaged-extension path. After bridge or MCP server changes, use `Copy MCP Config` again and refresh or restart the MCP client because many clients cache tool lists and server configs.
+
 To target a different Blender version:
 
 ```powershell

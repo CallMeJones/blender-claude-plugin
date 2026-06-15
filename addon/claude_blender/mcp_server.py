@@ -92,6 +92,7 @@ STATUS_OUTPUT_SCHEMA = {
         "external_script_trust_expires_at": {"type": "number"},
         "external_script_trust_seconds_remaining": {"type": "integer"},
         "external_script_trust_can_run_without_token": {"type": "boolean"},
+        "external_script_trust_session": {"type": "boolean"},
         "external_script_trust_stale_scene_state": {"type": "boolean"},
         "mcp_client_refresh_hint": {"type": "string"},
     },
@@ -126,6 +127,20 @@ RESOURCE_TEMPLATES = [
         "name": "audit-resource",
         "title": "Blender Audit Resource",
         "description": "Recent local audit events for MCP and bridge tool calls.",
+        "mimeType": "application/json",
+    },
+    {
+        "uriTemplate": "blender://captures/{capture_id}",
+        "name": "capture-resource",
+        "title": "Blender Capture Resource",
+        "description": "Exact viewport screenshot PNG resources captured by the running Blender bridge.",
+        "mimeType": "image/png",
+    },
+    {
+        "uriTemplate": "blender://captures/{capture_id}/metadata",
+        "name": "capture-metadata-resource",
+        "title": "Blender Capture Metadata Resource",
+        "description": "Exact viewport screenshot metadata for a capture from the running Blender bridge.",
         "mimeType": "application/json",
     },
 ]
@@ -537,7 +552,7 @@ def _tool_category(tool):
         return "script"
     if name in {"commit_preview", "revert_preview"}:
         return "preview"
-    if name.startswith("get_") or name.startswith("list_") or name in {"inspect_scene", "search_blender_docs"}:
+    if name.startswith("get_") or name.startswith("list_") or name in {"inspect_scene", "search_blender_docs", "capture_viewport"}:
         return "inspect"
     if "material" in name or "shader" in name or name == "set_world_background":
         return "materials"
@@ -789,11 +804,11 @@ class BlenderMCPServer:
             },
             "serverInfo": {
                 "name": SERVER_NAME,
-                "title": "Claude for Blender Bridge",
+                "title": "Blender Agent Bridge",
                 "version": SERVER_VERSION,
             },
             "instructions": (
-                "Connects AI clients to the running Blender scene through the Claude for Blender localhost bridge. "
+                "Connects MCP-capable AI clients to the running Blender scene through the Blender Agent Bridge localhost service. "
                 "Start the bridge inside Blender before using scene tools. By default, this server exposes a compact "
                 "tool surface; use search_blender_tools, get_blender_tool_schema, and invoke_blender_tool for the full "
                 "Blender helper catalog. Mutating tools affect the live scene and may leave preview changes pending."
@@ -1081,14 +1096,16 @@ class BlenderMCPServer:
                 ]
             }
         response = self.bridge.get("/resource", {"uri": uri})
+        content = {
+            "uri": uri,
+            "mimeType": response.get("mimeType", "text/plain"),
+        }
+        if "blob" in response:
+            content["blob"] = response.get("blob", "")
+        else:
+            content["text"] = response.get("text", "")
         return {
-            "contents": [
-                {
-                    "uri": uri,
-                    "mimeType": response.get("mimeType", "text/plain"),
-                    "text": response.get("text", ""),
-                }
-            ]
+            "contents": [content]
         }
 
     def resource_templates_list(self, params=None):
@@ -1221,7 +1238,7 @@ def _handle_one(server, message):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="MCP server for Claude for Blender")
+    parser = argparse.ArgumentParser(description="MCP server for Blender Agent Bridge")
     parser.add_argument("--bridge-url", default=os.environ.get("BLENDER_BRIDGE_URL", DEFAULT_BRIDGE_URL))
     parser.add_argument("--token", default=os.environ.get("BLENDER_BRIDGE_TOKEN", ""))
     parser.add_argument("--timeout", type=float, default=float(os.environ.get("BLENDER_BRIDGE_TIMEOUT", "30")))

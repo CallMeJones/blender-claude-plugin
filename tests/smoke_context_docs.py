@@ -41,6 +41,20 @@ def main():
         assert captured["visual_context"]["available"] is False, captured
         assert "interactive Blender window" in captured["message"], captured
 
+        project_dir = tempfile.mkdtemp(prefix="claude-blender-project-", dir=cache_dir)
+        project_blend = os.path.join(project_dir, "Capture Project.blend")
+        bpy.ops.wm.save_as_mainfile(filepath=project_blend)
+        resolved_capture_dir = viewport_capture.resolve_capture_dir(
+            bpy.context,
+            preferred_dir=viewport_capture.default_capture_dir(),
+        )
+        assert resolved_capture_dir["storage_scope"] == "project", resolved_capture_dir
+        assert resolved_capture_dir["project_id"], resolved_capture_dir
+        assert resolved_capture_dir["session_id"], resolved_capture_dir
+        assert resolved_capture_dir["capture_dir"].startswith(
+            os.path.join(project_dir, ".claude_blender", "captures")
+        ), resolved_capture_dir
+
         tiny_png = os.path.join(cache_dir, "tiny.png")
         with open(tiny_png, "wb") as handle:
             handle.write(

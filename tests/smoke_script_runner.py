@@ -242,6 +242,47 @@ print("created", obj.name)
         cleared_stale = script_runner.clear_external_script_trust_for_all_scenes()
         assert cleared_stale >= 1
 
+        session_trusted = script_runner.approve_external_script_trust_window(context, session=True)
+        assert session_trusted["ok"], session_trusted
+        assert session_trusted["session"], session_trusted
+        session_snapshot = script_runner.external_script_trust_snapshot(context, state=state)
+        assert session_snapshot["active"], session_snapshot
+        assert session_snapshot["session"], session_snapshot
+        assert session_snapshot["seconds_remaining"] == 0, session_snapshot
+        assert "session" in session_snapshot["status"].lower(), session_snapshot
+        session_bridge_status = bridge_server._scene_status()
+        assert session_bridge_status["external_script_trust"] is True, session_bridge_status
+        assert session_bridge_status["external_script_trust_session"] is True, session_bridge_status
+        session_script = script_runner.stage_script(
+            context,
+            intent="Run through session trust",
+            expected_changes="A scene custom property is set",
+            risk_level="low",
+            target_objects=[],
+            code="scene['claude_session_trust_smoke'] = 'ok'\nprint(scene['claude_session_trust_smoke'])",
+        )
+        assert session_script["ok"], session_script
+        session_result = script_runner.run_externally_approved_script(context, "", checkpoint_enabled=False)
+        assert session_result["ok"], session_result
+        assert context.scene["claude_session_trust_smoke"] == "ok"
+        assert script_runner.external_script_trust_active(context, state=state)
+        session_revoked = script_runner.revoke_external_script_trust_window(context)
+        assert session_revoked["ok"], session_revoked
+        assert not script_runner.external_script_trust_active(context, state=state)
+
+        staged = script_runner.stage_script(
+            context,
+            intent="Create a harmless object during the timed trust window",
+            expected_changes=f"Creates mesh object {OBJECT_NAME}",
+            risk_level="low",
+            target_objects=[OBJECT_NAME],
+            code=safe_code,
+        )
+        assert staged["ok"], staged
+        assert staged["analysis"]["ok"], staged
+        assert state.pending_script
+        assert not state.pending_script_blocked
+
         trusted = script_runner.approve_external_script_trust_window(context, ttl_seconds=900)
         assert trusted["ok"], trusted
         assert script_runner.external_script_trust_active(context, state=state)

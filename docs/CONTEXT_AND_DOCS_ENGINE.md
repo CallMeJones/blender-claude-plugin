@@ -199,6 +199,10 @@ Initial helpers:
 - `apply_vehicle_refinement_template(target_name, detail_level)`
 - `create_studio_product_stage(target_name, stage_name, floor, backdrop, lighting, camera)`
 - `add_dimension_callouts(target_name, unit_label, include_width, include_depth, include_height)`
+- `apply_lighting_preset(target_name, preset, rig_name)`
+- `create_material_palette(palette_name, palette, create_swatches, assign_to_selected)`
+- `create_product_turntable_setup(target_name, frame_start, frame_end, revolutions, setup_name)`
+- `organize_scene_for_production(collection_prefix, selected_only)`
 
 Helpers should validate inputs and return structured results. Claude can still propose Python for advanced operations, but the default path for common edits should be helper-first.
 
@@ -234,7 +238,9 @@ Claude should prefer immediate helper calls for low-risk visible changes and res
 
 ## Viewport Image Context
 
-When the `Viewport` toggle is enabled, `viewport_capture.py` tries to capture a PNG from the active Blender UI area and attach it to the Anthropic request as an image block. If the capture exceeds the configured byte budget, the add-on downscales and re-saves the PNG with Blender's image API before attaching it. The context bundle keeps only metadata such as capture method, local path, media type, dimensions, resize status, and byte size in transcript-visible text.
+When the `Viewport` toggle is enabled, `viewport_capture.py` tries to capture a PNG from the active Blender UI area and attach it to the Anthropic request as an image block. If the capture exceeds the configured byte budget, the add-on downscales and re-saves the PNG with Blender's image API before attaching it. The context bundle keeps only metadata such as capture method, local path, media type, dimensions, resize status, byte size, project/session ids, and MCP capture resource URIs in transcript-visible text.
+
+By default, saved `.blend` files store viewport captures beside the project in `.claude_blender/captures/<session_id>`. Unsaved or unwritable projects fall back to `~/.claude_blender/captures/<project_id>/<session_id>`, and a custom capture cache preference acts as a custom base directory with the same project/session partitioning. The MCP bridge exposes `blender://captures/latest`, `blender://captures/latest/metadata`, and exact `blender://captures/{capture_id}` resources. Treat project-local captures as generated runtime artifacts; ignore `.claude_blender/captures/` in source control unless a project intentionally keeps visual QA evidence.
 
 If Blender is running headless or the screenshot operator fails, the visual context records `requested: true` and `available: false` without blocking the prompt.
 

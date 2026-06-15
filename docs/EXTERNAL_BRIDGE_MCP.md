@@ -2,7 +2,7 @@
 
 ## Goal
 
-Claude for Blender can now expose the live Blender scene to external agents through a localhost bridge and a stdio MCP server. This is the Codex/Claude Code style path: Blender keeps direct `bpy` access, while external clients discover tools/resources and call them over a standard protocol.
+Blender Agent Bridge exposes the live Blender scene to external agents through a localhost bridge and a stdio MCP server. This is the Codex/Claude Code style path: Blender keeps direct `bpy` access, while external clients discover tools/resources and call them over a standard protocol.
 
 ## Architecture
 
@@ -20,7 +20,7 @@ The add-on owns all Blender reads/writes. The MCP server is a small stdlib Pytho
 ## Start The Bridge
 
 1. Install and enable the latest `claude_blender-0.1.0.zip`.
-2. Open the `Claude` sidebar.
+2. Open the add-on sidebar in the 3D View.
 3. In `External Bridge`, press `Start`.
 4. Optional: set `Bridge Token` in add-on preferences before starting.
 5. Press `Copy MCP Config` and paste it into a client that supports local MCP servers.
@@ -128,6 +128,12 @@ Current resources:
 - `blender://tools/contracts`
 - `blender://transcript/latest`
 - `blender://audit/latest`
+- `blender://captures/latest`
+- `blender://captures/latest/metadata`
+- `blender://captures/{capture_id}`
+- `blender://captures/{capture_id}/metadata`
+
+`blender://captures/latest` is scoped to the currently connected Blender bridge and its active project/session. Capture metadata includes the exact `capture_id` resource URIs for repeat reads. By default, saved `.blend` files store captures in a hidden project-local `.claude_blender/captures/<session_id>` folder so separate projects do not overwrite each other. Unsaved or unwritable projects fall back to `~/.claude_blender/captures/<project_id>/<session_id>`. A custom capture cache preference remains a custom base directory and still gets project/session subfolders.
 
 ## Prompts
 
@@ -141,7 +147,7 @@ MCP tools are model-controlled, so the external client must make tool use visibl
 - Live helper tools mutate the scene through preview rollback.
 - Generated arbitrary Python is still staged with `draft_script` and requires approval inside Blender.
 - External `run_approved_script` calls normally include a one-time token minted by the Blender sidebar's `Approve External Run` action. Tokens are short-lived, bound to the current pending script text, and consumed after one call.
-- For iterative sessions, the Blender sidebar can also grant a 15-minute external script trust window. While active, external clients may call `run_approved_script` without `approval_token`, or with an empty token string; Blender still requires a staged pending script, reruns static checks, refuses blocked scripts, and records the call in the audit log. Use `Revoke Trust` to end the window early. Trust grants are runtime-only and are cleared on add-on reload, file load, and bridge start.
+- For iterative sessions, the Blender sidebar can also grant external script trust from presets such as 15 minutes, 1 hour, 4 hours, or the current Blender session. While active, external clients may call `run_approved_script` without `approval_token`, or with an empty token string; Blender still requires a staged pending script, reruns static checks, refuses blocked scripts, and records the call in the audit log. Use `Revoke Trust` to end the window early. Trust grants are runtime-only and are cleared on add-on reload, file load, and bridge start.
 - The bridge is off until started and binds to localhost only.
 - Optional bearer token auth is available through add-on preferences.
 - MCP and bridge tool calls are recorded in a local JSONL audit log at `~/.claude_blender/audit.jsonl` by default, with code/token-like arguments redacted.

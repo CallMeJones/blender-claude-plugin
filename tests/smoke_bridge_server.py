@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sys
+import tempfile
 import threading
 import time
 import urllib.parse
@@ -17,7 +19,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(ROOT, "addon"))
 
 import claude_blender  # noqa: E402
-from claude_blender import bridge_server  # noqa: E402
+from claude_blender import bridge_server, viewport_capture  # noqa: E402
 
 
 def _request_with_pump(fn, timeout=10):
@@ -74,6 +76,10 @@ def main():
         assert "apply_vehicle_refinement_template" in names, names
         assert "create_studio_product_stage" in names, names
         assert "add_dimension_callouts" in names, names
+        assert "apply_lighting_preset" in names, names
+        assert "create_material_palette" in names, names
+        assert "create_product_turntable_setup" in names, names
+        assert "organize_scene_for_production" in names, names
 
         health = _request_with_pump(lambda: _get(base + "/health"))
         assert health["ok"], health
@@ -89,10 +95,33 @@ def main():
         resources = _get(base + "/resources")
         uris = {item["uri"] for item in resources["resources"]}
         assert "blender://scene/context" in uris, resources
+        assert "blender://captures/latest" in uris, resources
+        assert "blender://captures/latest/metadata" in uris, resources
         resource_url = base + "/resource?" + urllib.parse.urlencode({"uri": "blender://scene/status"})
         resource = _request_with_pump(lambda: _get(resource_url))
         assert resource["ok"], resource
         assert json.loads(resource["text"])["scene"] == bpy.context.scene.name
+
+        capture_dir = tempfile.mkdtemp(prefix="claude-blender-captures-")
+        capture_path = os.path.join(capture_dir, "viewport-test.png")
+        image = bpy.data.images.new("Claude Test Capture", width=1, height=1)
+        image.pixels[:] = [1.0, 1.0, 1.0, 1.0]
+        image.filepath_raw = capture_path
+        image.file_format = "PNG"
+        image.save()
+        bpy.data.images.remove(image)
+        latest = viewport_capture.latest_capture_resource(capture_dir=capture_dir)
+        assert latest["mimeType"] == "image/png", latest
+        assert latest["blob"], latest
+        assert latest["captureId"], latest
+        exact = viewport_capture.capture_resource(latest["captureId"], capture_dir=capture_dir)
+        assert exact["blob"] == latest["blob"], exact
+        metadata = viewport_capture.latest_capture_metadata(capture_dir=capture_dir)
+        assert metadata["resource_uri"] == "blender://captures/latest", metadata
+        assert metadata["exact_resource_uri"].endswith(latest["captureId"]), metadata
+        exact_metadata = viewport_capture.capture_metadata(latest["captureId"], capture_dir=capture_dir)
+        assert exact_metadata["resource_uri"].endswith(latest["captureId"]), exact_metadata
+        shutil.rmtree(capture_dir, ignore_errors=True)
 
         stopped = bridge_server.stop_bridge()
         assert stopped["ok"], stopped

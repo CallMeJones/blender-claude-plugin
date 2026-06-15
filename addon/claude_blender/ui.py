@@ -61,6 +61,19 @@ RETRY_DRAFT_PROMPT = (
     "put the complete Python source in the code field, and do not paste code into chat."
 )
 
+TRUST_DURATION_SECONDS = {
+    "MIN_15": 15 * 60,
+    "HOUR_1": 60 * 60,
+    "HOUR_4": 4 * 60 * 60,
+}
+
+TRUST_DURATION_BUTTON_TEXT = {
+    "MIN_15": "Trust 15 Min",
+    "HOUR_1": "Trust 1 Hour",
+    "HOUR_4": "Trust 4 Hours",
+    "SESSION": "Trust Session",
+}
+
 
 def _prefs(context):
     return preferences.get_preferences(context)
@@ -385,8 +398,15 @@ def _draw_ask_section(layout, state, prefs):
     trust_active = trust_snapshot["active"]
     trust_status = trust_snapshot["status"]
     trust_row = ask_box.row(align=True)
-    trust = trust_row.operator("claude_blender.approve_external_script_trust", text="Trust 15 Min", icon="KEYTYPE_KEYFRAME_VEC")
-    trust.ttl_seconds = script_runner.EXTERNAL_TRUST_TTL_SECONDS
+    trust_row.prop(state, "external_script_trust_duration", text="")
+    trust_preset = str(getattr(state, "external_script_trust_duration", "HOUR_1") or "HOUR_1")
+    trust = trust_row.operator(
+        "claude_blender.approve_external_script_trust",
+        text=TRUST_DURATION_BUTTON_TEXT.get(trust_preset, "Trust"),
+        icon="KEYTYPE_KEYFRAME_VEC",
+    )
+    trust.ttl_seconds = TRUST_DURATION_SECONDS.get(trust_preset, script_runner.EXTERNAL_TRUST_TTL_SECONDS)
+    trust.session_trust = trust_preset == "SESSION"
     revoke_row = trust_row.row(align=True)
     revoke_row.enabled = trust_active or trust_snapshot["expired"]
     revoke_row.operator("claude_blender.revoke_external_script_trust", text="Revoke Trust", icon="CANCEL")
@@ -745,7 +765,7 @@ class CLAUDEBLENDER_OT_approve_external_script_run(bpy.types.Operator):
 class CLAUDEBLENDER_OT_approve_external_script_trust(bpy.types.Operator):
     bl_idname = "claude_blender.approve_external_script_trust"
     bl_label = "Trust External Scripts"
-    bl_description = "Allow external clients to run staged, static-check-passing scripts for a limited time"
+    bl_description = "Allow external clients to run staged, static-check-passing scripts for the selected time"
     bl_options = {"REGISTER"}
 
     ttl_seconds: bpy.props.IntProperty(
@@ -753,20 +773,31 @@ class CLAUDEBLENDER_OT_approve_external_script_trust(bpy.types.Operator):
         default=script_runner.EXTERNAL_TRUST_TTL_SECONDS,
         min=1,
     )
+    session_trust: bpy.props.BoolProperty(
+        name="Session Trust",
+        default=False,
+    )
 
     def execute(self, context):
         state = context.scene.claude_blender
         result = script_runner.approve_external_script_trust_window(
             context,
             ttl_seconds=self.ttl_seconds,
+            session=self.session_trust,
         )
         message = result.get("message", "External script trust window finished")
         if result.get("ok"):
-            state.last_response = (
-                "External script trust window approved.\n"
-                "External clients can run staged scripts without a per-script token while this window is active.\n"
-                f"Expires in {result.get('ttl_seconds', script_runner.EXTERNAL_TRUST_TTL_SECONDS)} second(s)."
-            )
+            if result.get("session"):
+                state.last_response = (
+                    "External script trust approved for this Blender session.\n"
+                    "External clients can run staged scripts without a per-script token until Revoke, reload, file load, or bridge restart."
+                )
+            else:
+                state.last_response = (
+                    "External script trust window approved.\n"
+                    "External clients can run staged scripts without a per-script token while this window is active.\n"
+                    f"Expires in {result.get('ttl_seconds', script_runner.EXTERNAL_TRUST_TTL_SECONDS)} second(s)."
+                )
             self.report({"INFO"}, "External script trust window approved")
             return {"FINISHED"}
         state.last_response = f"External script trust window was not approved.\n{message}"
@@ -777,7 +808,7 @@ class CLAUDEBLENDER_OT_approve_external_script_trust(bpy.types.Operator):
 class CLAUDEBLENDER_OT_revoke_external_script_trust(bpy.types.Operator):
     bl_idname = "claude_blender.revoke_external_script_trust"
     bl_label = "Revoke External Trust"
-    bl_description = "Revoke the timed external script trust window"
+    bl_description = "Revoke the active external script trust grant"
     bl_options = {"REGISTER"}
 
     def execute(self, context):

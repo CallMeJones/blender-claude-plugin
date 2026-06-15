@@ -17,9 +17,11 @@ from . import (
     bridge_protocol,
     build_info,
     context_bundle,
+    preferences,
     script_runner,
     tool_dispatcher,
     transcript,
+    viewport_capture,
 )
 
 
@@ -74,6 +76,7 @@ def _scene_status():
         "external_script_trust_expires_at": float(trust.get("expires_at", 0.0) or 0.0),
         "external_script_trust_seconds_remaining": int(trust.get("seconds_remaining", 0) or 0),
         "external_script_trust_can_run_without_token": bool(trust.get("can_run_without_token", False)),
+        "external_script_trust_session": bool(trust.get("session", False)),
         "external_script_trust_stale_scene_state": bool(trust.get("stale_scene_state", False)),
         "mcp_client_refresh_hint": (
             "Restart or refresh the MCP client if newly added Blender tools are missing from its callable tool list."
@@ -142,18 +145,40 @@ def _resources():
         {
             "uri": "blender://transcript/latest",
             "name": "latest-transcript",
-            "title": "Claude for Blender Transcript",
+            "title": "Blender Agent Bridge Transcript",
             "description": "Local transcript Text datablock contents",
             "mimeType": "text/plain",
         },
         {
             "uri": "blender://audit/latest",
             "name": "latest-audit-log",
-            "title": "Claude for Blender Audit Log",
+            "title": "Blender Agent Bridge Audit Log",
             "description": "Recent local JSON audit events for bridge and MCP tool calls",
             "mimeType": "application/json",
         },
+        {
+            "uri": viewport_capture.LATEST_CAPTURE_RESOURCE_URI,
+            "name": "latest-capture",
+            "title": "Latest Viewport Capture",
+            "description": "Latest viewport screenshot PNG captured by the Blender add-on",
+            "mimeType": "image/png",
+        },
+        {
+            "uri": viewport_capture.LATEST_CAPTURE_METADATA_URI,
+            "name": "latest-capture-metadata",
+            "title": "Latest Viewport Capture Metadata",
+            "description": "Metadata and local path for the latest viewport screenshot",
+            "mimeType": "application/json",
+        },
     ]
+
+
+def _capture_cache_dir():
+    try:
+        prefs = preferences.get_preferences(bpy.context)
+        return getattr(prefs, "capture_cache_dir", None)
+    except Exception:
+        return None
 
 
 def _read_resource(uri):
@@ -173,6 +198,36 @@ def _read_resource(uri):
             "mimeType": "application/json",
             "text": json.dumps({"ok": True, "events": audit_log.read_recent(80)}, indent=2, sort_keys=True),
         }
+    if uri == viewport_capture.LATEST_CAPTURE_RESOURCE_URI:
+        return viewport_capture.latest_capture_resource(context=bpy.context, preferred_dir=_capture_cache_dir())
+    if uri == viewport_capture.LATEST_CAPTURE_METADATA_URI:
+        return {
+            "mimeType": "application/json",
+            "text": json.dumps(
+                viewport_capture.latest_capture_metadata(context=bpy.context, preferred_dir=_capture_cache_dir()),
+                indent=2,
+                sort_keys=True,
+            ),
+        }
+    capture_id, wants_metadata = viewport_capture.parse_capture_resource_uri(uri)
+    if capture_id and capture_id != "latest":
+        if wants_metadata:
+            metadata = viewport_capture.capture_metadata(
+                capture_id,
+                context=bpy.context,
+                preferred_dir=_capture_cache_dir(),
+            )
+            if not metadata.get("available"):
+                return None
+            return {
+                "mimeType": "application/json",
+                "text": json.dumps(metadata, indent=2, sort_keys=True),
+            }
+        return viewport_capture.capture_resource(
+            capture_id,
+            context=bpy.context,
+            preferred_dir=_capture_cache_dir(),
+        )
     return None
 
 

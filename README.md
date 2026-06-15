@@ -1,132 +1,77 @@
-# Claude for Blender
+# Blender Agent Bridge
 
-Interactive Blender extension that connects Claude/Anthropic to the current scene, viewport, and Blender Python API so a user can ask for modeling, lighting, layout, rigging, and animation changes from inside Blender.
+Blender Agent Bridge is a Blender extension and local MCP bridge for scene-aware AI agents. It brings a Claude-powered assistant into the 3D View sidebar, and it exposes the running Blender scene to Codex, Claude Desktop, Claude Code, and other MCP-capable clients through a localhost bridge.
 
-## Product Goal
+The project was originally named Claude for Blender. The internal add-on id, Python package, zip name, local paths, and MCP environment variables still use `claude_blender` for compatibility.
 
-The extension should feel like a scene-aware creative collaborator inside Blender:
+Recommended GitHub repository name: `blender-agent-bridge`.
 
-- It can inspect the open `.blend` file through structured scene data.
-- It can attach a bounded viewport screenshot when the Viewport toggle is enabled.
-- It can reason with version-relevant Blender Python documentation.
-- It can propose, explain, and run Blender Python changes with user approval.
-- It can build objects, modify materials, set up cameras/lights, and create animations.
-- It can use safe helper tools and script templates so common edits are simple and less fragile.
-- It can inspect deeper Blender systems such as geometry nodes, shader nodes, rigs, constraints/drivers, shape keys, curves/text, simulations, collections/view layers, render settings, cameras, and compositor nodes through read-only tools.
-- It can use bounded advanced helpers for shader materials, Geometry Nodes starter groups, shape keys, text/curves, particle systems, armatures, copy-transform constraints, render settings, camera settings, and world background colors before falling back to approved Python.
-- It can expose the running Blender scene over an optional localhost bridge plus stdio MCP server, so external MCP clients can inspect resources and call Blender tools.
-- It can apply approved low-risk changes immediately so the viewport and timeline update as Claude works.
-- It can let Claude call safe Blender tools for object listing/selection, playhead changes, selected-object movement, absolute transforms, primitive/empty creation, object visibility/display, material assignment, emission materials, collections, modifiers, Track To constraints, timeline setup, active camera selection, transform keyframes, lights, cameras, and camera orbits.
+## Status
 
-## Initial Direction
+- Early `0.1.0` extension.
+- Targets Blender `5.1.0` or newer, matching `addon/claude_blender/blender_manifest.toml`.
+- Uses Anthropic's Messages API for the in-Blender Claude assistant.
+- Supports optional local MCP access through a `127.0.0.1` bridge.
+- Supports the latest public `main` branch only while the project is still moving quickly.
 
-Build this as a Blender 4.2+ extension with a 3D View sidebar panel, a Claude Messages API client, a context/docs engine, and a client-side tool loop. Claude should not get blanket control of Blender. Instead, the add-on exposes specific tools such as `inspect_scene`, `get_object_details`, `capture_viewport`, `search_blender_docs`, `draft_script`, and `run_approved_script`.
+## Capabilities
 
-The first usable milestone is a human-in-the-loop assistant with live preview:
+- Inspect the active `.blend` file through structured scene, selection, material, animation, rigging, render, camera, compositor, collection, and node-tree summaries.
+- Attach a bounded viewport screenshot when the `Viewport` toggle is enabled, with project/session-scoped local storage and MCP image resources for external clients.
+- Search cached official Blender Python API documentation before version-sensitive scripting.
+- Let the in-Blender Claude assistant or external MCP agents call bounded live helper tools for common scene edits such as transforms, primitives, materials, cameras, lights, keyframes, constraints, geometry-node starters, shape keys, particles, text/curves, render settings, lighting presets, material palettes, product turntables, and production scene organization.
+- Keep live helper edits inside preview transactions so the user can commit, revert, or use Blender undo.
+- Stage arbitrary Blender Python in the `Claude Pending Script` Text datablock and run it only after approval inside Blender.
+- Grant optional runtime-only external script trust from sidebar presets for iterative MCP/client sessions. Staged scripts still pass static checks before running.
+- Store local chat history, transcript state, pending scripts, script logs, repair context, and optional scene-agent memory in Blender Text datablocks.
+- Write local audit events for bridge and MCP tool calls with redaction for code, tokens, keys, passwords, and credential-like fields.
 
-1. User asks a prompt in Blender.
-2. Add-on sends Claude a scene summary and optional screenshot.
-3. Claude responds with guidance, safe helper calls, or a proposed Blender Python script.
-4. Low-risk helper calls can update the scene immediately inside a reversible preview transaction.
-5. Riskier generated Python is shown for approval before execution.
-6. The user can commit, undo, or revert the visible changes.
+## Safety and Privacy
 
-Viewport screenshots are captured only when the `Viewport` toggle is on. The full base64 image is sent to Claude as an image block but omitted from the local transcript text.
-The sidebar shows screenshot status, file size, path, and a stable Blender image datablock name (`Claude Viewport Preview`) after capture. Use `Capture Preview` to test the screenshot without calling Claude, and `Open Screenshot` to inspect the exact PNG.
+Connected agents do not get blanket access to Blender. The in-Blender Claude assistant sends compact context and selected tool schemas to Anthropic, while the extension executes local helper calls itself and requires approval for generated Python.
 
-The sidebar also includes a Docs section. `Check` reports the local docs cache state, and `Build Full Python Docs Cache` downloads Blender's official versioned Python API zip, extracts it locally, and builds a compact searchable JSON index. Claude receives only the top matching snippets, not the whole docs set.
+Viewport images are sent only when the user enables the `Viewport` toggle. The localhost bridge does not call a model provider by itself; external MCP clients decide what to send to their own providers after reading resources or tool results.
 
-LLM requests are guarded by a context budget. Large scene data, docs search results, tool results, and transcript-visible context are compacted/truncated before the Anthropic API request is built, while screenshots remain separate image blocks.
+Saved `.blend` projects store generated viewport captures under `.claude_blender/captures/<session_id>` by default, while unsaved or unwritable projects fall back to the user cache. Treat these captures as generated runtime artifacts unless you intentionally keep them as visual QA evidence.
 
-The assistant now has scene-agent memory. Each successful prompt appends a compact turn summary to the `Claude Agent Memory` Text datablock, and that memory is sent with future prompts when the `Memory` toggle is on. Clearing the input box does not clear memory; use `Clear Memory` when you want a fresh working thread. Current Blender scene context remains authoritative if memory is stale.
+See [SECURITY.md](SECURITY.md) and [PRIVACY.md](PRIVACY.md) for the detailed model.
 
-Requests now pass through a token-aware context planner before Claude is called. The sidebar shows the planned character count and rough token estimate, and the bundle includes a `context_plan` that tells Claude what was included or omitted. Instead of concatenating every object, memory entry, material, animation, node tree, rig, collection, and docs page into the prompt, Claude can call read-only local tools such as `inspect_scene`, `get_object_details`, `get_animation_details`, `get_material_node_details`, `get_geometry_nodes_details`, `get_shader_nodes_details`, `get_rigging_details`, `get_shape_key_details`, `get_curve_text_details`, `get_simulation_details`, `get_collection_layer_details`, `get_render_camera_compositor_details`, and `search_blender_docs` when it needs deeper detail.
+## Requirements
 
-Tool schemas are also selected per request. The agent loop keeps a small core set of inspection/docs tools, then adds only the helper groups that match the prompt and recent memory, such as animation, materials, camera/rendering, geometry nodes, rigging, particles, or vehicle refinement. The request context includes a `tool_selection` summary with selected tool names and schema token estimates, so Claude knows which actions are available without carrying the whole toolbox every turn.
+- Blender `5.1.0+`.
+- Python available on `PATH` for build scripts and the external MCP server.
+- `ANTHROPIC_API_KEY` set in the environment before launching Blender when using the in-Blender Claude chat.
+- Network permission for Anthropic requests, Blender docs downloads, and the optional localhost bridge.
+- File permission for docs caches, viewport captures, checkpoints, transcripts, and audit logs.
 
-The extension now includes an External Bridge section. Press `Start` to expose a localhost-only JSON bridge from Blender, then `Copy MCP Config` to copy a stdio MCP server config for clients that support local MCP servers. The MCP surface is compact by default: use `blender_tool_catalog` as the single search/schema/invoke entry point for the full Blender helper catalog. Compatibility wrappers for search, schema lookup, and invocation remain available. See [EXTERNAL_BRIDGE_MCP.md](docs/EXTERNAL_BRIDGE_MCP.md).
+## Install from Source
 
-If a client still shows an old tool list after a zip reinstall or reload, replace the copied MCP config and refresh or restart that MCP client. The copied config includes add-on, bridge, MCP server, and config-version metadata in the server `env` block to make stale configs easier to spot.
+Build the extension zip from the repository root:
 
-The sidebar is chat-oriented: `Send` starts a new instruction and clears the input box, `Continue` asks Claude to keep working from the current scene and memory, and short prompts like `ok`/`continue` are expanded into a real continuation request. Recent messages are stored in the `Claude Chat History` Text datablock and shown in the Conversation section. They do not approve or run generated Python.
-
-The Action Center groups the current agent state: running tool, pending script approval, live preview commit/revert, screenshot capture/open, docs cache controls, checkpoint status, and retry actions when Claude needs to stage a script again.
-
-Generated Python now uses an approval gate. If Claude needs Blender API code beyond the live helper tools, it can call `draft_script`, which writes the proposed code to the `Claude Pending Script` Text datablock and shows status, risk, intent, and expected changes in the sidebar. The script runs only when the user presses `Run Approved Script`; blocked scripts can be inspected but not executed from the UI. External clients can run a pending script after the user presses `Approve External Run` in Blender and gives that client the short-lived one-time token, or while a runtime-only Blender-side 15-minute external script trust window is active.
-When checkpoints are enabled, approved scripts save a timestamped `.blend` copy before execution. Failed scripts keep their traceback in `Claude Script Log` and expose a `Repair Script` button that asks Claude to draft a corrected pending script.
-Complex helper-driven builds have a larger tool-call budget and end with a readable summary instead of raw API JSON if the budget is reached. For many-object scenes, ask Claude to stage one cohesive approved script instead of issuing a long chain of live helper calls.
-
-Advanced live helpers are now available for common deeper Blender systems:
-
-- `create_shader_material`
-- `create_empty`
-- `set_object_visibility`
-- `set_object_display`
-- `add_geometry_nodes_modifier`
-- `create_shape_key`
-- `animate_shape_key`
-- `create_text_object`
-- `create_curve_path`
-- `add_particle_system_to_selected`
-- `create_basic_armature`
-- `add_copy_transform_constraint`
-- `set_render_settings`
-- `set_camera_settings`
-- `set_world_background`
-- `shade_smooth_selected`
-- `add_bevel_and_subsurf`
-- `create_wheel_assembly`
-- `add_panel_seams`
-- `add_window_materials`
-- `apply_vehicle_refinement_template`
-
-These helpers mutate the live scene through the same preview transaction as the simpler tools, so the user can still use `Revert`, `Commit`, or Blender undo. They are intentionally bounded starter actions; complex custom geometry-node graphs, complex rigs, simulations, and mesh edits should still be staged as approved Python.
-The vehicle refinement template is a first taste of reusable domain kits: it can add smoothing/bevels, wheels, glass panels, panel seams, headlights, and taillights around a selected mesh body.
-
-## Planned Structure
-
-```text
-addon/claude_blender/
-  __init__.py              # Blender extension entrypoint
-  preferences.py           # API key, model, privacy, approval settings
-  ui.py                    # Sidebar chat panel and operators
-  anthropic_client.py      # Claude Messages API transport
-  agent_loop.py            # Tool-use loop and transcript state
-  chat_history.py          # Persistent per-blend chat history
-  bridge_protocol.py       # Semantic tool contract for local bridge/MCP
-  context_bundle.py        # Layered Blender world model for Claude
-  context_planner.py       # Token-aware request context selection
-  world_model.py           # Read-only deep Blender system summaries
-  advanced_helpers.py      # Bounded advanced edit helpers
-  scene_snapshot.py        # Structured scene/animation summaries
-  viewport_capture.py      # Viewport screenshot and preview render capture
-  live_preview.py          # Reversible preview transactions and redraws
-  bridge_server.py         # Localhost JSON bridge for external agents
-  mcp_server.py            # stdio MCP server that forwards to the Blender bridge
-  script_runner.py         # Script validation, approval, execution, undo
-  script_templates.py      # Safer helpers for common Blender edits
-  docs_index.py            # Blender docs search/fetch interface
-docs/
-  PROJECT_PLAN.md
-  ARCHITECTURE.md
-  CONTEXT_AND_DOCS_ENGINE.md
-  LIVE_PREVIEW_LOOP.md
-  SAFETY_MODEL.md
-  EXTERNAL_BRIDGE_MCP.md
+```powershell
+python scripts\build_extension_zip.py
 ```
 
-## Reference Docs
+The build writes:
 
-- Development workflow: [DEVELOPMENT.md](docs/DEVELOPMENT.md)
-- Anthropic tool use: https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview
-- Anthropic vision: https://platform.claude.com/docs/en/build-with-claude/vision
-- Anthropic Files API: https://platform.claude.com/docs/en/build-with-claude/files
-- Blender extension packaging: https://docs.blender.org/manual/en/latest/advanced/extensions/getting_started.html
-- Blender Python API: https://docs.blender.org/api/current/index.html
+```text
+dist/claude_blender-0.1.0.zip
+dist/claude_blender-0.1.0.zip.sha256
+```
 
-## First Action Prompts
+Install the zip in Blender through the extension installation flow, enable `Blender Agent Bridge`, and open the 3D View sidebar. Configure the model and local paths in the add-on preferences.
 
-With the cube selected, try:
+For day-to-day development on Windows, link the checkout into Blender's user extension repository:
+
+```powershell
+.\scripts\link_blender_dev_extension.ps1
+```
+
+See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for alternate Blender versions and custom extension repositories.
+
+## First Prompts
+
+With an object selected, try:
 
 ```text
 Move the selected cube up 1 Blender unit and make it red.
@@ -137,60 +82,73 @@ Add a warm area light above and to the left of the selected object.
 ```
 
 ```text
-Add a camera looking at the selected cube.
-```
-
-```text
-Create a blue UV sphere to the right of the cube.
-```
-
-```text
-Animate the selected cube moving from z 0 to z 3 over frames 1 to 80.
-```
-
-```text
 Create a camera orbit around the Cube from frame 1 to 120.
-```
-
-```text
-Make the selected cube glow cyan, add a bevel modifier, put it in a collection called Product Hero, then create a camera orbit from frame 1 to 120.
-```
-
-```text
-Create a small abstract scene from primitives: a central glowing sphere, three surrounding torus rings, warm area lighting, and a camera orbit over 160 frames.
 ```
 
 ```text
 Build a simple sci-fi product pedestal scene around the selected cube using primitives, bevels, blue emission accents, two lights, and a camera orbit. If this needs many steps, draft one approved script instead of using a long helper chain.
 ```
 
-```text
-Continue building the current sci-fi product pedestal scene from the existing objects. Finish the missing blue emission accents, lights, and camera orbit. If this needs many more steps, draft one approved script instead.
+Live preview changes remain pending until you use `Commit`, `Revert`, or Blender undo. Generated Python remains pending until you use `Run Approved Script` or `Reject Script`.
+
+## MCP Bridge
+
+The External Bridge section in the sidebar can expose a localhost-only JSON bridge from Blender. Use `Start`, then `Copy MCP Config` to copy a stdio MCP server config for compatible clients.
+
+The MCP surface is intentionally compact by default. `blender_tool_catalog` is the main search/schema/invoke entry point for the full local tool catalog, with compatibility wrappers still available for direct search, schema lookup, and invocation.
+
+External clients can also read resources such as scene status, tool contracts, transcripts, audit logs, and viewport captures. The capture resources include `blender://captures/latest`, `blender://captures/latest/metadata`, and exact `blender://captures/{capture_id}` URIs returned in capture metadata.
+
+Some MCP clients cache tool lists and server configs. After installing a new zip, reloading the add-on, or pressing `Copy MCP Config`, replace the old client config and refresh or restart that MCP client.
+
+See [docs/EXTERNAL_BRIDGE_MCP.md](docs/EXTERNAL_BRIDGE_MCP.md) for setup and troubleshooting.
+
+## Development Checks
+
+Run the pure-Python smoke tests that do not require Blender:
+
+```powershell
+python tests\smoke_mcp_server.py
+python tests\smoke_build_extension_zip.py
 ```
 
-```text
-List the scene objects, select the object named Cube, make it glow cyan, then set frame 40 so I can inspect the animation.
+Compile the add-on package:
+
+```powershell
+python -m compileall addon\claude_blender
 ```
 
-```text
-Search the Blender docs for bpy.types.Constraint, then draft a script that adds a Track To constraint from the active camera to the selected cube.
+Run Blender-background smoke tests when Blender is available, for example:
+
+```powershell
+& 'C:\Program Files\Blender Foundation\Blender 5.1\blender.exe' --background --factory-startup --python tests\smoke_context_docs.py
+& 'C:\Program Files\Blender Foundation\Blender 5.1\blender.exe' --background --factory-startup --python tests\smoke_bridge_server.py
+& 'C:\Program Files\Blender Foundation\Blender 5.1\blender.exe' --background --factory-startup --python tests\smoke_script_runner.py
+& 'C:\Program Files\Blender Foundation\Blender 5.1\blender.exe' --background --factory-startup --python tests\smoke_refinement_helpers.py
 ```
 
-```text
-Create a polished blue metallic material on the selected cube, add a Geometry Nodes starter modifier, add a shape key named Lift, and animate that shape key from 0 to 1 over frames 1 to 80.
-```
+## Documentation
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - architecture and subsystem overview.
+- [docs/CONTEXT_AND_DOCS_ENGINE.md](docs/CONTEXT_AND_DOCS_ENGINE.md) - context planning, docs cache, and prompt budgeting.
+- [docs/LIVE_PREVIEW_LOOP.md](docs/LIVE_PREVIEW_LOOP.md) - reversible live helper transactions.
+- [docs/SAFETY_MODEL.md](docs/SAFETY_MODEL.md) - approval, preview, script, and bridge safety rules.
+- [docs/EXTERNAL_BRIDGE_MCP.md](docs/EXTERNAL_BRIDGE_MCP.md) - localhost bridge and MCP server.
+- [docs/RELEASE.md](docs/RELEASE.md) - release build and verification checklist.
+
+## Repository Layout
 
 ```text
-Add a text label and a glowing curved path around the selected object, set the camera lens to 70mm with depth of field focused on the cube, and make the world background dark blue.
+addon/claude_blender/          Blender extension source
+docs/                          Project, architecture, safety, and release notes
+scripts/                       Build and development helper scripts
+tests/                         Pure-Python and Blender smoke tests
+CHANGELOG.md                   Release notes
+SECURITY.md                    Security policy and hardening checklist
+PRIVACY.md                     Local data and provider-data notes
+LICENSE                        GPL-3.0-or-later license text
 ```
 
-```text
-Add a small particle system to the selected cube and create a simple armature next to it for later rigging. Keep it as live preview changes.
-```
+## License
 
-```text
-Improve the selected car body using the vehicle refinement template, then add smoother bevels, panel seams, blue glass, wheel assemblies, headlights, taillights, better camera settings, and a dark world background. Keep it as live preview changes.
-```
-
-The live changes remain pending until you use `Commit`, `Revert`, or Blender undo.
-Generated Python remains pending until you use `Run Approved Script` or `Reject Script`.
+Blender Agent Bridge is licensed under the GNU General Public License, version 3 or any later version. The Blender extension manifest declares this as `SPDX:GPL-3.0-or-later`; see [LICENSE](LICENSE) for the full license text. Release zips include the license file at the package root.

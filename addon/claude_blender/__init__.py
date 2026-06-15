@@ -1,4 +1,4 @@
-"""Claude for Blender extension entrypoint."""
+"""Blender Agent Bridge extension entrypoint."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ bl_info = {
     "version": build_info.ADDON_VERSION_TUPLE,
     "blender": build_info.BLENDER_VERSION_MIN_TUPLE,
     "location": "View3D > Sidebar > Claude",
-    "description": "Scene-aware Claude assistant for Blender",
+    "description": "Scene-aware bridge for Claude, Codex, and MCP agents",
     "category": "3D View",
 }
 

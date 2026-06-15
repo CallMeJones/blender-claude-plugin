@@ -29,6 +29,48 @@ KEYFRAME_INTERPOLATIONS = {
 EMPTY_DISPLAY_TYPES = {"PLAIN_AXES", "ARROWS", "SINGLE_ARROW", "CIRCLE", "CUBE", "SPHERE", "CONE", "IMAGE"}
 OBJECT_DISPLAY_TYPES = {"TEXTURED", "SOLID", "WIRE", "BOUNDS"}
 
+LIGHTING_PRESETS = {
+    "product_softbox": [
+        ("Key", (-1.2, -1.4, 1.5), 650.0, 1.15, (1.0, 0.93, 0.84)),
+        ("Fill", (1.3, -0.9, 0.8), 180.0, 1.7, (0.78, 0.86, 1.0)),
+        ("Rim", (0.0, 1.35, 1.15), 360.0, 0.75, (1.0, 1.0, 0.94)),
+    ],
+    "dramatic_rim": [
+        ("Key", (-1.4, -1.1, 1.1), 430.0, 0.75, (1.0, 0.86, 0.7)),
+        ("Rim", (1.15, 1.35, 1.55), 850.0, 0.6, (0.68, 0.82, 1.0)),
+        ("Top", (0.0, -0.1, 2.0), 150.0, 1.2, (1.0, 0.96, 0.9)),
+    ],
+    "gallery_even": [
+        ("Left Softbox", (-1.35, -0.55, 1.25), 320.0, 1.45, (1.0, 0.95, 0.9)),
+        ("Right Softbox", (1.35, -0.55, 1.25), 320.0, 1.45, (0.9, 0.95, 1.0)),
+        ("Top Wash", (0.0, 0.0, 2.0), 220.0, 1.8, (1.0, 1.0, 0.96)),
+    ],
+}
+
+MATERIAL_PALETTES = {
+    "product_neutral": [
+        ("Graphite", (0.04, 0.045, 0.05, 1.0)),
+        ("Warm Silver", (0.62, 0.6, 0.56, 1.0)),
+        ("Porcelain", (0.92, 0.9, 0.84, 1.0)),
+        ("Signal Blue", (0.02, 0.24, 0.72, 1.0)),
+        ("Safety Amber", (1.0, 0.56, 0.08, 1.0)),
+    ],
+    "automotive": [
+        ("Paint Red", (0.8, 0.02, 0.015, 1.0)),
+        ("Deep Blue", (0.02, 0.08, 0.28, 1.0)),
+        ("Rubber Black", (0.005, 0.005, 0.006, 1.0)),
+        ("Chrome", (0.72, 0.72, 0.68, 1.0)),
+        ("Glass Blue", (0.08, 0.35, 0.65, 0.42)),
+    ],
+    "cinematic": [
+        ("Key Warm", (1.0, 0.74, 0.42, 1.0)),
+        ("Cool Fill", (0.15, 0.32, 0.82, 1.0)),
+        ("Deep Shadow", (0.015, 0.014, 0.02, 1.0)),
+        ("Practical Glow", (1.0, 0.85, 0.2, 1.0)),
+        ("Muted Skin", (0.72, 0.48, 0.36, 1.0)),
+    ],
+}
+
 
 def _coerce_vector(value, fallback):
     return live_preview._coerce_vector(value, fallback)
@@ -388,6 +430,16 @@ def _create_empty_target(context, name, location, *, display_size=0.4):
     return empty
 
 
+def _track_to_target(obj, target):
+    constraint = obj.constraints.new(type="TRACK_TO")
+    constraint.name = "Claude Look At Target"
+    constraint.target = target
+    constraint.track_axis = "TRACK_NEGATIVE_Z"
+    constraint.up_axis = "UP_Y"
+    live_preview._record_created_constraint(obj, constraint)
+    return constraint
+
+
 def _create_area_light(context, name, location, *, energy, size, color, target=None):
     data = bpy.data.lights.new(name=name, type="AREA")
     data.energy = max(0.0, float(energy))
@@ -399,12 +451,7 @@ def _create_area_light(context, name, location, *, energy, size, color, target=N
     live_preview._record_created_id("object", obj.name)
     live_preview._record_created_id("light", data.name)
     if target is not None:
-        constraint = obj.constraints.new(type="TRACK_TO")
-        constraint.name = "Claude Look At Target"
-        constraint.target = target
-        constraint.track_axis = "TRACK_NEGATIVE_Z"
-        constraint.up_axis = "UP_Y"
-        live_preview._record_created_constraint(obj, constraint)
+        _track_to_target(obj, target)
     return obj
 
 
@@ -2682,12 +2729,7 @@ def create_studio_product_stage(
         context.scene.collection.objects.link(camera_obj)
         live_preview._record_created_id("object", camera_obj.name)
         live_preview._record_created_id("camera", data.name)
-        constraint = camera_obj.constraints.new(type="TRACK_TO")
-        constraint.name = "Claude Look At Target"
-        constraint.target = target_empty
-        constraint.track_axis = "TRACK_NEGATIVE_Z"
-        constraint.up_axis = "UP_Y"
-        live_preview._record_created_constraint(camera_obj, constraint)
+        _track_to_target(camera_obj, target_empty)
         context.scene.camera = camera_obj
         camera_name = camera_obj.name
         created.append(camera_obj.name)
@@ -2812,6 +2854,288 @@ def add_dimension_callouts(
         "target": target.name,
         "created_objects": created,
         "measurements": measurements,
+        "transaction_id": transaction["id"],
+    }
+
+
+def apply_lighting_preset(
+    context,
+    *,
+    target_name="",
+    preset="product_softbox",
+    rig_name="Claude Lighting",
+    label="Apply lighting preset",
+):
+    target = bpy.data.objects.get(target_name) if target_name else context.active_object
+    if target is None or not hasattr(target, "bound_box"):
+        return {"ok": False, "message": "A target object with bounds is required for a lighting preset"}
+    preset_key = str(preset or "product_softbox").lower()
+    lights_spec = LIGHTING_PRESETS.get(preset_key) or LIGHTING_PRESETS["product_softbox"]
+    transaction = live_preview.begin(label, context)
+    bounds = _bounds_world(target)
+    center_x, center_y, center_z = bounds["center"]
+    sx, sy, sz = bounds["size"]
+    max_dim = max(1.0, sx, sy, sz)
+    rig_name = str(rig_name or "Claude Lighting")
+    target_empty = _create_empty_target(
+        context,
+        f"{rig_name} Target",
+        (center_x, center_y, center_z),
+        display_size=max_dim * 0.12,
+    )
+    created = [target_empty.name]
+    lights = []
+    for suffix, factors, energy, size, color in lights_spec:
+        location = (
+            center_x + factors[0] * max_dim,
+            center_y + factors[1] * max_dim,
+            center_z + factors[2] * max_dim,
+        )
+        light = _create_area_light(
+            context,
+            f"{rig_name} {suffix}",
+            location,
+            energy=energy,
+            size=max_dim * size,
+            color=color,
+            target=target_empty,
+        )
+        lights.append(light.name)
+        created.append(light.name)
+    transaction["applied_steps"].append(
+        {
+            "type": "apply_lighting_preset",
+            "label": label,
+            "target": target.name,
+            "preset": preset_key if preset_key in LIGHTING_PRESETS else "product_softbox",
+            "created_objects": created,
+            "lights": lights,
+        }
+    )
+    live_preview.redraw(context)
+    live_preview._mark_pending(context, label)
+    return {
+        "ok": True,
+        "message": f"Applied {preset_key if preset_key in LIGHTING_PRESETS else 'product_softbox'} lighting around {target.name}",
+        "target": target.name,
+        "preset": preset_key if preset_key in LIGHTING_PRESETS else "product_softbox",
+        "created_objects": created,
+        "lights": lights,
+        "transaction_id": transaction["id"],
+    }
+
+
+def create_material_palette(
+    context,
+    *,
+    palette_name="Claude Material Palette",
+    palette="product_neutral",
+    create_swatches=True,
+    assign_to_selected=False,
+    label="Create material palette",
+):
+    palette_key = str(palette or "product_neutral").lower()
+    entries = MATERIAL_PALETTES.get(palette_key) or MATERIAL_PALETTES["product_neutral"]
+    transaction = live_preview.begin(label, context)
+    palette_name = str(palette_name or "Claude Material Palette")
+    selected_for_assignment = [obj for obj in context.selected_objects if obj.type == "MESH" and obj.data]
+    materials = []
+    for suffix, color in entries:
+        material = _material_for_color(f"{palette_name} {suffix}", color)
+        materials.append(material)
+
+    swatches = []
+    if create_swatches:
+        active = context.active_object
+        if active is not None and hasattr(active, "bound_box"):
+            bounds = _bounds_world(active)
+            min_x, min_y, min_z = bounds["min"]
+            sx, sy, sz = bounds["size"]
+            max_dim = max(1.0, sx, sy, sz)
+            start = (min_x, min_y - max_dim * 0.35, min_z + max_dim * 0.05)
+            size = max_dim * 0.08
+            gap = size * 1.35
+        else:
+            start = (0.0, -2.0, 0.05)
+            size = 0.12
+            gap = 0.18
+        for index, material in enumerate(materials):
+            swatch = _create_cube_object(
+                context,
+                f"{palette_name} Swatch {index + 1}",
+                (start[0] + gap * index, start[1], start[2]),
+                (size, size, size),
+                material,
+            )
+            swatches.append(swatch.name)
+
+    assigned = []
+    if assign_to_selected:
+        for index, obj in enumerate(selected_for_assignment):
+            material = materials[index % len(materials)]
+            live_preview._record_object_materials(obj)
+            obj.data.materials.clear()
+            obj.data.materials.append(material)
+            assigned.append({"object": obj.name, "material": material.name})
+
+    transaction["applied_steps"].append(
+        {
+            "type": "create_material_palette",
+            "label": label,
+            "palette": palette_key if palette_key in MATERIAL_PALETTES else "product_neutral",
+            "materials": [material.name for material in materials],
+            "swatches": swatches,
+            "assigned": assigned,
+        }
+    )
+    live_preview.redraw(context)
+    live_preview._mark_pending(context, label)
+    return {
+        "ok": True,
+        "message": f"Created {len(materials)} material palette entries",
+        "palette": palette_key if palette_key in MATERIAL_PALETTES else "product_neutral",
+        "materials": [material.name for material in materials],
+        "swatches": swatches,
+        "assigned": assigned,
+        "transaction_id": transaction["id"],
+    }
+
+
+def create_product_turntable_setup(
+    context,
+    *,
+    target_name="",
+    frame_start=1,
+    frame_end=120,
+    revolutions=1.0,
+    radius=0.0,
+    height=0.0,
+    setup_name="Claude Product Turntable",
+    create_stage=True,
+    label="Create product turntable setup",
+):
+    target = bpy.data.objects.get(target_name) if target_name else context.active_object
+    if target is None or not hasattr(target, "bound_box"):
+        return {"ok": False, "message": "A target object with bounds is required for a turntable setup"}
+    frame_start, frame_end, error = _normalize_frame_range(frame_start, frame_end, "Product turntable setup")
+    if error:
+        return error
+    transaction = live_preview.begin(label, context)
+    bounds = _bounds_world(target)
+    sx, sy, sz = bounds["size"]
+    max_dim = max(1.0, sx, sy, sz)
+    stage_result = {}
+    if create_stage:
+        stage_result = create_studio_product_stage(
+            context,
+            target_name=target.name,
+            stage_name=f"{setup_name} Stage",
+            floor=True,
+            backdrop=True,
+            lighting=True,
+            camera=False,
+            label=label,
+        )
+    animation_result = create_turntable_animation(
+        context,
+        object_name=target.name,
+        frame_start=frame_start,
+        frame_end=frame_end,
+        axis="Z",
+        revolutions=revolutions,
+        add_cycles=True,
+        label=label,
+    )
+    orbit_result = live_preview.create_camera_orbit(
+        context,
+        target_name=target.name,
+        frame_start=frame_start,
+        frame_end=frame_end,
+        radius=float(radius) if float(radius or 0.0) > 0.0 else max_dim * 2.6,
+        height=float(height) if float(height or 0.0) > 0.0 else max_dim * 0.9,
+        name=f"{setup_name} Camera",
+        lens=70.0,
+        label=label,
+    )
+    transaction["applied_steps"].append(
+        {
+            "type": "create_product_turntable_setup",
+            "label": label,
+            "target": target.name,
+            "frame_start": frame_start,
+            "frame_end": frame_end,
+            "stage_created": bool(stage_result.get("ok")),
+            "camera": orbit_result.get("camera", ""),
+            "action": animation_result.get("action", ""),
+        }
+    )
+    live_preview.redraw(context)
+    live_preview._mark_pending(context, label)
+    return {
+        "ok": bool(animation_result.get("ok") and orbit_result.get("ok") and (not create_stage or stage_result.get("ok"))),
+        "message": f"Created product turntable setup for {target.name}",
+        "target": target.name,
+        "stage": stage_result,
+        "animation": animation_result,
+        "camera_orbit": orbit_result,
+        "transaction_id": transaction["id"],
+    }
+
+
+def organize_scene_for_production(
+    context,
+    *,
+    collection_prefix="Claude Production",
+    selected_only=False,
+    label="Organize scene for production",
+):
+    collection_prefix = str(collection_prefix or "Claude Production")
+    objects = list(context.selected_objects) if selected_only else list(context.scene.objects)
+    objects = [obj for obj in objects if obj and not obj.name.startswith(collection_prefix)]
+    if not objects:
+        return {"ok": False, "message": "No objects available to organize"}
+    transaction = live_preview.begin(label, context)
+    buckets = {
+        "Meshes": {"MESH"},
+        "Cameras": {"CAMERA"},
+        "Lights": {"LIGHT"},
+        "Curves Text": {"CURVE", "FONT"},
+        "Helpers": {"EMPTY", "ARMATURE"},
+    }
+    collections = {}
+    linked = []
+    for obj in objects:
+        bucket_name = "Other"
+        for name, types in buckets.items():
+            if obj.type in types:
+                bucket_name = name
+                break
+        collection_name = f"{collection_prefix} - {bucket_name}"
+        collection = collections.get(collection_name) or bpy.data.collections.get(collection_name)
+        if collection is None:
+            collection = bpy.data.collections.new(collection_name)
+            context.scene.collection.children.link(collection)
+            live_preview._record_created_id("collection", collection.name)
+        collections[collection_name] = collection
+        live_preview._record_object_collections(obj)
+        if collection.objects.get(obj.name) is None:
+            collection.objects.link(obj)
+        linked.append({"object": obj.name, "collection": collection.name})
+    transaction["applied_steps"].append(
+        {
+            "type": "organize_scene_for_production",
+            "label": label,
+            "collections": sorted(collections),
+            "linked": linked,
+        }
+    )
+    live_preview.redraw(context)
+    live_preview._mark_pending(context, label)
+    return {
+        "ok": True,
+        "message": f"Linked {len(linked)} object(s) into production collections",
+        "collections": sorted(collections),
+        "linked": linked,
         "transaction_id": transaction["id"],
     }
 

@@ -65,6 +65,10 @@ Current implemented helper actions:
 - Set scene timeline range/current frame/FPS.
 - Create simple selected-object transform keyframes.
 - Create a keyframed camera orbit rig around a target object.
+- Apply bounded lighting preset rigs for product, gallery, and dramatic setups.
+- Create production material palettes, with optional swatches and assignment to selected mesh objects.
+- Create product turntable staging with optional camera orbit and target rotation keys.
+- Organize selected or scene objects into production collections without deleting original data-blocks.
 - Commit preview.
 - Revert preview.
 

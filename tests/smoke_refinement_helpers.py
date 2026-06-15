@@ -25,6 +25,10 @@ REFINEMENT_TOOLS = {
     "apply_vehicle_refinement_template",
     "create_studio_product_stage",
     "add_dimension_callouts",
+    "apply_lighting_preset",
+    "create_material_palette",
+    "create_product_turntable_setup",
+    "organize_scene_for_production",
 }
 
 
@@ -45,11 +49,13 @@ def _snapshot(cube):
         "objects": set(bpy.data.objects.keys()),
         "meshes": set(bpy.data.meshes.keys()),
         "curves": set(bpy.data.curves.keys()),
+        "collections": set(bpy.data.collections.keys()),
         "materials": set(bpy.data.materials.keys()),
         "lights": set(bpy.data.lights.keys()),
         "cameras": set(bpy.data.cameras.keys()),
         "actions": set(bpy.data.actions.keys()),
         "scene_camera": bpy.context.scene.camera.name if bpy.context.scene.camera else None,
+        "cube_materials": [slot.material.name if slot.material else None for slot in cube.material_slots],
         "cube_modifiers": [modifier.name for modifier in cube.modifiers],
         "cube_smooth": [bool(poly.use_smooth) for poly in cube.data.polygons],
     }
@@ -93,6 +99,30 @@ def main():
         callouts = _execute(context, "add_dimension_callouts", {"target_name": "Cube", "unit_label": "m"})
         assert {"width", "depth", "height"} == set(callouts["measurements"])
         assert len(callouts["created_objects"]) == 6
+
+        lighting = _execute(context, "apply_lighting_preset", {"target_name": "Cube", "preset": "dramatic_rim"})
+        assert len(lighting["lights"]) == 3
+
+        _select_object(context, cube)
+        palette = _execute(
+            context,
+            "create_material_palette",
+            {"palette_name": "Claude Test Palette", "palette": "automotive", "assign_to_selected": True},
+        )
+        assert len(palette["materials"]) == 5
+        assert len(palette["swatches"]) == 5
+        assert palette["assigned"][0]["object"] == "Cube"
+
+        turntable = _execute(
+            context,
+            "create_product_turntable_setup",
+            {"target_name": "Cube", "frame_start": 1, "frame_end": 48, "setup_name": "Claude Test Turntable", "create_stage": False},
+        )
+        assert turntable["animation"]["action"], turntable
+        assert turntable["camera_orbit"]["camera"], turntable
+
+        organized = _execute(context, "organize_scene_for_production", {"collection_prefix": "Claude Test Production"})
+        assert organized["collections"], organized
 
         _execute(context, "revert_preview", {})
         final = _snapshot(cube)

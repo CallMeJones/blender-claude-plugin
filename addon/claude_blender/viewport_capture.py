@@ -3,27 +3,374 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import math
 import os
 import time
+import uuid
 
 import bpy
 
 
 DEFAULT_MAX_BYTES = 5 * 1024 * 1024
 PREVIEW_IMAGE_NAME = "Claude Viewport Preview"
+LATEST_CAPTURE_RESOURCE_URI = "blender://captures/latest"
+LATEST_CAPTURE_METADATA_URI = "blender://captures/latest/metadata"
 MIN_RESIZED_DIMENSION = 64
 MAX_RESIZE_ATTEMPTS = 8
+
+_capture_session_id = ""
 
 
 def default_capture_dir():
     return os.path.join(os.path.expanduser("~"), ".claude_blender", "captures")
 
 
+def capture_session_id():
+    global _capture_session_id
+    if not _capture_session_id:
+        _capture_session_id = f"{time.strftime('%Y%m%d-%H%M%S')}-{os.getpid()}"
+    return _capture_session_id
+
+
+def _safe_path_part(value, fallback="untitled"):
+    safe = "".join(char if char.isalnum() or char in {"-", "_", "."} else "_" for char in str(value or ""))
+    safe = safe.strip("._")
+    return safe[:80] or fallback
+
+
+def project_id(context=None):
+    filepath = getattr(bpy.data, "filepath", "") or ""
+    if filepath:
+        normalized = os.path.abspath(filepath)
+        digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:10]
+        name = _safe_path_part(os.path.splitext(os.path.basename(filepath))[0], "blend")
+        return f"{name}-{digest}"
+    scene = getattr(getattr(context, "scene", None), "name", "") or "unsaved"
+    return f"unsaved-{_safe_path_part(scene, 'scene')}-{os.getpid()}"
+
+
+def project_capture_root(context=None):
+    filepath = getattr(bpy.data, "filepath", "") or ""
+    if not filepath:
+        return ""
+    folder = os.path.dirname(os.path.abspath(filepath))
+    if not folder:
+        return ""
+    return os.path.join(folder, ".claude_blender", "captures")
+
+
+def _normalized_path(value):
+    return os.path.normcase(os.path.abspath(os.path.expanduser(str(value or ""))))
+
+
+def _is_default_or_empty_capture_dir(value):
+    if not str(value or "").strip():
+        return True
+    return _normalized_path(value) == _normalized_path(default_capture_dir())
+
+
+def _can_prepare_dir(path):
+    try:
+        os.makedirs(path, exist_ok=True)
+        return True
+    except OSError:
+        return False
+
+
+def _global_capture_dir_info(context=None, *, create=False):
+    session_id = capture_session_id()
+    project = project_id(context)
+    base_dir = default_capture_dir()
+    capture_dir = os.path.join(base_dir, project, session_id)
+    if create:
+        os.makedirs(capture_dir, exist_ok=True)
+    return {
+        "capture_dir": capture_dir,
+        "storage_scope": "global",
+        "project_id": project,
+        "session_id": session_id,
+        "base_dir": base_dir,
+        "fallback_reason": "unsaved_or_unwritable_project",
+    }
+
+
+def resolve_capture_dir(context=None, *, preferred_dir=None, create=False):
+    """Resolve the project/session-scoped capture directory.
+
+    The default capture preference behaves as automatic storage: saved .blend
+    projects use a project-local hidden folder, while unsaved or unwritable
+    projects fall back to the global user cache. A custom preference remains
+    a custom base directory and still gets project/session subfolders.
+    """
+
+    session_id = capture_session_id()
+    project = project_id(context)
+    if _is_default_or_empty_capture_dir(preferred_dir):
+        project_root = project_capture_root(context)
+        if project_root:
+            project_dir = os.path.join(project_root, session_id)
+            if not create or _can_prepare_dir(project_dir):
+                return {
+                    "capture_dir": project_dir,
+                    "storage_scope": "project",
+                    "project_id": project,
+                    "session_id": session_id,
+                    "base_dir": project_root,
+                    "fallback_reason": "",
+                }
+        return _global_capture_dir_info(context, create=create)
+
+    base_dir = os.path.abspath(os.path.expanduser(str(preferred_dir)))
+    capture_dir = os.path.join(base_dir, project, session_id)
+    if create:
+        os.makedirs(capture_dir, exist_ok=True)
+    return {
+        "capture_dir": capture_dir,
+        "storage_scope": "custom",
+        "project_id": project,
+        "session_id": session_id,
+        "base_dir": base_dir,
+        "fallback_reason": "",
+    }
+
+
+def _capture_id_from_path(path):
+    stem = os.path.splitext(os.path.basename(path))[0]
+    if stem.endswith("-resized"):
+        stem = stem[: -len("-resized")]
+    if stem.startswith("viewport-"):
+        return stem[len("viewport-") :]
+    return stem
+
+
+def _resource_uri(capture_id):
+    return f"blender://captures/{capture_id}"
+
+
+def _metadata_uri(capture_id):
+    return f"blender://captures/{capture_id}/metadata"
+
+
 def _capture_filepath(capture_dir):
     os.makedirs(capture_dir, exist_ok=True)
-    timestamp = time.strftime("%Y%m%d-%H%M%S")
-    return os.path.join(capture_dir, f"viewport-{timestamp}.png")
+    capture_id = f"{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    return os.path.join(capture_dir, f"viewport-{capture_id}.png")
+
+
+def _resolve_capture_dir_arg(capture_dir=None, context=None, preferred_dir=None, create=False):
+    if capture_dir:
+        return {
+            "capture_dir": capture_dir,
+            "storage_scope": "explicit",
+            "project_id": project_id(context),
+            "session_id": capture_session_id(),
+            "base_dir": capture_dir,
+            "fallback_reason": "",
+        }
+    return resolve_capture_dir(context, preferred_dir=preferred_dir, create=create)
+
+
+def _capture_dir_candidates(capture_dir=None, *, context=None, preferred_dir=None):
+    primary = _resolve_capture_dir_arg(capture_dir, context, preferred_dir)
+    candidates = [primary]
+    if capture_dir or not _is_default_or_empty_capture_dir(preferred_dir):
+        return candidates
+
+    fallback = _global_capture_dir_info(context)
+    if _normalized_path(fallback["capture_dir"]) != _normalized_path(primary["capture_dir"]):
+        candidates.append(fallback)
+    return candidates
+
+
+def _capture_file_candidates(capture_dir):
+    if not os.path.isdir(capture_dir):
+        return []
+    candidates = []
+    for name in os.listdir(capture_dir):
+        if not name.startswith("viewport-") or not name.lower().endswith(".png"):
+            continue
+        path = os.path.join(capture_dir, name)
+        if os.path.isfile(path):
+            candidates.append(path)
+    return candidates
+
+
+def _latest_capture_entry(capture_dir=None, *, context=None, preferred_dir=None):
+    candidates = _capture_dir_candidates(capture_dir, context=context, preferred_dir=preferred_dir)
+    for resolved in candidates:
+        paths = _capture_file_candidates(resolved["capture_dir"])
+        if paths:
+            return max(paths, key=lambda path: (os.path.getmtime(path), path)), resolved
+    return "", candidates[0]
+
+
+def latest_capture_path(capture_dir=None, *, context=None, preferred_dir=None):
+    path, _resolved = _latest_capture_entry(capture_dir, context=context, preferred_dir=preferred_dir)
+    return path
+
+
+def _capture_entry_for_id(capture_id, capture_dir=None, *, context=None, preferred_dir=None):
+    capture_id = str(capture_id or "").strip()
+    if not capture_id or "/" in capture_id or "\\" in capture_id:
+        return "", _resolve_capture_dir_arg(capture_dir, context, preferred_dir)
+    for resolved in _capture_dir_candidates(capture_dir, context=context, preferred_dir=preferred_dir):
+        capture_dir = resolved["capture_dir"]
+        if not os.path.isdir(capture_dir):
+            continue
+        matches = []
+        for suffix in (".png", "-resized.png"):
+            path = os.path.join(capture_dir, f"viewport-{capture_id}{suffix}")
+            if os.path.isfile(path):
+                matches.append(path)
+        if matches:
+            return max(matches, key=lambda path: (os.path.getmtime(path), path)), resolved
+    return "", _resolve_capture_dir_arg(capture_dir, context, preferred_dir)
+
+
+def _metadata_for_path(path, *, resolved):
+    capture_id = _capture_id_from_path(path)
+    resource_uri = _resource_uri(capture_id)
+    metadata_uri = _metadata_uri(capture_id)
+    size_bytes = os.path.getsize(path)
+    width = 0
+    height = 0
+    image = None
+    try:
+        image = bpy.data.images.load(path, check_existing=False)
+        width, height = _image_size_tuple(image)
+    except Exception:
+        width = 0
+        height = 0
+    finally:
+        if image is not None:
+            try:
+                bpy.data.images.remove(image)
+            except Exception:
+                pass
+    return {
+        "ok": True,
+        "available": True,
+        "capture_id": capture_id,
+        "project_id": resolved.get("project_id", ""),
+        "session_id": resolved.get("session_id", ""),
+        "storage_scope": resolved.get("storage_scope", ""),
+        "capture_dir": resolved.get("capture_dir", ""),
+        "base_dir": resolved.get("base_dir", ""),
+        "fallback_reason": resolved.get("fallback_reason", ""),
+        "resource_uri": resource_uri,
+        "metadata_uri": metadata_uri,
+        "latest_resource_uri": LATEST_CAPTURE_RESOURCE_URI,
+        "latest_metadata_uri": LATEST_CAPTURE_METADATA_URI,
+        "media_type": "image/png",
+        "path": path,
+        "size_bytes": size_bytes,
+        "width": width,
+        "height": height,
+        "scene": bpy.context.scene.name if getattr(bpy.context, "scene", None) else "",
+        "frame": int(getattr(getattr(bpy.context, "scene", None), "frame_current", 0) or 0),
+        "note": "Viewport capture is available as an MCP image resource",
+    }
+
+
+def capture_metadata(capture_id, capture_dir=None, *, context=None, preferred_dir=None):
+    path, resolved = _capture_entry_for_id(capture_id, capture_dir, context=context, preferred_dir=preferred_dir)
+    if not path:
+        return {
+            "ok": False,
+            "available": False,
+            "capture_id": str(capture_id or ""),
+            "project_id": resolved.get("project_id", ""),
+            "session_id": resolved.get("session_id", ""),
+            "storage_scope": resolved.get("storage_scope", ""),
+            "resource_uri": _resource_uri(capture_id),
+            "metadata_uri": _metadata_uri(capture_id),
+            "latest_resource_uri": LATEST_CAPTURE_RESOURCE_URI,
+            "latest_metadata_uri": LATEST_CAPTURE_METADATA_URI,
+            "note": "Viewport capture was not found for this Blender project/session",
+        }
+    return _metadata_for_path(path, resolved=resolved)
+
+
+def latest_capture_metadata(capture_dir=None, *, context=None, preferred_dir=None):
+    path, resolved = _latest_capture_entry(capture_dir, context=context, preferred_dir=preferred_dir)
+    if not path:
+        return {
+            "ok": False,
+            "available": False,
+            "project_id": resolved.get("project_id", ""),
+            "session_id": resolved.get("session_id", ""),
+            "storage_scope": resolved.get("storage_scope", ""),
+            "resource_uri": LATEST_CAPTURE_RESOURCE_URI,
+            "metadata_uri": LATEST_CAPTURE_METADATA_URI,
+            "note": "No viewport capture is available yet",
+        }
+    metadata = _metadata_for_path(path, resolved=resolved)
+    metadata["resource_uri"] = LATEST_CAPTURE_RESOURCE_URI
+    metadata["metadata_uri"] = LATEST_CAPTURE_METADATA_URI
+    metadata["exact_resource_uri"] = _resource_uri(metadata["capture_id"])
+    metadata["exact_metadata_uri"] = _metadata_uri(metadata["capture_id"])
+    metadata["note"] = "Latest viewport capture is available as an MCP image resource"
+    return metadata
+
+
+def capture_resource(capture_id, capture_dir=None, *, context=None, preferred_dir=None):
+    metadata = capture_metadata(capture_id, capture_dir, context=context, preferred_dir=preferred_dir)
+    if not metadata.get("available"):
+        return None
+    with open(metadata["path"], "rb") as handle:
+        data = base64.b64encode(handle.read()).decode("ascii")
+    return {
+        "mimeType": "image/png",
+        "blob": data,
+        "path": metadata["path"],
+        "captureId": metadata["capture_id"],
+        "projectId": metadata["project_id"],
+        "sessionId": metadata["session_id"],
+        "resourceUri": metadata["resource_uri"],
+        "metadataUri": metadata["metadata_uri"],
+        "sizeBytes": metadata["size_bytes"],
+        "width": metadata["width"],
+        "height": metadata["height"],
+    }
+
+
+def latest_capture_resource(capture_dir=None, *, context=None, preferred_dir=None):
+    metadata = latest_capture_metadata(capture_dir, context=context, preferred_dir=preferred_dir)
+    if not metadata.get("available"):
+        return None
+    with open(metadata["path"], "rb") as handle:
+        data = base64.b64encode(handle.read()).decode("ascii")
+    return {
+        "mimeType": "image/png",
+        "blob": data,
+        "path": metadata["path"],
+        "captureId": metadata.get("capture_id", ""),
+        "projectId": metadata.get("project_id", ""),
+        "sessionId": metadata.get("session_id", ""),
+        "resourceUri": metadata.get("resource_uri", LATEST_CAPTURE_RESOURCE_URI),
+        "metadataUri": metadata.get("metadata_uri", LATEST_CAPTURE_METADATA_URI),
+        "exactResourceUri": metadata.get("exact_resource_uri", ""),
+        "exactMetadataUri": metadata.get("exact_metadata_uri", ""),
+        "sizeBytes": metadata["size_bytes"],
+        "width": metadata["width"],
+        "height": metadata["height"],
+    }
+
+
+def parse_capture_resource_uri(uri):
+    uri = str(uri or "")
+    prefix = "blender://captures/"
+    if not uri.startswith(prefix):
+        return "", False
+    tail = uri[len(prefix) :]
+    if tail in {"latest", "latest/metadata"}:
+        return "latest", tail.endswith("/metadata")
+    metadata = tail.endswith("/metadata")
+    capture_id = tail[: -len("/metadata")] if metadata else tail
+    if not capture_id or "/" in capture_id or "\\" in capture_id:
+        return "", metadata
+    return capture_id, metadata
 
 
 def _has_ui_context(context):
@@ -131,10 +478,11 @@ def _resize_png_to_fit(filepath, max_bytes):
             pass
 
 
-def prepare_image_attachment(filepath, *, max_bytes=DEFAULT_MAX_BYTES, capture_method="file"):
+def prepare_image_attachment(filepath, *, max_bytes=DEFAULT_MAX_BYTES, capture_method="file", capture_info=None):
     """Prepare a captured PNG as a bounded Anthropic image attachment."""
 
     max_bytes = int(max_bytes or DEFAULT_MAX_BYTES)
+    capture_info = dict(capture_info or {})
     if not os.path.exists(filepath):
         return {
             "requested": True,
@@ -185,12 +533,26 @@ def prepare_image_attachment(filepath, *, max_bytes=DEFAULT_MAX_BYTES, capture_m
     note = "Viewport screenshot attached to the Claude request"
     if resize_info.get("resized"):
         note = "Viewport screenshot resized and attached to the Claude request"
+    capture_id = _capture_id_from_path(prepared_path)
+    resource_uri = _resource_uri(capture_id)
+    metadata_uri = _metadata_uri(capture_id)
     metadata = {
         "requested": True,
         "available": True,
+        "capture_id": capture_id,
+        "project_id": capture_info.get("project_id", ""),
+        "session_id": capture_info.get("session_id", ""),
+        "storage_scope": capture_info.get("storage_scope", ""),
+        "capture_dir": capture_info.get("capture_dir", ""),
+        "base_dir": capture_info.get("base_dir", ""),
+        "fallback_reason": capture_info.get("fallback_reason", ""),
         "media_type": "image/png",
         "capture_method": capture_method,
         "path": prepared_path,
+        "resource_uri": resource_uri,
+        "metadata_uri": metadata_uri,
+        "latest_resource_uri": LATEST_CAPTURE_RESOURCE_URI,
+        "latest_metadata_uri": LATEST_CAPTURE_METADATA_URI,
         "preview_image": preview_image_name,
         "size_bytes": final_size,
         "width": width,
@@ -225,7 +587,8 @@ def capture_viewport(context, *, capture_dir=None, max_bytes=DEFAULT_MAX_BYTES):
             "note": "Viewport screenshot requires an interactive Blender window",
         }, {}
 
-    filepath = _capture_filepath(capture_dir or default_capture_dir())
+    resolved = resolve_capture_dir(context, preferred_dir=capture_dir, create=True)
+    filepath = _capture_filepath(resolved["capture_dir"])
     try:
         method = _capture_with_operator(context, filepath)
     except Exception as exc:
@@ -235,7 +598,7 @@ def capture_viewport(context, *, capture_dir=None, max_bytes=DEFAULT_MAX_BYTES):
             "note": f"Viewport screenshot failed: {type(exc).__name__}: {exc}",
         }, {}
 
-    return prepare_image_attachment(filepath, max_bytes=max_bytes, capture_method=method)
+    return prepare_image_attachment(filepath, max_bytes=max_bytes, capture_method=method, capture_info=resolved)
 
 
 def register():

@@ -102,9 +102,9 @@ Support two visual modes:
 - Viewport screenshot: fast, reflects what the user sees.
 - Preview render: slower, better for lighting/material critique.
 
-Current implementation captures a bounded PNG screenshot from Blender's UI when the user enables the `Viewport` toggle. The image is attached to the Anthropic request as an image block and stripped from transcript-visible context. If Blender is headless or the operator fails, the bundle records that visual context was requested but unavailable.
+Current implementation captures a bounded PNG screenshot from Blender's UI when the user enables the `Viewport` toggle. The image is attached to the Anthropic request as an image block and stripped from transcript-visible context. If the PNG is too large, Blender's image API downscales and re-saves a smaller copy before upload. Saved `.blend` projects store captures in a project-local `.claude_blender/captures/<session_id>` folder by default, with a global user-cache fallback for unsaved or unwritable projects. The MCP bridge also exposes the latest capture and exact capture ids as image resources for external clients. If Blender is headless or the operator fails, the bundle records that visual context was requested but unavailable.
 
-Later work should add explicit resize/compression before upload. For repeated images or larger workflows, the Files API may help, but it should remain optional because it is beta and has different retention behavior.
+For repeated images or larger workflows, the Files API may help later, but it should remain optional because it is beta and has different retention behavior.
 
 ## Docs Strategy
 
@@ -155,6 +155,10 @@ Common changes should use typed helper tools before arbitrary code:
 - `apply_vehicle_refinement_template`
 - `create_studio_product_stage`
 - `add_dimension_callouts`
+- `apply_lighting_preset`
+- `create_material_palette`
+- `create_product_turntable_setup`
+- `organize_scene_for_production`
 
 Helpers can validate object names, expected types, frame ranges, and value ranges before applying changes. When a helper is too limited, Claude can fall back to a proposed Python script.
 

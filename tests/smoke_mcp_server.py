@@ -118,19 +118,87 @@ class FakeBridgeHandler(BaseHTTPRequestHandler):
                             "name": "scene-status",
                             "title": "Scene Status",
                             "mimeType": "application/json",
-                        }
+                        },
+                        {
+                            "uri": "blender://captures/latest",
+                            "name": "latest-capture",
+                            "title": "Latest Viewport Capture",
+                            "mimeType": "image/png",
+                        },
+                        {
+                            "uri": "blender://captures/latest/metadata",
+                            "name": "latest-capture-metadata",
+                            "title": "Latest Viewport Capture Metadata",
+                            "mimeType": "application/json",
+                        },
                     ],
                 }
             )
         elif parsed.path == "/resource":
-            self._send(
-                {
-                    "ok": True,
-                    "uri": "blender://scene/status",
-                    "mimeType": "application/json",
-                    "text": '{"ok": true, "scene": "Fake Scene"}',
-                }
-            )
+            uri = urllib.parse.parse_qs(parsed.query).get("uri", [""])[0]
+            if uri == "blender://captures/latest":
+                self._send(
+                    {
+                        "ok": True,
+                        "uri": "blender://captures/latest",
+                        "mimeType": "image/png",
+                        "blob": "iVBORw0KGgo=",
+                    }
+                )
+            elif uri == "blender://captures/latest/metadata":
+                self._send(
+                    {
+                        "ok": True,
+                        "uri": "blender://captures/latest/metadata",
+                        "mimeType": "application/json",
+                        "text": json.dumps(
+                            {
+                                "ok": True,
+                                "available": True,
+                                "capture_id": "test-capture",
+                                "resource_uri": "blender://captures/latest",
+                                "metadata_uri": "blender://captures/latest/metadata",
+                                "exact_resource_uri": "blender://captures/test-capture",
+                                "exact_metadata_uri": "blender://captures/test-capture/metadata",
+                            }
+                        ),
+                    }
+                )
+            elif uri == "blender://captures/test-capture":
+                self._send(
+                    {
+                        "ok": True,
+                        "uri": "blender://captures/test-capture",
+                        "mimeType": "image/png",
+                        "blob": "iVBORw0KGgo=",
+                    }
+                )
+            elif uri == "blender://captures/test-capture/metadata":
+                self._send(
+                    {
+                        "ok": True,
+                        "uri": "blender://captures/test-capture/metadata",
+                        "mimeType": "application/json",
+                        "text": json.dumps(
+                            {
+                                "ok": True,
+                                "available": True,
+                                "capture_id": "test-capture",
+                                "resource_uri": "blender://captures/test-capture",
+                                "metadata_uri": "blender://captures/test-capture/metadata",
+                            }
+                        ),
+                    }
+                )
+            else:
+                self._send(
+                    {
+                        "ok": True,
+                        "uri": "blender://scene/status",
+                        "mimeType": "application/json",
+                        "text": '{"ok": true, "scene": "Fake Scene"}',
+                    }
+                )
         else:
             self.send_error(404)
 
@@ -176,6 +244,7 @@ def _assert_compact_tools_visible(proc):
     status_tool = next(tool for tool in listed["result"]["tools"] if tool["name"] == "blender_bridge_status")
     status_properties = status_tool["outputSchema"]["properties"]
     assert "external_script_trust_seconds_remaining" in status_properties, status_tool
+    assert "external_script_trust_session" in status_properties, status_tool
     assert "mcp_client_refresh_hint" in status_properties, status_tool
     assert "addon_version" in status_properties, status_tool
     assert "mcp_server_version" in status_properties, status_tool
@@ -624,10 +693,14 @@ def main():
         uris = {item["uri"] for item in resources["result"]["resources"]}
         assert "blender://bridge/status" in uris
         assert "blender://scene/status" in uris
+        assert "blender://captures/latest" in uris
+        assert "blender://captures/latest/metadata" in uris
 
         templates = _send(proc, {"jsonrpc": "2.0", "id": 40, "method": "resources/templates/list"})
         template_names = {item["name"] for item in templates["result"]["resourceTemplates"]}
         assert "scene-resource" in template_names, templates
+        assert "capture-resource" in template_names, templates
+        assert "capture-metadata-resource" in template_names, templates
 
         prompts = _send(proc, {"jsonrpc": "2.0", "id": 41, "method": "prompts/list"})
         prompt_names = {item["name"] for item in prompts["result"]["prompts"]}
@@ -649,6 +722,49 @@ def main():
             {"jsonrpc": "2.0", "id": 5, "method": "resources/read", "params": {"uri": "blender://scene/status"}},
         )
         assert resource["result"]["contents"][0]["mimeType"] == "application/json", resource
+
+        capture_resource = _send(
+            proc,
+            {"jsonrpc": "2.0", "id": 43, "method": "resources/read", "params": {"uri": "blender://captures/latest"}},
+        )
+        capture_content = capture_resource["result"]["contents"][0]
+        assert capture_content["mimeType"] == "image/png", capture_resource
+        assert capture_content["blob"] == "iVBORw0KGgo=", capture_resource
+        capture_metadata = _send(
+            proc,
+            {
+                "jsonrpc": "2.0",
+                "id": 44,
+                "method": "resources/read",
+                "params": {"uri": "blender://captures/latest/metadata"},
+            },
+        )
+        metadata_content = capture_metadata["result"]["contents"][0]
+        metadata = json.loads(metadata_content["text"])
+        assert metadata["exact_resource_uri"] == "blender://captures/test-capture", capture_metadata
+        exact_capture_resource = _send(
+            proc,
+            {
+                "jsonrpc": "2.0",
+                "id": 45,
+                "method": "resources/read",
+                "params": {"uri": metadata["exact_resource_uri"]},
+            },
+        )
+        exact_capture_content = exact_capture_resource["result"]["contents"][0]
+        assert exact_capture_content["mimeType"] == "image/png", exact_capture_resource
+        assert exact_capture_content["blob"] == "iVBORw0KGgo=", exact_capture_resource
+        exact_metadata_resource = _send(
+            proc,
+            {
+                "jsonrpc": "2.0",
+                "id": 46,
+                "method": "resources/read",
+                "params": {"uri": metadata["exact_metadata_uri"]},
+            },
+        )
+        exact_metadata = json.loads(exact_metadata_resource["result"]["contents"][0]["text"])
+        assert exact_metadata["resource_uri"] == "blender://captures/test-capture", exact_metadata_resource
         print("smoke_mcp_server: ok")
     finally:
         proc.kill()

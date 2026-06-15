@@ -2,11 +2,11 @@
 
 ## Working Name
 
-Claude for Blender
+Blender Agent Bridge
 
 ## North Star
 
-Let a Blender user ask Claude to understand, critique, and modify the active scene without leaving Blender. The assistant should combine structured scene inspection, viewport vision, Blender Python scripting, documentation lookup, and safe editing helpers so changing objects, materials, lights, cameras, and animations feels straightforward.
+Let a Blender user ask Claude in Blender, or connect Codex/Claude Code/other MCP-capable agents externally, to understand, critique, and modify the active scene. The assistant surface should combine structured scene inspection, viewport vision, Blender Python scripting, documentation lookup, and safe editing helpers so changing objects, materials, lights, cameras, and animations feels straightforward.
 
 ## Evidence From Current Docs
 
@@ -130,6 +130,10 @@ Expose Claude to narrow client tools rather than raw Python first:
 - `apply_vehicle_refinement_template`: applies a bounded vehicle detail kit with smoothing, wheels, glass, seams, headlights, and taillights.
 - `create_studio_product_stage`: creates a bounded floor/backdrop/key-fill-rim-light/camera presentation setup around a target.
 - `add_dimension_callouts`: adds width/depth/height curve and text callouts around a target's bounds.
+- `apply_lighting_preset`: creates bounded product/gallery/dramatic area-light rigs around a target.
+- `create_material_palette`: creates production palette materials and optional swatch cubes.
+- `create_product_turntable_setup`: creates optional staging, target rotation, and orbit camera for product review.
+- `organize_scene_for_production`: links objects into production collections without deleting original links.
 - `add_track_to_constraint`: adds a Track To constraint from selected objects to a target.
 - `add_light`: creates a light object.
 - `add_camera`: creates a camera and makes it active.
@@ -189,7 +193,7 @@ Acceptance:
 - Claude can comment on visible composition, object placement, materials, and framing.
 - User can toggle screenshot inclusion per prompt.
 
-Status: Viewport screenshot attachment is implemented with a user toggle, local capture cache, maximum byte limit, API-only image blocks, transcript-safe metadata, and explicit PNG downscaling/re-save when a capture exceeds the request byte budget. Broader visual QA and animation/playblast review remain later work.
+Status: Viewport screenshot attachment is implemented with a user toggle, project/session-scoped capture storage, maximum byte limit, API-only image blocks, transcript-safe metadata, MCP capture resources for external clients, and explicit PNG downscaling/re-save when a capture exceeds the request byte budget. Broader visual QA and animation/playblast review remain later work.
 
 ### Milestone 3: Approved Script Execution
 

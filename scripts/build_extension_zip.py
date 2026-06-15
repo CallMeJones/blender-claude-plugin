@@ -16,6 +16,7 @@ import zipfile
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 DEFAULT_SOURCE = os.path.join(ROOT, "addon", "claude_blender")
 DEFAULT_DIST = os.path.join(ROOT, "dist")
+DEFAULT_LICENSE = os.path.join(ROOT, "LICENSE")
 EXCLUDED_DIRS = {"__pycache__", ".git", ".mypy_cache", ".pytest_cache", ".ruff_cache"}
 EXCLUDED_SUFFIXES = {".pyc", ".pyo", ".blend", ".blend1", ".blend2", ".zip", ".sha256"}
 ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
@@ -45,9 +46,16 @@ def _iter_files(source_dir):
             yield path, relative
 
 
-def _write_reproducible_zip(source_dir, output_path):
+def _default_extra_files():
+    if os.path.exists(DEFAULT_LICENSE):
+        return [(DEFAULT_LICENSE, "LICENSE")]
+    return []
+
+
+def _write_reproducible_zip(source_dir, output_path, extra_files=None):
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with zipfile.ZipFile(output_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+        written = set()
         for path, relative in _iter_files(source_dir):
             with open(path, "rb") as handle:
                 data = handle.read()
@@ -55,13 +63,33 @@ def _write_reproducible_zip(source_dir, output_path):
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o644 << 16
             archive.writestr(info, data)
+            written.add(relative)
+        for path, relative in sorted(extra_files or [], key=lambda item: item[1]):
+            if relative in written:
+                continue
+            with open(path, "rb") as handle:
+                data = handle.read()
+            info = zipfile.ZipInfo(relative, date_time=ZIP_TIMESTAMP)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o644 << 16
+            archive.writestr(info, data)
+            written.add(relative)
 
 
-def _copy_filtered_source(source_dir, destination_dir):
+def _copy_filtered_source(source_dir, destination_dir, extra_files=None):
+    copied = set()
     for path, relative in _iter_files(source_dir):
         destination = os.path.join(destination_dir, *relative.split("/"))
         os.makedirs(os.path.dirname(destination), exist_ok=True)
         shutil.copy2(path, destination)
+        copied.add(relative)
+    for path, relative in sorted(extra_files or [], key=lambda item: item[1]):
+        if relative in copied:
+            continue
+        destination = os.path.join(destination_dir, *relative.split("/"))
+        os.makedirs(os.path.dirname(destination), exist_ok=True)
+        shutil.copy2(path, destination)
+        copied.add(relative)
 
 
 def _sha256_file(path):
@@ -92,15 +120,16 @@ def build_extension(*, source_dir=DEFAULT_SOURCE, dist_dir=DEFAULT_DIST, output=
     manifest, _manifest_path = _read_manifest(source_dir)
     output_path = output or os.path.join(dist_dir, f"{manifest['id']}-{manifest['version']}.zip")
     output_path = os.path.abspath(output_path)
+    extra_files = _default_extra_files()
     if blender:
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="claude-blender-build-") as temp_dir:
             filtered_source = os.path.join(temp_dir, os.path.basename(source_dir.rstrip(os.sep)) or "source")
             os.makedirs(filtered_source, exist_ok=True)
-            _copy_filtered_source(source_dir, filtered_source)
+            _copy_filtered_source(source_dir, filtered_source, extra_files=extra_files)
             _run_blender_build(blender, filtered_source, output_path)
     else:
-        _write_reproducible_zip(source_dir, output_path)
+        _write_reproducible_zip(source_dir, output_path, extra_files=extra_files)
     digest = _sha256_file(output_path)
     digest_path = f"{output_path}.sha256"
     with open(digest_path, "w", encoding="utf-8", newline="\n") as handle:
@@ -117,7 +146,7 @@ def build_extension(*, source_dir=DEFAULT_SOURCE, dist_dir=DEFAULT_DIST, output=
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Build the Claude for Blender extension zip")
+    parser = argparse.ArgumentParser(description="Build the Blender Agent Bridge extension zip")
     parser.add_argument("--source-dir", default=DEFAULT_SOURCE)
     parser.add_argument("--dist-dir", default=DEFAULT_DIST)
     parser.add_argument("--output")

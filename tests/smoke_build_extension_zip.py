@@ -61,6 +61,7 @@ def _assert_package_clean(path):
     assert "blender_manifest.toml" in names, sorted(names)[:20]
     assert "__init__.py" in names, sorted(names)[:20]
     assert "build_info.py" in names, sorted(names)[:20]
+    assert "LICENSE" in names, sorted(names)[:20]
     assert not any(name.lower().endswith(EXCLUDED_SUFFIXES) for name in names), sorted(names)
     return names
 

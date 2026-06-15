@@ -32,7 +32,7 @@ Current implementation:
 - Execution pushes a Blender undo step when possible, saves a timestamped `.blend` checkpoint when enabled, and records stdout/errors in `Claude Script Log`.
 - Failed scripts keep their pending code and expose a `Repair Script` action that sends the failed code and traceback back to Claude for a corrected draft.
 - External clients can normally call `run_approved_script` with a short-lived one-time token issued by the Blender UI for the current pending script.
-- Users can also enable a Blender-side timed external script trust window, currently 15 minutes from the sidebar. During that window, external clients may run staged scripts without a per-script token, or with an empty token string, but each script still has to be staged in Blender and pass static checks at run time. Blocked scripts remain refused. Trust grants are runtime-only and are cleared on add-on reload, file load, and bridge start.
+- Users can also enable a Blender-side external script trust window from sidebar presets. During that runtime-only window, external clients may run staged scripts without a per-script token, or with an empty token string, but each script still has to be staged in Blender and pass static checks at run time. Blocked scripts remain refused. Timed grants expire; session grants last until Revoke, add-on reload, file load, or bridge start.
 
 ### Limited Autonomous
 
@@ -61,6 +61,7 @@ Defaults and boundaries:
 - MCP clients call `mcp_server.py`; they do not import Blender Python or touch `bpy`.
 - Mutating helper tools still run inside Blender and use the live-preview/revert path.
 - Generated arbitrary Python is still staged with `draft_script` and must be approved in Blender.
+- Viewport screenshots exposed through MCP capture resources are local artifacts. Saved `.blend` files use a project-local `.claude_blender/captures/` folder by default, while unsaved or unwritable projects use the global user cache.
 - External clients should surface tool calls clearly because MCP tools are model-controlled.
 
 ## Risk Checks
@@ -109,7 +110,7 @@ Before approved execution:
 - Save a timestamped Claude-created `.blend` checkpoint when checkpoints are enabled.
 - Record the generated script and result log locally.
 - For external clients, require the approval token to match the current pending script and consume it before execution.
-- If a timed external script trust window is active, accept tokenless external execution only until the runtime expiry time and only for a currently staged script that still passes static checks.
+- If an external script trust window is active, accept tokenless external execution only within the runtime grant and only for a currently staged script that still passes static checks.
 
 During live preview:
 

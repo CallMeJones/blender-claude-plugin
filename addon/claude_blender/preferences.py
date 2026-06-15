@@ -1,4 +1,4 @@
-"""Add-on preferences for Claude for Blender."""
+"""Add-on preferences for Blender Agent Bridge."""
 
 from __future__ import annotations
 
@@ -100,7 +100,7 @@ class CLAUDEBLENDER_AP_preferences(bpy.types.AddonPreferences):
     )
     capture_cache_dir: bpy.props.StringProperty(
         name="Capture Cache",
-        description="Directory for viewport screenshot captures",
+        description="Optional custom base directory for viewport screenshots. Blank or default uses project-local captures when possible.",
         subtype="DIR_PATH",
         default=_default_capture_dir(),
     )
