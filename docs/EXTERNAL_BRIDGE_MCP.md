@@ -118,6 +118,8 @@ Set `BLENDER_MCP_FULL_TOOL_LIST=1` in the MCP server environment to expose every
 
 `blender_bridge_status` also reports the current external script trust snapshot, including whether tokenless external script runs are allowed, seconds remaining, the runtime expiry timestamp, and whether saved scene trust state is stale. Some MCP clients cache callable tools aggressively; if a newly added Blender tool is missing, restart or refresh the MCP client after copying the latest config.
 
+For advanced animation, `get_animation_scene_context` is the read-only planning entry point before repair or generation: it summarizes likely edit targets, rig-driven meshes, rig control candidates, shape keys, drivers, constraints, physics hints, contact surfaces, camera readiness, subject routing, and recommended deeper inspection tools.
+
 ## Resources
 
 Current resources:

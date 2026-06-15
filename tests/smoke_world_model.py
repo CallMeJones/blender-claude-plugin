@@ -85,7 +85,20 @@ def main():
         bpy.ops.object.armature_add(location=(2.0, 0.0, 0.0))
         armature = context.object
         armature.name = "Claude World Armature"
+        if armature.data and armature.data.bones:
+            armature.data.bones[0].name = "CTRL_Main"
+            armature.data.bones["CTRL_Main"].use_deform = False
         created_objects.append(armature)
+        armature_modifier = cube.modifiers.new("Claude World Armature Mod", "ARMATURE")
+        armature_modifier.object = armature
+
+        bpy.ops.mesh.primitive_cube_add(size=1.0, location=(0.0, 0.0, -0.55))
+        ground = context.object
+        ground.name = "Claude World Ground"
+        ground.data.name = "Claude World Ground Mesh"
+        ground.scale = (3.0, 3.0, 0.04)
+        created_objects.append(ground)
+        context.view_layer.update()
 
         curve_obj = _make_curve_object(scene)
         text_obj = _make_text_object(scene)
@@ -108,9 +121,11 @@ def main():
         assert "world_model_summary" in bundle
         assert bundle["world_model_summary"]["shape_key_mesh_count"] >= 1
         assert "get_geometry_nodes_details" in bundle["available_tools"]
+        assert "get_animation_scene_context" in bundle["available_tools"]
 
         tool_names = {tool["name"] for tool in anthropic_client.blender_tool_definitions()}
         for expected in {
+            "get_animation_scene_context",
             "get_geometry_nodes_details",
             "get_shader_nodes_details",
             "get_rigging_details",
@@ -131,6 +146,26 @@ def main():
 
         rigging = _execute(context, "get_rigging_details", {"object_names": ["Claude World Armature", "Cube"]})
         assert any(item["type"] == "ARMATURE" for item in rigging["objects"]), rigging
+
+        animation_context = _execute(
+            context,
+            "get_animation_scene_context",
+            {"object_names": ["Cube", "Claude World Armature", "Claude World Ground"]},
+        )
+        by_name = {item["name"]: item for item in animation_context["objects"]}
+        assert by_name["Cube"]["rig"]["likely_rig_driven"] is True, animation_context
+        assert by_name["Cube"]["suggested_primary_animation_target"] == "rig_controls", animation_context
+        assert by_name["Cube"]["rig"]["control_targets"][0]["control_candidate_count"] >= 1, animation_context
+        assert by_name["Claude World Armature"]["rig_control_hints"]["control_candidate_count"] >= 1, animation_context
+        assert "get_rigging_details" in by_name["Cube"]["recommended_detail_tools"], animation_context
+        assert "get_shape_key_details" in by_name["Cube"]["recommended_detail_tools"], animation_context
+        assert "get_simulation_details" in animation_context["recommended_next_tools"], animation_context
+        assert animation_context["summary"]["rig_driven_object_count"] >= 2, animation_context
+        assert animation_context["summary"]["rig_control_candidate_count"] >= 1, animation_context
+        assert animation_context["summary"]["contact_surface_candidate_count"] >= 1, animation_context
+        assert animation_context["contact_surface_candidates"][0]["name"] == "Claude World Ground", animation_context
+        assert any(route["object"] == "Cube" and route["rig_control_candidate_count"] >= 1 for route in animation_context["subject_routing"]), animation_context
+        assert animation_context["summary"]["active_camera"] == "Camera", animation_context
 
         shape_keys = _execute(context, "get_shape_key_details", {"object_names": ["Cube"]})
         assert shape_keys["objects"], shape_keys
@@ -170,6 +205,10 @@ def main():
             group = bpy.data.node_groups.get(name)
             if group:
                 bpy.data.node_groups.remove(group)
+        for name in ["Claude World Ground Mesh"]:
+            mesh = bpy.data.meshes.get(name)
+            if mesh:
+                bpy.data.meshes.remove(mesh)
         collection = bpy.data.collections.get("Claude World Collection")
         if collection:
             bpy.data.collections.remove(collection)

@@ -45,6 +45,10 @@ TOOL_CONTRACTS = {
         "description": "Return scene timeline, action, f-curve, and keyframe details",
         "mutates_scene": False,
     },
+    "get_animation_scene_context": {
+        "description": "Return animation-aware routing context for rigs, control candidates, shape keys, physics, materials, cameras, contact surfaces, and likely edit targets",
+        "mutates_scene": False,
+    },
     "create_animation_brief": {
         "description": "Create a structured animation prompt contract from the user brief and scene context",
         "mutates_scene": False,
@@ -83,6 +87,10 @@ TOOL_CONTRACTS = {
     },
     "analyze_camera_framing": {
         "description": "Check whether animated subjects remain framed by the active or named camera",
+        "mutates_scene": False,
+    },
+    "analyze_motion_physics": {
+        "description": "Check sampled speed and acceleration for physically implausible spikes",
         "mutates_scene": False,
     },
     "compare_animation_to_brief": {

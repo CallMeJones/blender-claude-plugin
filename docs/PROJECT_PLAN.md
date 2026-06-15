@@ -396,6 +396,8 @@ Acceptance:
 - The agent can avoid common wrong edits such as keyframing the mesh object when a rig control should be animated.
 - The context planner exposes deeper animation context only when the request needs it.
 
+Status: Initial animation-aware routing context is implemented and now includes first-pass subject routing. `get_animation_scene_context` summarizes likely edit targets, rig-driven meshes, armatures, pose-bone/control-candidate hints, shape-key targets, object/data/material animation ownership, drivers, constraints, NLA counts, physics/simulation hints, contact-surface candidates, and camera readiness, then recommends deeper detail tools on demand. It is read-only and intended to guide the agent before applying helper edits or drafting Python.
+
 #### Milestone 7E: Physics, Contact, And Prompt Validators
 
 - Add validators that check the generated animation against both the brief and physical plausibility.
@@ -407,6 +409,7 @@ Candidate tools:
 - `analyze_contact_sliding`
 - `analyze_center_of_mass`
 - `analyze_collision_penetration`
+- `analyze_motion_physics`
 - `compare_animation_to_brief`
 
 Acceptance:
@@ -415,7 +418,7 @@ Acceptance:
 - Physics-heavy prompts can use Blender simulation when helper-generated keyframes are not enough.
 - Validation results are structured enough to drive targeted repairs.
 
-Status: Initial local validators are implemented for sampled animation state, contact sliding against a contact plane, sampled bounding-box penetration, camera framing, and brief comparison. These are intentionally read-only so a capable agent can inspect and plan before mutating the scene.
+Status: Partial. Existing read-only validators cover sampled animation state, contact sliding against a contact plane, sampled bounding-box penetration, camera framing, brief comparison, and sampled speed/acceleration spikes through `analyze_motion_physics`. `compare_animation_to_brief` now runs contact/physics checks when the brief requests contact validation. Remaining 7E work is richer center-of-mass/support analysis, count validation beyond simple motion presence, simulation bake inspection, and stronger frame-range/settle diagnostics.
 
 #### Milestone 7F: Playblast Review And Repair Loop
 

@@ -33,6 +33,7 @@ ANIMATION_TOOLS = {
     "analyze_contact_sliding",
     "analyze_collision_penetration",
     "analyze_camera_framing",
+    "analyze_motion_physics",
     "compare_animation_to_brief",
     "review_playblast_against_brief",
     "repair_animation_from_findings",
@@ -328,13 +329,41 @@ def main():
         assert framing["samples"], framing
         assert framing["samples"][0]["camera"] == "Camera", framing
 
+        physics = _execute(
+            context,
+            "analyze_motion_physics",
+            {"object_names": ["Cube"], "frame_start": 1, "frame_end": 24, "sample_step": 12, "max_speed": 1.0, "max_acceleration": 1.0},
+        )
+        assert physics["objects"][0]["speed_segments"], physics
+        assert any(item.get("requirement") == "motion_physics" for item in physics["findings"]), physics
+
         comparison = _execute(
             context,
             "compare_animation_to_brief",
             {"brief": contract, "frame_start": 1, "frame_end": 24},
         )
         assert comparison["brief_contract_id"] == contract["contract_id"], comparison
+        assert "motion_physics" in comparison["validation_results"], comparison
         assert not any(item.get("requirement") == "action" for item in comparison["findings"]), comparison
+
+        unresolved_comparison = _execute(
+            context,
+            "compare_animation_to_brief",
+            {
+                "brief": {
+                    "contract_id": "anim-unresolved-smoke",
+                    "subjects": [],
+                    "subject_names": [],
+                    "action": "bounce",
+                    "timing": {"frame_start": 1, "frame_end": 24},
+                    "validation_plan": {"check_contact_physics": True},
+                }
+            },
+        )
+        assert unresolved_comparison["status"] == "needs_repair", unresolved_comparison
+        assert unresolved_comparison["sample_summary"] == {}, unresolved_comparison
+        assert unresolved_comparison["validation_results"] == {}, unresolved_comparison
+        assert any(item.get("requirement") == "subject" for item in unresolved_comparison["findings"]), unresolved_comparison
 
         playblast_review = _execute(
             context,
@@ -398,12 +427,67 @@ def main():
         repair_plan = _execute(
             context,
             "repair_animation_from_findings",
-            {"findings": [{"severity": "warning", "message": "Contact points slide across the ground plane."}], "brief": contract},
+            {
+                "findings": [
+                    {"severity": "warning", "message": "Contact points slide across the ground plane."},
+                    {"severity": "warning", "requirement": "motion_physics", "message": "Sampled acceleration spike may be physically implausible."},
+                ],
+                "brief": contract,
+            },
         )
         assert repair_plan["suggested_tool_calls"][0]["tool"] == "set_pose_hold", repair_plan
+        assert any(item["tool"] == "retime_actions" for item in repair_plan["repair_operations"]), repair_plan
         assert repair_plan["repair_operations"][0]["arguments"]["object_names"] == ["Cube"], repair_plan
         assert repair_plan["repair_operations"][0]["tool_call"]["input"]["object_names"] == ["Cube"], repair_plan
         assert repair_plan["repair_operations"][0]["source_finding_index"] == 0, repair_plan
+
+        retime_disabled_loop = _execute(
+            context,
+            "run_animation_repair_loop",
+            {
+                "brief": contract,
+                "repair_operations": [item for item in repair_plan["repair_operations"] if item["tool"] == "retime_actions"][:1],
+                "apply_mutating_repairs": False,
+                "max_iterations": 1,
+                "max_operations": 1,
+            },
+        )
+        assert retime_disabled_loop["executed_count"] == 0, retime_disabled_loop
+        assert "mutating repairs are disabled" in retime_disabled_loop["skipped_operations"][0]["reason"], retime_disabled_loop
+
+        widened_loop = _execute(
+            context,
+            "run_animation_repair_loop",
+            {
+                "brief": contract,
+                "repair_operations": [{"tool": "set_current_frame", "arguments": {"frame": 12}}],
+                "allowed_tools": ["set_current_frame"],
+                "max_iterations": 1,
+                "max_operations": 1,
+            },
+        )
+        assert widened_loop["executed_count"] == 0, widened_loop
+        assert "not in allowed_tools" in widened_loop["skipped_operations"][0]["reason"], widened_loop
+
+        mutating_lie_loop = _execute(
+            context,
+            "run_animation_repair_loop",
+            {
+                "brief": contract,
+                "repair_operations": [
+                    {
+                        "tool": "set_pose_hold",
+                        "arguments": {"object_names": ["Cube"], "frame": 12, "hold_frames": 1, "paths": ["location"]},
+                        "mutates_scene": False,
+                    }
+                ],
+                "apply_mutating_repairs": False,
+                "max_iterations": 1,
+                "max_operations": 1,
+            },
+        )
+        assert mutating_lie_loop["executed_count"] == 0, mutating_lie_loop
+        assert "mutating repairs are disabled" in mutating_lie_loop["skipped_operations"][0]["reason"], mutating_lie_loop
 
         repair_loop = _execute(
             context,

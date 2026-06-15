@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import Counter
 
 import bpy
+import mathutils
 
 
 def _safe_name(data_block):
@@ -136,6 +137,354 @@ def _modifier_summary(modifier):
             "node_count": len(getattr(node_group, "nodes", [])),
         }
     return item
+
+
+def _iter_action_fcurves(action):
+    if action is None:
+        return []
+    fcurves = getattr(action, "fcurves", None)
+    if fcurves is not None:
+        return list(fcurves)
+    result = []
+    for layer in getattr(action, "layers", []):
+        for strip in getattr(layer, "strips", []):
+            for channelbag in getattr(strip, "channelbags", []):
+                result.extend(list(getattr(channelbag, "fcurves", [])))
+    return result
+
+
+def _animation_owner_summary(data_block):
+    animation_data = getattr(data_block, "animation_data", None)
+    if animation_data is None:
+        return {"has_animation_data": False, "action": None, "driver_count": 0, "nla_track_count": 0}
+    action = animation_data.action
+    drivers = list(getattr(animation_data, "drivers", []) or [])
+    nla_tracks = list(getattr(animation_data, "nla_tracks", []) or [])
+    return {
+        "has_animation_data": True,
+        "action": _safe_name(action),
+        "fcurve_count": len(_iter_action_fcurves(action)),
+        "driver_count": len(drivers),
+        "nla_track_count": len(nla_tracks),
+        "nla_tracks": [{"name": track.name, "strip_count": len(getattr(track, "strips", []) or [])} for track in nla_tracks[:8]],
+    }
+
+
+def _bbox_z_range(obj):
+    corners = getattr(obj, "bound_box", None)
+    if not corners:
+        z = float(obj.matrix_world.translation.z)
+        return z, z
+    points = [obj.matrix_world @ mathutils.Vector(corner) for corner in corners]
+    values = [float(point.z) for point in points]
+    return min(values), max(values)
+
+
+_RIG_CONTROL_NAME_TOKENS = (
+    "ctrl",
+    "control",
+    "ctl",
+    "ik",
+    "fk",
+    "target",
+    "pole",
+    "root",
+    "master",
+    "cog",
+    "hips",
+    "hand",
+    "foot",
+)
+
+
+def _pose_bone_control_hints(obj, *, max_candidates=16):
+    pose_bones = list(getattr(getattr(obj, "pose", None), "bones", []) or []) if obj.type == "ARMATURE" else []
+    candidates = []
+    for pose_bone in pose_bones:
+        data_bone = obj.data.bones.get(pose_bone.name) if obj.data else None
+        constraints = list(getattr(pose_bone, "constraints", []) or [])
+        name_lower = pose_bone.name.lower()
+        reasons = []
+        if any(token in name_lower for token in _RIG_CONTROL_NAME_TOKENS):
+            reasons.append("control_name")
+        if data_bone and not data_bone.use_deform:
+            reasons.append("non_deforming_bone")
+        if constraints:
+            reasons.append("pose_constraints")
+        if getattr(pose_bone, "custom_shape", None):
+            reasons.append("custom_shape")
+        if not reasons:
+            continue
+        candidates.append(
+            {
+                "name": pose_bone.name,
+                "parent": _safe_name(pose_bone.parent),
+                "use_deform": bool(data_bone.use_deform) if data_bone else None,
+                "constraint_types": sorted({con.type for con in constraints}),
+                "custom_shape": _safe_name(getattr(pose_bone, "custom_shape", None)),
+                "likely_control": True,
+                "reasons": reasons,
+            }
+        )
+    return {
+        "pose_bone_count": len(pose_bones),
+        "control_candidate_count": len(candidates),
+        "control_candidates": candidates[: max(1, int(max_candidates or 1))],
+        "truncated": len(candidates) > max(1, int(max_candidates or 1)),
+    }
+
+
+def _rig_target_armatures(obj):
+    armatures = []
+    seen = set()
+    if getattr(obj.parent, "type", None) == "ARMATURE":
+        armatures.append(obj.parent)
+        seen.add(obj.parent.name)
+    for modifier in obj.modifiers:
+        if modifier.type != "ARMATURE":
+            continue
+        armature = getattr(modifier, "object", None)
+        if armature and armature.name not in seen:
+            armatures.append(armature)
+            seen.add(armature.name)
+    return armatures
+
+
+def _rig_target_summary(obj):
+    parent_armature = obj.parent if getattr(obj.parent, "type", None) == "ARMATURE" else None
+    armature_modifiers = []
+    for modifier in obj.modifiers:
+        if modifier.type != "ARMATURE":
+            continue
+        armature_modifiers.append(
+            {
+                "name": modifier.name,
+                "object": _safe_name(getattr(modifier, "object", None)),
+                "show_viewport": bool(modifier.show_viewport),
+            }
+        )
+    control_targets = []
+    for armature in _rig_target_armatures(obj):
+        hints = _pose_bone_control_hints(armature, max_candidates=8)
+        control_targets.append(
+            {
+                "name": armature.name,
+                "pose_bone_count": hints["pose_bone_count"],
+                "control_candidate_count": hints["control_candidate_count"],
+                "control_candidates": hints["control_candidates"],
+            }
+        )
+    return {
+        "parent_armature": _safe_name(parent_armature),
+        "armature_modifiers": armature_modifiers,
+        "control_targets": control_targets,
+        "likely_rig_driven": bool(parent_armature or armature_modifiers),
+    }
+
+
+def _physics_summary(obj):
+    rigid_body = getattr(obj, "rigid_body", None)
+    rigid_body_constraint = getattr(obj, "rigid_body_constraint", None)
+    simulation_types = {"PARTICLE_SYSTEM", "FLUID", "CLOTH", "SOFT_BODY", "DYNAMIC_PAINT"}
+    return {
+        "rigid_body": {
+            "type": getattr(rigid_body, "type", None),
+            "mass": round(float(getattr(rigid_body, "mass", 0.0)), 5) if rigid_body else 0.0,
+            "collision_shape": getattr(rigid_body, "collision_shape", None),
+        } if rigid_body else None,
+        "rigid_body_constraint": {
+            "type": getattr(rigid_body_constraint, "type", None),
+            "object1": _safe_name(getattr(rigid_body_constraint, "object1", None)),
+            "object2": _safe_name(getattr(rigid_body_constraint, "object2", None)),
+        } if rigid_body_constraint else None,
+        "simulation_modifiers": [_modifier_summary(modifier) for modifier in obj.modifiers if modifier.type in simulation_types],
+        "particle_system_count": len(getattr(obj, "particle_systems", []) or []),
+    }
+
+
+def _material_animation_summaries(obj):
+    result = []
+    for slot in obj.material_slots:
+        material = slot.material
+        if not material:
+            continue
+        material_item = {
+            "material": material.name,
+            "material_animation": _animation_owner_summary(material),
+            "node_tree_animation": _animation_owner_summary(material.node_tree) if material.use_nodes and material.node_tree else None,
+        }
+        if material_item["material_animation"]["has_animation_data"] or (
+            material_item["node_tree_animation"] and material_item["node_tree_animation"]["has_animation_data"]
+        ):
+            result.append(material_item)
+    return result
+
+
+def _animation_scene_object_context(obj):
+    object_animation = _animation_owner_summary(obj)
+    data_animation = _animation_owner_summary(obj.data) if getattr(obj, "data", None) else None
+    shape_key_animation = (
+        _animation_owner_summary(obj.data.shape_keys)
+        if obj.type == "MESH" and obj.data and obj.data.shape_keys
+        else None
+    )
+    rig = _rig_target_summary(obj)
+    physics = _physics_summary(obj)
+    material_animation = _material_animation_summaries(obj)
+    constraints = [{"name": con.name, "type": con.type, "influence": round(float(con.influence), 5)} for con in list(obj.constraints)[:16]]
+    drivers = _drivers_summary(obj, max_drivers=12)
+    shape_key_count = len(obj.data.shape_keys.key_blocks) if obj.type == "MESH" and obj.data and obj.data.shape_keys else 0
+    pose_bone_count = len(getattr(getattr(obj, "pose", None), "bones", []) or []) if obj.type == "ARMATURE" else 0
+    rig_control_hints = _pose_bone_control_hints(obj) if obj.type == "ARMATURE" else None
+    z_min, z_max = _bbox_z_range(obj)
+    dimensions = _xyz(obj.dimensions)
+    tools = {"get_animation_details"}
+    cautions = []
+    if rig["likely_rig_driven"] or obj.type == "ARMATURE" or pose_bone_count:
+        tools.add("get_rigging_details")
+        cautions.append("Inspect rig controls before keyframing mesh/object transforms.")
+    if obj.type == "ARMATURE" and pose_bone_count and rig_control_hints and not rig_control_hints["control_candidate_count"]:
+        cautions.append("No obvious rig control bones were detected; inspect rigging details before posing.")
+    if rig["likely_rig_driven"] and not any(target["control_candidate_count"] for target in rig["control_targets"]):
+        cautions.append("Rig-driven mesh has no obvious control target hints; inspect the armature before repair.")
+    if shape_key_count or (shape_key_animation and shape_key_animation["has_animation_data"]):
+        tools.add("get_shape_key_details")
+        cautions.append("Shape keys may be the intended animation target for deformation.")
+    if physics["rigid_body"] or physics["rigid_body_constraint"] or physics["simulation_modifiers"] or physics["particle_system_count"]:
+        tools.add("get_simulation_details")
+        cautions.append("Physics or simulation state may need baking/validation before repair.")
+    if material_animation:
+        tools.add("get_material_node_details")
+    if constraints or drivers or object_animation["driver_count"]:
+        tools.add("get_rigging_details")
+    if rig["likely_rig_driven"]:
+        primary_target = "rig_controls"
+    elif shape_key_count:
+        primary_target = "shape_keys"
+    elif material_animation:
+        primary_target = "material_or_shader"
+    elif obj.type == "CAMERA":
+        primary_target = "camera_transform_or_settings"
+    elif obj.type == "LIGHT":
+        primary_target = "light_data_or_transform"
+    else:
+        primary_target = "object_transform"
+    return {
+        "name": obj.name,
+        "type": obj.type,
+        "data": _safe_name(obj.data),
+        "parent": _safe_name(obj.parent),
+        "dimensions_blender_units": dimensions,
+        "scale": _xyz(obj.scale),
+        "world_z_range": [round(z_min, 5), round(z_max, 5)],
+        "likely_contact_surface": bool(obj.type == "MESH" and dimensions["z"] <= 0.1 and dimensions["x"] >= 1.0 and dimensions["y"] >= 1.0),
+        "object_animation": object_animation,
+        "data_animation": data_animation,
+        "shape_key_animation": shape_key_animation,
+        "shape_key_count": shape_key_count,
+        "material_animation": material_animation,
+        "constraints": constraints,
+        "drivers": drivers,
+        "rig": rig,
+        "rig_control_hints": rig_control_hints,
+        "pose_bone_count": pose_bone_count,
+        "physics": physics,
+        "suggested_primary_animation_target": primary_target,
+        "recommended_detail_tools": sorted(tools),
+        "cautions": cautions,
+    }
+
+
+def animation_scene_context(context, *, object_names=None, selected_only=False, max_objects=20):
+    names = set(object_names or [])
+    if names:
+        candidates = [obj for obj in (bpy.data.objects.get(name) for name in names) if obj is not None]
+        missing = [name for name in names if bpy.data.objects.get(name) is None]
+    elif selected_only and context.selected_objects:
+        candidates = list(context.selected_objects)
+        missing = []
+    else:
+        candidates = list(context.scene.objects)
+        missing = []
+    objects = [_animation_scene_object_context(obj) for obj in candidates[: max(1, int(max_objects or 1))]]
+    recommended = []
+    cautions = []
+    for item in objects:
+        recommended.extend(item["recommended_detail_tools"])
+        cautions.extend({"object": item["name"], "message": caution} for caution in item["cautions"])
+    contact_surface_candidates = sorted(
+        [
+            {
+                "name": item["name"],
+                "world_z_range": item["world_z_range"],
+                "dimensions_blender_units": item["dimensions_blender_units"],
+                "suggested_use": "floor_or_contact_surface",
+            }
+            for item in objects
+            if item["likely_contact_surface"]
+        ],
+        key=lambda item: (
+            item["world_z_range"][0],
+            -item["dimensions_blender_units"]["x"] * item["dimensions_blender_units"]["y"],
+        ),
+    )[:12]
+    subject_routing = []
+    for item in objects:
+        target_control_count = sum(target["control_candidate_count"] for target in item["rig"].get("control_targets", []))
+        own_control_count = (item["rig_control_hints"] or {}).get("control_candidate_count", 0)
+        subject_routing.append(
+            {
+                "object": item["name"],
+                "type": item["type"],
+                "suggested_primary_animation_target": item["suggested_primary_animation_target"],
+                "rig_control_candidate_count": own_control_count or target_control_count,
+                "likely_contact_surface": item["likely_contact_surface"],
+                "recommended_detail_tools": item["recommended_detail_tools"],
+                "cautions": item["cautions"][:4],
+            }
+        )
+    counted_control_sources = set()
+    rig_control_candidate_count = 0
+    for item in objects:
+        if item["rig_control_hints"] is not None and item["name"] not in counted_control_sources:
+            counted_control_sources.add(item["name"])
+            rig_control_candidate_count += item["rig_control_hints"]["control_candidate_count"]
+        for target in item["rig"].get("control_targets", []):
+            if target["name"] in counted_control_sources:
+                continue
+            counted_control_sources.add(target["name"])
+            rig_control_candidate_count += target["control_candidate_count"]
+    if context.scene.camera:
+        recommended.append("get_render_camera_compositor_details")
+    else:
+        cautions.append({"object": "", "message": "No active camera is set for shot/framing review."})
+    summary = {
+        "object_count": len(objects),
+        "animated_object_count": sum(1 for item in objects if item["object_animation"]["has_animation_data"]),
+        "rig_driven_object_count": sum(1 for item in objects if item["rig"]["likely_rig_driven"] or item["type"] == "ARMATURE"),
+        "shape_key_object_count": sum(1 for item in objects if item["shape_key_count"]),
+        "physics_object_count": sum(
+            1
+            for item in objects
+            if item["physics"]["rigid_body"] or item["physics"]["simulation_modifiers"] or item["physics"]["particle_system_count"]
+        ),
+        "contact_surface_candidate_count": sum(1 for item in objects if item["likely_contact_surface"]),
+        "rig_control_candidate_count": rig_control_candidate_count,
+        "active_camera": _safe_name(context.scene.camera),
+        "camera_count": len([obj for obj in context.scene.objects if obj.type == "CAMERA"]),
+    }
+    return {
+        "ok": True,
+        "message": f"Built animation-aware scene context for {len(objects)} object(s)",
+        "summary": summary,
+        "objects": objects,
+        "subject_routing": subject_routing,
+        "contact_surface_candidates": contact_surface_candidates,
+        "recommended_next_tools": sorted(set(recommended)),
+        "cautions": cautions,
+        "missing_object_names": missing,
+        "note": "Use recommended detail tools before choosing whether to animate object transforms, rig controls, shape keys, materials, physics, or camera settings.",
+    }
 
 
 def world_model_summary(context):

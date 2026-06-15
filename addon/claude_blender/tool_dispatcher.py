@@ -25,6 +25,12 @@ def _optional_float_list(values, length, default):
     return _float_list(values, length, default)
 
 
+def _optional_float(value):
+    if value is None or value == "":
+        return None
+    return float(value)
+
+
 def _json_result(result):
     return json.dumps(result, indent=2, sort_keys=True)
 
@@ -426,6 +432,15 @@ def get_animation_details(context, args):
     }
 
 
+def get_animation_scene_context(context, args):
+    return world_model.animation_scene_context(
+        context,
+        object_names=_name_list(args.get("object_names")),
+        selected_only=bool(args.get("selected_only", False)),
+        max_objects=_bounded_int(args.get("max_objects"), 20, maximum=80),
+    )
+
+
 def create_animation_brief(context, args):
     return animation_brief.create_animation_brief(
         context,
@@ -544,6 +559,19 @@ def analyze_camera_framing(context, args):
     )
 
 
+def analyze_motion_physics(context, args):
+    return animation_analysis.analyze_motion_physics(
+        context,
+        object_names=_name_list(args.get("object_names")),
+        frame_start=args.get("frame_start"),
+        frame_end=args.get("frame_end"),
+        sample_step=_bounded_int(args.get("sample_step"), 2, minimum=1, maximum=10000),
+        max_speed=_optional_float(args.get("max_speed")),
+        max_acceleration=_optional_float(args.get("max_acceleration")),
+        selected_only=bool(args.get("selected_only", False)),
+    )
+
+
 def compare_animation_to_brief(context, args):
     return animation_analysis.compare_animation_to_brief(
         context,
@@ -587,6 +615,7 @@ _REPAIR_LOOP_DEFAULT_TOOLS = {
     "add_breakdown_pose",
     "block_key_poses",
     "create_camera_orbit",
+    "retime_actions",
 }
 
 
@@ -620,8 +649,6 @@ def _repair_operation_key(tool, tool_args):
 
 
 def _repair_operation_mutates(tool, operation):
-    if isinstance(operation, dict) and isinstance(operation.get("mutates_scene"), bool):
-        return bool(operation["mutates_scene"])
     return tool not in _REPAIR_LOOP_READ_ONLY_TOOLS
 
 
@@ -636,6 +663,8 @@ def _repair_operation_blocker(tool, tool_args):
         return "block_key_poses requires explicit poses; this repair needs a planning pass first"
     if tool in {"set_pose_hold", "set_action_interpolation", "add_breakdown_pose"} and not tool_args.get("object_names"):
         return f"{tool} requires object_names"
+    if tool == "retime_actions" and not (tool_args.get("object_names") or tool_args.get("action_names")):
+        return "retime_actions requires object_names or action_names"
     if tool == "create_camera_orbit" and not tool_args.get("target_name"):
         return "create_camera_orbit requires target_name"
     return ""
@@ -678,7 +707,10 @@ def run_animation_repair_loop(context, args):
     max_operations = _bounded_int(args.get("max_operations"), 4, minimum=1, maximum=12)
     apply_mutating = bool(args.get("apply_mutating_repairs", True))
     recapture_after_mutation = bool(args.get("recapture_after_mutation", True))
-    allowed_tools = set(_name_list(args.get("allowed_tools"))) or set(_REPAIR_LOOP_DEFAULT_TOOLS)
+    requested_allowed_tools = set(_name_list(args.get("allowed_tools")))
+    allowed_tools = set(_REPAIR_LOOP_DEFAULT_TOOLS)
+    if requested_allowed_tools:
+        allowed_tools.intersection_update(requested_allowed_tools)
     frame_start, frame_end = _brief_frame_range(context, brief or {})
 
     reviews = []
@@ -2018,6 +2050,7 @@ TOOL_FUNCTIONS = {
     "list_scene_objects": list_scene_objects,
     "get_object_details": get_object_details,
     "get_animation_details": get_animation_details,
+    "get_animation_scene_context": get_animation_scene_context,
     "create_animation_brief": create_animation_brief,
     "create_timing_chart": create_timing_chart,
     "analyze_motion_arcs": analyze_motion_arcs,
@@ -2028,6 +2061,7 @@ TOOL_FUNCTIONS = {
     "analyze_contact_sliding": analyze_contact_sliding,
     "analyze_collision_penetration": analyze_collision_penetration,
     "analyze_camera_framing": analyze_camera_framing,
+    "analyze_motion_physics": analyze_motion_physics,
     "compare_animation_to_brief": compare_animation_to_brief,
     "review_playblast_against_brief": review_playblast_against_brief,
     "repair_animation_from_findings": repair_animation_from_findings,

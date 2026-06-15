@@ -179,6 +179,7 @@ Initial helpers:
 - `add_camera(name, location, rotation, lens)`
 - `set_scene_frame_range(frame_start, frame_end, current_frame, fps)`
 - `set_active_camera(camera_name)`
+- `get_animation_scene_context(object_names, selected_only, max_objects)`
 - `create_animation_brief(prompt, subject_names, frame_start, frame_end)`
 - `create_timing_chart(prompt, brief, subject_names, frame_start, frame_end, beats)`
 - `block_key_poses(object_names, poses, selected_only, interpolation)`
@@ -193,6 +194,7 @@ Initial helpers:
 - `analyze_contact_sliding(object_names, frame_start, frame_end, contact_z, contact_tolerance, sliding_tolerance)`
 - `analyze_collision_penetration(object_names, frame_start, frame_end, tolerance)`
 - `analyze_camera_framing(object_names, camera_name, frame_start, frame_end, margin)`
+- `analyze_motion_physics(object_names, frame_start, frame_end, sample_step, max_speed, max_acceleration)`
 - `compare_animation_to_brief(brief, prompt, subject_names, frame_start, frame_end)`
 - `review_playblast_against_brief(playblast, brief, prompt)`
 - `repair_animation_from_findings(findings, brief)`
@@ -228,6 +230,8 @@ Initial helpers:
 - `organize_scene_for_production(collection_prefix, selected_only)`
 
 Helpers should validate inputs and return structured results. Claude can still propose Python for advanced operations, but the default path for common edits should be helper-first.
+
+`get_animation_scene_context` is the first Milestone 7D routing layer. It does not replace deep detail tools; it summarizes likely animation ownership so Claude can choose the right next inspection before editing. It flags rig-driven objects, likely rig control bones, shape-key deformation targets, material or shader animation, object/data/action owners, constraints, drivers, NLA tracks, simulation/rigid-body hints, likely contact surfaces, and camera readiness, then returns subject routing, contact-surface candidates, and recommended detail tools such as `get_rigging_details`, `get_shape_key_details`, `get_animation_details`, `get_simulation_details`, and `get_render_camera_compositor_details`.
 
 The advanced helpers are intentionally bounded. They create useful starter states and simple edits without exposing arbitrary node graph, rig, or simulation mutation. When Claude needs a custom geometry-node network, production rig, compositor graph, destructive mesh operation, import/export, or complex simulation setup, it should draft approved Python after inspecting context and docs.
 Reusable refinement templates should stay bounded and composable. Vehicle, product, and character kits inspect bounds, add tasteful primitive/curve/material details, preserve preview rollback, and escalate to approved Python for topology-heavy work.

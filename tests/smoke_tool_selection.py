@@ -113,6 +113,7 @@ def main():
             bundle,
         )
         principles_names = _names(principles_tools)
+        assert "get_animation_scene_context" in principles_names, principles_meta
         assert "analyze_animation_principles" in principles_names, principles_meta
         assert "analyze_motion_arcs" in principles_names, principles_meta
         assert "analyze_fcurve_spacing" in principles_names, principles_meta
@@ -121,6 +122,7 @@ def main():
         assert "analyze_contact_sliding" in principles_names, principles_meta
         assert "analyze_collision_penetration" in principles_names, principles_meta
         assert "analyze_camera_framing" in principles_names, principles_meta
+        assert "analyze_motion_physics" in principles_names, principles_meta
         assert "compare_animation_to_brief" in principles_names, principles_meta
         assert "review_playblast_against_brief" in principles_names, principles_meta
         assert "repair_animation_from_findings" in principles_names, principles_meta

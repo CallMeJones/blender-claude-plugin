@@ -95,6 +95,12 @@ def _distance(a, b):
     return math.sqrt(sum((float(a[index]) - float(b[index])) ** 2 for index in range(3)))
 
 
+def _scene_fps(scene):
+    fps_base = float(getattr(scene.render, "fps_base", 1.0) or 1.0)
+    fps = float(getattr(scene.render, "fps", 24.0) or 24.0)
+    return max(0.001, fps / fps_base)
+
+
 def _set_frame_preserved(context, frames, fn):
     scene = context.scene
     current = int(scene.frame_current)
@@ -497,6 +503,130 @@ def analyze_camera_framing(context, *, object_names=None, camera_name="", frame_
     return {"ok": True, "message": f"Analyzed camera framing for {len(objects)} object(s)", "samples": samples, "findings": findings, "missing_object_names": missing}
 
 
+def analyze_motion_physics(
+    context,
+    *,
+    object_names=None,
+    frame_start=None,
+    frame_end=None,
+    sample_step=2,
+    max_speed=None,
+    max_acceleration=None,
+    selected_only=False,
+):
+    objects, missing = _resolve_objects(context, object_names, selected_only=selected_only)
+    frames = _frame_samples(context.scene, frame_start, frame_end, sample_step, max_samples=64)
+    if not objects:
+        return {"ok": False, "message": "No objects found for motion physics analysis", "missing_object_names": missing}
+    fps = _scene_fps(context.scene)
+    max_speed_threshold = float(max_speed) if max_speed is not None else 40.0
+    max_acceleration_threshold = float(max_acceleration) if max_acceleration is not None else 160.0
+    samples = {obj.name: [] for obj in objects}
+
+    def collect(frame):
+        for obj in objects:
+            center = _world_center(obj)
+            samples[obj.name].append(
+                {
+                    "frame": frame,
+                    "world_center": [round(float(value), 6) for value in center],
+                }
+            )
+
+    _set_frame_preserved(context, frames, collect)
+    findings = []
+    reports = []
+    for obj in objects:
+        object_samples = samples[obj.name]
+        speeds = []
+        for index, sample in enumerate(object_samples[:-1]):
+            next_sample = object_samples[index + 1]
+            frame_delta = max(1, int(next_sample["frame"]) - int(sample["frame"]))
+            dt = frame_delta / fps
+            delta = [float(next_sample["world_center"][axis]) - float(sample["world_center"][axis]) for axis in range(3)]
+            distance = _distance(sample["world_center"], next_sample["world_center"])
+            velocity = [value / dt for value in delta]
+            speeds.append(
+                {
+                    "from": sample["frame"],
+                    "to": next_sample["frame"],
+                    "distance": round(distance, 6),
+                    "speed": round(distance / dt, 6),
+                    "velocity": [round(float(value), 6) for value in velocity],
+                }
+            )
+        accelerations = []
+        for index, segment in enumerate(speeds[:-1]):
+            next_segment = speeds[index + 1]
+            segment_mid = (float(segment["from"]) + float(segment["to"])) / 2.0
+            next_mid = (float(next_segment["from"]) + float(next_segment["to"])) / 2.0
+            dt = max(1.0 / fps, (next_mid - segment_mid) / fps)
+            delta_v = [float(next_segment["velocity"][axis]) - float(segment["velocity"][axis]) for axis in range(3)]
+            acceleration = math.sqrt(sum(value * value for value in delta_v)) / dt
+            accelerations.append(
+                {
+                    "from_segment": [segment["from"], segment["to"]],
+                    "to_segment": [next_segment["from"], next_segment["to"]],
+                    "frame": next_segment["from"],
+                    "acceleration": round(acceleration, 6),
+                }
+            )
+        fastest = max(speeds, key=lambda item: item["speed"], default=None)
+        sharpest = max(accelerations, key=lambda item: item["acceleration"], default=None)
+        if fastest and fastest["speed"] > max_speed_threshold:
+            findings.append(
+                {
+                    "severity": "warning",
+                    "requirement": "motion_physics",
+                    "principle": "weight",
+                    "object": obj.name,
+                    "frame": fastest["to"],
+                    "speed": fastest["speed"],
+                    "threshold": round(max_speed_threshold, 6),
+                    "repair_tool": "retime_actions",
+                    "message": "Sampled speed exceeds the expected scene-scale threshold.",
+                }
+            )
+        if sharpest and sharpest["acceleration"] > max_acceleration_threshold:
+            findings.append(
+                {
+                    "severity": "warning",
+                    "requirement": "motion_physics",
+                    "principle": "weight",
+                    "object": obj.name,
+                    "frame": sharpest["frame"],
+                    "acceleration": sharpest["acceleration"],
+                    "threshold": round(max_acceleration_threshold, 6),
+                    "repair_tool": "retime_actions",
+                    "message": "Sampled acceleration spike may be physically implausible for the scene scale.",
+                }
+            )
+        reports.append(
+            {
+                "object": obj.name,
+                "sample_count": len(object_samples),
+                "samples": object_samples,
+                "speed_segments": speeds,
+                "acceleration_segments": accelerations,
+                "max_speed": fastest["speed"] if fastest else 0.0,
+                "max_acceleration": sharpest["acceleration"] if sharpest else 0.0,
+            }
+        )
+    return {
+        "ok": True,
+        "message": f"Analyzed sampled speed and acceleration for {len(objects)} object(s)",
+        "fps": round(fps, 6),
+        "thresholds": {
+            "max_speed": round(max_speed_threshold, 6),
+            "max_acceleration": round(max_acceleration_threshold, 6),
+        },
+        "sampled_frames": frames,
+        "objects": reports,
+        "findings": findings,
+        "missing_object_names": missing,
+    }
+
+
 def _brief_from_args(context, brief=None, prompt="", subject_names=None, frame_start=None, frame_end=None):
     if isinstance(brief, dict) and brief:
         return brief
@@ -524,7 +654,11 @@ def compare_animation_to_brief(context, *, brief=None, prompt="", subject_names=
     missing = [name for name in subjects if bpy.data.objects.get(name) is None]
     for name in missing:
         findings.append({"severity": "error", "requirement": "subject", "object": name, "message": "Subject object is missing."})
-    samples = sample_animation_state(context, object_names=subjects, frame_start=start, frame_end=end, sample_step=max(1, int((end - start) / 24) or 1))
+    samples = (
+        sample_animation_state(context, object_names=subjects, frame_start=start, frame_end=end, sample_step=max(1, int((end - start) / 24) or 1))
+        if subjects
+        else {"ok": False, "message": "No resolved animation subject."}
+    )
     if samples.get("ok"):
         moved = False
         by_object = {}
@@ -539,9 +673,22 @@ def compare_animation_to_brief(context, *, brief=None, prompt="", subject_names=
                 moved = True
         if brief.get("action") and not moved:
             findings.append({"severity": "warning", "requirement": "action", "message": "Sampled subject transforms do not show clear motion."})
-    if brief.get("validation_plan", {}).get("check_camera_framing"):
+    if subjects and brief.get("validation_plan", {}).get("check_camera_framing"):
         camera_findings = analyze_camera_framing(context, object_names=subjects, camera_name=brief.get("camera") or "", frame_start=start, frame_end=end)
         findings.extend(camera_findings.get("findings") or [])
+    validation_results = {}
+    if subjects and brief.get("validation_plan", {}).get("check_contact_physics"):
+        validation_sample_step = max(1, int((end - start) / 24) or 1)
+        physics = analyze_motion_physics(context, object_names=subjects, frame_start=start, frame_end=end, sample_step=validation_sample_step)
+        validation_results["motion_physics"] = physics
+        findings.extend(physics.get("findings") or [])
+        contact = analyze_contact_sliding(context, object_names=subjects, frame_start=start, frame_end=end, sample_step=validation_sample_step)
+        validation_results["contact_sliding"] = contact
+        findings.extend(contact.get("findings") or [])
+        if len(subjects) >= 2:
+            collisions = analyze_collision_penetration(context, object_names=subjects, frame_start=start, frame_end=end, sample_step=validation_sample_step)
+            validation_results["collision_penetration"] = collisions
+            findings.extend(collisions.get("findings") or [])
     status = "pass" if not findings else "needs_repair"
     return {
         "ok": True,
@@ -550,6 +697,7 @@ def compare_animation_to_brief(context, *, brief=None, prompt="", subject_names=
         "brief_contract_id": brief.get("contract_id", ""),
         "findings": findings,
         "sample_summary": samples if samples.get("ok") else {},
+        "validation_results": validation_results,
     }
 
 
@@ -1001,6 +1149,17 @@ def repair_animation_from_findings(context, *, findings=None, brief=None):
                     arguments={"object_names": subject_names, "interpolation": "BEZIER"},
                     source_index=index,
                     finding=finding,
+                )
+            )
+        if "speed" in text or "acceleration" in text or "motion_physics" in text:
+            operations.append(
+                _operation(
+                    "retime_actions",
+                    "Retiming may reduce physically implausible speed or acceleration spikes.",
+                    arguments={"object_names": subject_names, "frame_start": frame_start, "frame_end": frame_end, "snap_to_integer": True},
+                    source_index=index,
+                    finding=finding,
+                    confidence="low",
                 )
             )
         if "contact" in text or "slide" in text:
