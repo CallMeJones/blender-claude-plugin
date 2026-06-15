@@ -75,6 +75,36 @@ ACTION_KEYWORDS = (
     ("sliding", "move"),
 )
 
+BRIEF_INTENT_PHRASES = (
+    "animation brief",
+    "prompt contract",
+    "success criteria",
+    "validation criteria",
+)
+
+ANIMATION_EDIT_WORDS = (
+    "animate",
+    "animation",
+    "make",
+    "create",
+    "add",
+    "have",
+    "turn",
+    "block",
+    "blocking",
+)
+
+READ_ONLY_ANIMATION_WORDS = (
+    "what",
+    "show",
+    "list",
+    "inspect",
+    "details",
+    "summary",
+    "summarize",
+    "summarise",
+)
+
 
 def _as_string_list(value):
     if value is None:
@@ -129,6 +159,20 @@ def _infer_action(prompt, explicit_action=""):
     return ""
 
 
+def should_create_brief(prompt):
+    text = str(prompt or "").lower()
+    if any(phrase in text for phrase in BRIEF_INTENT_PHRASES):
+        return True
+    if re.search(r"\banimate\b", text) and not any(re.search(rf"\b{word}\b", text) for word in READ_ONLY_ANIMATION_WORDS):
+        return True
+    action = _infer_action(text)
+    if not action:
+        return False
+    if _infer_count(text) is not None or _infer_secondary_actions(text):
+        return True
+    return any(re.search(rf"\b{re.escape(word)}\b", text) for word in ANIMATION_EDIT_WORDS)
+
+
 def _infer_secondary_actions(prompt):
     text = prompt.lower()
     secondary = []
@@ -168,6 +212,137 @@ def _default_subject_names(context):
         return selected
     active = getattr(context, "active_object", None)
     return [active.name] if active else []
+
+
+def clarification_question(brief):
+    subject_names = brief.get("subject_names") or []
+    subject_label = ", ".join(subject_names) if subject_names else "the subject"
+    ambiguities = " ".join(str(item) for item in brief.get("ambiguities") or []).lower()
+    if "subject" in ambiguities:
+        return "Which object should I animate?"
+    if "action" in ambiguities:
+        return f"What action should {subject_label} perform?"
+    first = next((str(item).strip() for item in brief.get("ambiguities") or [] if str(item).strip()), "")
+    return first or "What should I clarify before creating this animation?"
+
+
+def _note_list(notes):
+    if notes is None:
+        return []
+    if isinstance(notes, str):
+        notes = [notes]
+    return [str(item) for item in notes if str(item).strip()]
+
+
+def _pose(frame, label, role, notes=None, *, hold_frames=0):
+    return {
+        "frame": int(frame),
+        "label": str(label),
+        "role": str(role),
+        "hold_frames": max(0, int(hold_frames or 0)),
+        "notes": _note_list(notes),
+    }
+
+
+def _even_frame(start, end, index, steps):
+    if steps <= 0:
+        return int(start)
+    return int(round(start + (end - start) * (index / steps)))
+
+
+def _default_key_poses(brief, frame_start, frame_end):
+    action = str(brief.get("action") or "").lower()
+    count = brief.get("timing", {}).get("requested_count") or 1
+    count = max(1, min(12, int(count)))
+    secondary = brief.get("secondary_actions") or []
+    secondary_notes = [f"Also show: {item}." for item in secondary]
+    if action in {"bounce", "jump"}:
+        poses = [_pose(frame_start, "contact_start", "contact", ["Start grounded and readable."])]
+        total_segments = count * 2
+        for cycle in range(count):
+            apex = _even_frame(frame_start, frame_end, cycle * 2 + 1, total_segments)
+            contact = _even_frame(frame_start, frame_end, cycle * 2 + 2, total_segments)
+            poses.append(_pose(apex, f"apex_{cycle + 1}", "breakdown", ["Highest point of the arc.", *secondary_notes]))
+            poses.append(_pose(contact, f"contact_{cycle + 1}", "contact", ["Return to contact; show weight.", *secondary_notes], hold_frames=2))
+        poses.append(_pose(frame_end, "settle", "settle", ["Small settle after the final contact."]))
+        return poses
+    if action in {"rotate", "turntable", "orbit"}:
+        return [
+            _pose(frame_start, "start_angle", "key", ["Readable starting silhouette."]),
+            _pose(_even_frame(frame_start, frame_end, 1, 2), "half_turn", "breakdown", ["Midpoint spacing check."]),
+            _pose(frame_end, "end_angle", "key", ["Return to final readable angle."]),
+        ]
+    if action == "reveal":
+        return [
+            _pose(frame_start, "hidden", "key", ["Object starts hidden or tiny."]),
+            _pose(_even_frame(frame_start, frame_end, 1, 2), "readable_breakdown", "breakdown", ["Reveal shape becomes clear."]),
+            _pose(frame_end, "fully_revealed", "key", ["Final pose is readable."]),
+        ]
+    return [
+        _pose(frame_start, "start", "key", ["Initial pose."]),
+        _pose(_even_frame(frame_start, frame_end, 1, 2), "breakdown", "breakdown", ["Main spacing/readability check."]),
+        _pose(frame_end, "end", "key", ["Final pose."]),
+    ]
+
+
+def create_timing_chart(
+    context,
+    *,
+    prompt="",
+    brief=None,
+    subject_names=None,
+    frame_start=None,
+    frame_end=None,
+    beats=None,
+):
+    if not isinstance(brief, dict):
+        brief_result = create_animation_brief(
+            context,
+            prompt=prompt,
+            subject_names=subject_names,
+            frame_start=frame_start,
+            frame_end=frame_end,
+        )
+        if not brief_result.get("ok"):
+            return brief_result
+        brief = brief_result["brief"]
+    timing = brief.get("timing") or {}
+    frame_start = _optional_int(frame_start, timing.get("frame_start", context.scene.frame_start))
+    frame_end = _optional_int(frame_end, timing.get("frame_end", context.scene.frame_end))
+    if frame_end <= frame_start:
+        frame_end = frame_start + 24
+    key_poses = []
+    for beat in beats or []:
+        if not isinstance(beat, dict):
+            continue
+        key_poses.append(
+            _pose(
+                _optional_int(beat.get("frame"), frame_start),
+                beat.get("label") or f"pose_{len(key_poses) + 1}",
+                beat.get("role") or "key",
+                beat.get("notes") or [],
+                hold_frames=beat.get("hold_frames", 0),
+            )
+        )
+    if not key_poses:
+        key_poses = _default_key_poses(brief, frame_start, frame_end)
+    key_poses = sorted(key_poses, key=lambda item: (item["frame"], item["label"]))
+    chart = {
+        "brief_contract_id": brief.get("contract_id", ""),
+        "subject_names": brief.get("subject_names") or [],
+        "action": brief.get("action", ""),
+        "frame_start": frame_start,
+        "frame_end": frame_end,
+        "key_poses": key_poses,
+        "spacing_notes": [
+            "Block key/contact poses first; polish interpolation only after the pose plan reads clearly.",
+            "Use holds for contact/readability, then add breakdowns for spacing and arcs.",
+        ],
+        "ready_for_blocking": bool(brief.get("ready_for_generation")) and bool(key_poses),
+        "clarification_needed": bool(brief.get("clarification_needed")),
+        "clarification_question": clarification_question(brief) if brief.get("clarification_needed") else "",
+    }
+    return {"ok": True, "message": "Created animation timing chart", "chart": chart, "brief": brief}
 
 
 def create_animation_brief(

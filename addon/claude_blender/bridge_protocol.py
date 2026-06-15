@@ -49,6 +49,10 @@ TOOL_CONTRACTS = {
         "description": "Create a structured animation prompt contract from the user brief and scene context",
         "mutates_scene": False,
     },
+    "create_timing_chart": {
+        "description": "Create a structured timing/blocking chart from an animation brief",
+        "mutates_scene": False,
+    },
     "get_material_node_details": {
         "description": "Return material node, socket, and link details",
         "mutates_scene": False,
@@ -250,6 +254,11 @@ TOOL_CONTRACTS = {
     },
     "create_staggered_motion": {
         "description": "Create staggered location animation across selected or named objects",
+        "mutates_scene": True,
+        "requires_live_preview": True,
+    },
+    "block_key_poses": {
+        "description": "Block keyed transform poses for selected or named objects",
         "mutates_scene": True,
         "requires_live_preview": True,
     },

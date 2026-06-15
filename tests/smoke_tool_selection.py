@@ -94,7 +94,16 @@ def main():
         )
         animation_names = _names(animation_tools)
         assert "create_animation_brief" in animation_names, animation_meta
+        assert "create_timing_chart" in animation_names, animation_meta
         assert "animate_object_bounce" in animation_names, animation_meta
+
+        blocking_tools, blocking_meta = anthropic_client.select_blender_tool_definitions(
+            "Create a timing chart and block key poses for a jump animation.",
+            bundle,
+        )
+        blocking_names = _names(blocking_tools)
+        assert "create_timing_chart" in blocking_names, blocking_meta
+        assert "block_key_poses" in blocking_names, blocking_meta
 
         captured_tool_names = []
 

@@ -320,7 +320,7 @@ Acceptance:
 - The agent can distinguish ambiguity that needs user input from detail that can be inferred safely.
 - The prompt contract is available to the generation, validation, and repair steps.
 
-Status: Initial `create_animation_brief` tool is implemented as a non-mutating prompt-contract helper that resolves subjects, timing, counts, secondary scale/visibility/brightness requirements, assumptions, ambiguities, success criteria, and validation-plan flags from the current Blender context.
+Status: Initial `create_animation_brief` tool is implemented as a non-mutating prompt-contract helper that resolves subjects, timing, counts, secondary scale/visibility/brightness requirements, assumptions, ambiguities, success criteria, and validation-plan flags from the current Blender context. The agent loop now preflights animation generation prompts with this brief and returns a concise clarifying question before model generation when the brief is ambiguous.
 
 #### Milestone 7B: Timing Charts And Blocking Tools
 
@@ -343,6 +343,8 @@ Acceptance:
 - The agent can create readable blocking for common actions such as jumps, throws, impacts, turns, camera moves, and reveal animations.
 - Generated blocking uses clear keyframes and holds before adding interpolation polish.
 - Users can preview, commit, or revert the blocking pass.
+
+Status: Initial `create_timing_chart` and `block_key_poses` tools are implemented. Timing charts are read-only structured pose/hold/breakdown plans, and key-pose blocking writes reversible preview keyframes for selected or named objects.
 
 #### Milestone 7C: Animation Principles Evaluator
 

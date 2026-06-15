@@ -5,10 +5,12 @@ from __future__ import annotations
 import queue
 import threading
 import uuid
+import json
 
 import bpy
 
 from . import agent_memory
+from . import animation_brief
 from . import anthropic_client
 from . import chat_history
 from . import context_budget
@@ -26,6 +28,47 @@ TOOL_LIMIT_FINAL_PROMPT = (
     "Briefly summarize what you changed, mention that live preview changes may still be pending, "
     "and say what the user should do next. If the scene is incomplete, say exactly what remains."
 )
+
+
+def _parse_tool_json(result):
+    if isinstance(result, str):
+        try:
+            return json.loads(result)
+        except json.JSONDecodeError:
+            return {"ok": False, "message": result}
+    return result if isinstance(result, dict) else {"ok": False, "message": "Unexpected tool result"}
+
+
+def _animation_brief_tool_input(prompt):
+    return {"prompt": prompt}
+
+
+def _apply_animation_brief_preflight(scene_name, prompt, request_context, *, tool_executor=None):
+    if not animation_brief.should_create_brief(prompt):
+        return ""
+    executor = tool_executor or _execute_tool_sync
+    result = _parse_tool_json(
+        executor(
+            scene_name,
+            {
+                "name": "create_animation_brief",
+                "input": _animation_brief_tool_input(prompt),
+            },
+        )
+    )
+    if not result.get("ok"):
+        transcript.record_system_message(f"Animation brief preflight failed: {result.get('message', 'Unknown error')}")
+        return ""
+    brief = result.get("brief") or {}
+    request_context["animation_brief"] = brief
+    brief_text = json.dumps(context_budget.compact_jsonable(brief), indent=2, sort_keys=True)
+    transcript.record_system_message(
+        "Animation brief preflight:\n"
+        f"{context_budget.truncate_text(brief_text, 8000)}"
+    )
+    if brief.get("clarification_needed"):
+        return animation_brief.clarification_question(brief)
+    return ""
 
 
 def _apply_result(scene_name, ok, message, prompt="", context_summary=""):
@@ -174,6 +217,9 @@ def _run_tool_loop(*, scene_name, prompt, context_bundle, model):
             "estimated_schema_tokens": int(tool_metadata["estimated_schema_tokens"]),
             "matched_groups": list(tool_metadata["matched_groups"]),
         }
+    clarification = _apply_animation_brief_preflight(scene_name, prompt, request_context)
+    if clarification:
+        return clarification
     messages = anthropic_client.initial_messages(prompt, request_context)
     tool_call_count = 0
 

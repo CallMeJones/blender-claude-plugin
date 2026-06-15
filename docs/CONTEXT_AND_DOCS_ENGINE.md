@@ -179,6 +179,9 @@ Initial helpers:
 - `add_camera(name, location, rotation, lens)`
 - `set_scene_frame_range(frame_start, frame_end, current_frame, fps)`
 - `set_active_camera(camera_name)`
+- `create_animation_brief(prompt, subject_names, frame_start, frame_end)`
+- `create_timing_chart(prompt, brief, subject_names, frame_start, frame_end, beats)`
+- `block_key_poses(object_names, poses, selected_only, interpolation)`
 - `animate_selected_transform(frame_start, frame_end, location_start, location_end, rotation_start, rotation_end, scale_start, scale_end)`
 - `create_camera_orbit(target_name, frame_start, frame_end, radius, height, name)`
 - `add_modifier(object_name, type, settings)`

@@ -13,11 +13,13 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(ROOT, "addon"))
 
 import claude_blender  # noqa: E402
-from claude_blender import anthropic_client, bridge_protocol, context_bundle, live_preview, tool_dispatcher  # noqa: E402
+from claude_blender import agent_loop, anthropic_client, bridge_protocol, context_bundle, live_preview, tool_dispatcher  # noqa: E402
 
 
 ANIMATION_TOOLS = {
     "create_animation_brief",
+    "create_timing_chart",
+    "block_key_poses",
     "animate_object_bounce",
     "animate_material_property",
     "animate_light_property",
@@ -35,6 +37,13 @@ def _select_object(context, obj):
     bpy.ops.object.select_all(action="DESELECT")
     obj.select_set(True)
     context.view_layer.objects.active = obj
+
+
+def _direct_tool_executor(context):
+    def execute(_scene_name, tool_block):
+        return tool_dispatcher.execute_tool(context, tool_block["name"], tool_block.get("input") or {})
+
+    return execute
 
 
 def _snapshot(scene, cube, camera, light):
@@ -81,6 +90,36 @@ def main():
         contract_names = set(bridge_protocol.TOOL_CONTRACTS)
         assert ANIMATION_TOOLS.issubset(contract_names)
 
+        preflight_context = {}
+        clarification = agent_loop._apply_animation_brief_preflight(
+            scene.name,
+            "Make the cube bounce twice and get smaller.",
+            preflight_context,
+            tool_executor=_direct_tool_executor(context),
+        )
+        assert not clarification, clarification
+        assert preflight_context["animation_brief"]["timing"]["requested_count"] == 2, preflight_context
+
+        generic_context = {}
+        generic = agent_loop._apply_animation_brief_preflight(
+            scene.name,
+            "Give me a brief summary of this scene.",
+            generic_context,
+            tool_executor=_direct_tool_executor(context),
+        )
+        assert not generic, generic
+        assert "animation_brief" not in generic_context, generic_context
+
+        ambiguous_context = {}
+        question = agent_loop._apply_animation_brief_preflight(
+            scene.name,
+            "Animate the cube.",
+            ambiguous_context,
+            tool_executor=_direct_tool_executor(context),
+        )
+        assert question.startswith("What action"), question
+        assert ambiguous_context["animation_brief"]["clarification_needed"] is True, ambiguous_context
+
         brief = _execute(
             context,
             "create_animation_brief",
@@ -118,6 +157,38 @@ def main():
         )["brief"]
         assert inflected["action"] == "bounce", inflected
         assert inflected["timing"]["requested_count"] == 2, inflected
+
+        chart = _execute(
+            context,
+            "create_timing_chart",
+            {
+                "prompt": "Make the cube bounce twice and get smaller.",
+                "subject_names": ["Cube"],
+                "frame_start": 1,
+                "frame_end": 48,
+            },
+        )["chart"]
+        assert chart["ready_for_blocking"] is True, chart
+        assert chart["action"] == "bounce", chart
+        assert len(chart["key_poses"]) >= 5, chart
+        assert any(pose["role"] == "contact" for pose in chart["key_poses"]), chart
+
+        blocked = _execute(
+            context,
+            "block_key_poses",
+            {
+                "object_names": ["Cube"],
+                "poses": [
+                    {"frame": 1, "location": [0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0]},
+                    {"frame": 12, "location": [0.0, 0.0, 2.0], "scale": [0.9, 0.9, 0.9]},
+                    {"frame": 24, "location": [0.0, 0.0, 0.0], "scale": [0.8, 0.8, 0.8], "hold_frames": 2},
+                ],
+                "interpolation": "CONSTANT",
+            },
+        )
+        block_action = bpy.data.actions[blocked["objects"][0]["action"]]
+        assert _action_keyframes(block_action) == [1.0, 12.0, 24.0, 26.0], blocked
+        assert scene.frame_end >= 26, blocked
 
         bounce = _execute(
             context,

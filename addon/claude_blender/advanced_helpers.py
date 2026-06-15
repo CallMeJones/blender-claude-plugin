@@ -1839,6 +1839,115 @@ def create_staggered_motion(
     return {"ok": True, "message": f"Created staggered motion for {len(animated)} object(s)", "objects": animated, "missing_object_names": missing, "transaction_id": transaction["id"]}
 
 
+def block_key_poses(
+    context,
+    *,
+    object_names=None,
+    poses=None,
+    selected_only=False,
+    interpolation="CONSTANT",
+    label="Block key poses",
+):
+    names = [str(name) for name in object_names or [] if str(name).strip()]
+    if names:
+        objects = [bpy.data.objects.get(name) for name in names]
+        missing = [name for name, obj in zip(names, objects) if obj is None]
+        objects = [obj for obj in objects if obj]
+    elif selected_only or context.selected_objects:
+        objects = list(context.selected_objects)
+        missing = []
+    else:
+        objects = [context.active_object] if context.active_object else []
+        missing = []
+    objects = [obj for obj in objects if obj]
+    if not objects:
+        return {"ok": False, "message": "No objects found for blocking key poses", "missing_object_names": missing}
+    pose_items = [pose for pose in poses or [] if isinstance(pose, dict)]
+    if not pose_items:
+        return {"ok": False, "message": "At least one key pose is required for blocking"}
+    transform_paths = set()
+    for pose in pose_items:
+        if pose.get("location") is not None:
+            transform_paths.add("location")
+        if pose.get("rotation") is not None or pose.get("rotation_euler") is not None:
+            transform_paths.add("rotation_euler")
+        if pose.get("scale") is not None:
+            transform_paths.add("scale")
+    if not transform_paths:
+        return {"ok": False, "message": "Each blocking pass needs at least one location, rotation, or scale pose value"}
+    frames = []
+    for pose in pose_items:
+        frame = int(pose.get("frame", context.scene.frame_current))
+        frames.append(frame)
+        hold_frames = max(0, int(pose.get("hold_frames", 0) or 0))
+        if hold_frames:
+            frames.append(frame + hold_frames)
+    frame_start = min(frames)
+    frame_end = max(frames)
+    interpolation = str(interpolation or "CONSTANT").upper()
+    transaction = live_preview.begin(label, context)
+    scene = context.scene
+    live_preview._record_scene_timeline(scene)
+    scene.frame_start = min(scene.frame_start, frame_start)
+    scene.frame_end = max(scene.frame_end, frame_end)
+    blocked = []
+    for obj in objects:
+        live_preview._record_object_transform(obj)
+        action = live_preview._assign_preview_action(obj)
+        base_location = [float(value) for value in obj.location]
+        base_rotation = [float(value) for value in obj.rotation_euler]
+        base_scale = [float(value) for value in obj.scale]
+        keyed_frames = []
+        for pose in sorted(pose_items, key=lambda item: int(item.get("frame", frame_start))):
+            frame = int(pose.get("frame", frame_start))
+            hold_frames = max(0, int(pose.get("hold_frames", 0) or 0))
+            location = _coerce_vector(pose.get("location"), base_location) if pose.get("location") is not None else None
+            rotation_value = pose.get("rotation_euler", pose.get("rotation"))
+            rotation = _coerce_vector(rotation_value, base_rotation) if rotation_value is not None else None
+            scale = _coerce_vector(pose.get("scale"), base_scale) if pose.get("scale") is not None else None
+            for key_frame in (frame, frame + hold_frames) if hold_frames else (frame,):
+                if location is not None:
+                    obj.location = location
+                    obj.keyframe_insert(data_path="location", frame=key_frame)
+                if rotation is not None:
+                    obj.rotation_euler = rotation
+                    obj.keyframe_insert(data_path="rotation_euler", frame=key_frame)
+                if scale is not None:
+                    obj.scale = scale
+                    obj.keyframe_insert(data_path="scale", frame=key_frame)
+                keyed_frames.append(int(key_frame))
+        _set_action_interpolation(action, interpolation)
+        blocked.append(
+            {
+                "object": obj.name,
+                "action": action.name,
+                "frames": sorted(set(keyed_frames)),
+                "paths": sorted(transform_paths),
+            }
+        )
+    scene.frame_set(frame_start)
+    transaction["applied_steps"].append(
+        {
+            "type": "block_key_poses",
+            "label": label,
+            "objects": blocked,
+            "frame_start": frame_start,
+            "frame_end": frame_end,
+            "pose_count": len(pose_items),
+            "interpolation": interpolation,
+        }
+    )
+    live_preview.redraw(context)
+    live_preview._mark_pending(context, label)
+    return {
+        "ok": True,
+        "message": f"Blocked {len(pose_items)} key pose(s) for {len(blocked)} object(s)",
+        "objects": blocked,
+        "missing_object_names": missing,
+        "transaction_id": transaction["id"],
+    }
+
+
 def create_text_object(
     context,
     *,

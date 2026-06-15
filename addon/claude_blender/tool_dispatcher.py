@@ -441,6 +441,18 @@ def create_animation_brief(context, args):
     )
 
 
+def create_timing_chart(context, args):
+    return animation_brief.create_timing_chart(
+        context,
+        prompt=str(args.get("prompt") or ""),
+        brief=args.get("brief") if isinstance(args.get("brief"), dict) else None,
+        subject_names=_name_list(args.get("subject_names")),
+        frame_start=args.get("frame_start"),
+        frame_end=args.get("frame_end"),
+        beats=args.get("beats") if isinstance(args.get("beats"), list) else None,
+    )
+
+
 def get_material_node_details(context, args):
     names = _name_list(args.get("material_names"))
     max_materials = _bounded_int(args.get("max_materials"), 8, maximum=25)
@@ -931,6 +943,17 @@ def create_staggered_motion(context, args):
         location_delta=_float_list(args.get("location_delta"), 3, (0.0, 0.0, 1.0)),
         interpolation=str(args.get("interpolation") or "BEZIER"),
         label=args.get("label", "Create staggered motion"),
+    )
+
+
+def block_key_poses(context, args):
+    return advanced_helpers.block_key_poses(
+        context,
+        object_names=_name_list(args.get("object_names")),
+        poses=args.get("poses") if isinstance(args.get("poses"), list) else [],
+        selected_only=bool(args.get("selected_only", False)),
+        interpolation=str(args.get("interpolation") or "CONSTANT"),
+        label=args.get("label", "Block key poses"),
     )
 
 
@@ -1578,6 +1601,7 @@ TOOL_FUNCTIONS = {
     "get_object_details": get_object_details,
     "get_animation_details": get_animation_details,
     "create_animation_brief": create_animation_brief,
+    "create_timing_chart": create_timing_chart,
     "get_material_node_details": get_material_node_details,
     "get_geometry_nodes_details": get_geometry_nodes_details,
     "get_shader_nodes_details": get_shader_nodes_details,
@@ -1614,6 +1638,7 @@ TOOL_FUNCTIONS = {
     "create_pulse_animation": create_pulse_animation,
     "create_reveal_animation": create_reveal_animation,
     "create_staggered_motion": create_staggered_motion,
+    "block_key_poses": block_key_poses,
     "create_text_object": create_text_object,
     "create_curve_path": create_curve_path,
     "add_particle_system_to_selected": add_particle_system_to_selected,
