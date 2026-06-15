@@ -429,6 +429,7 @@ Candidate tools:
 - `capture_animation_playblast`
 - `review_playblast_against_brief`
 - `repair_animation_from_findings`
+- `run_animation_repair_loop`
 
 Acceptance:
 
@@ -436,7 +437,7 @@ Acceptance:
 - The repair loop preserves successful parts of the animation.
 - The user sees concise review findings and can commit or revert the repaired preview.
 
-Status: Playblast-aware review and non-mutating repair planning are implemented. `review_playblast_against_brief` normalizes playblast frame evidence, checks frame resource availability, frame coverage, undersampling, compact pixel digests, and visual frame-to-frame motion deltas against the brief, combines that with current animation-state comparison, and returns structured repair operations. `repair_animation_from_findings` maps findings to targeted helper calls with arguments, executable `tool_call` payloads, preview/commit flags, and source-finding references, such as fresh playblast capture, interpolation changes, pose holds, camera repair, anticipation/settle breakdowns, or reblocking, without applying them automatically.
+Status: Playblast-aware review, repair planning, and bounded repair-loop execution are implemented. `review_playblast_against_brief` normalizes playblast frame evidence, checks frame resource availability, frame coverage, undersampling, compact pixel digests, and visual frame-to-frame motion deltas against the brief, combines that with current animation-state comparison, and returns structured repair operations. `repair_animation_from_findings` maps findings to targeted helper calls with arguments, executable `tool_call` payloads, preview/commit flags, and source-finding references. `run_animation_repair_loop` applies a bounded allowlisted subset of those operations through safe helper tools, skips operations that need more planning, optionally requests a fresh playblast after mutating repairs, and re-runs review without bypassing the existing preview commit/revert model.
 
 #### Milestone 7G: Optional Solo-Backed Style And Project Memory
 

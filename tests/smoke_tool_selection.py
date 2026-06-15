@@ -124,6 +124,7 @@ def main():
         assert "compare_animation_to_brief" in principles_names, principles_meta
         assert "review_playblast_against_brief" in principles_names, principles_meta
         assert "repair_animation_from_findings" in principles_names, principles_meta
+        assert "run_animation_repair_loop" in principles_names, principles_meta
 
         captured_tool_names = []
 

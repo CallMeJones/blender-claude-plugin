@@ -97,6 +97,10 @@ TOOL_CONTRACTS = {
         "description": "Create targeted non-mutating repair operations with executable helper tool-call payloads",
         "mutates_scene": False,
     },
+    "run_animation_repair_loop": {
+        "description": "Apply bounded animation repair operations and re-run playblast/brief review",
+        "mutates_scene": True,
+    },
     "get_material_node_details": {
         "description": "Return material node, socket, and link details",
         "mutates_scene": False,

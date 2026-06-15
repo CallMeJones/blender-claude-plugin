@@ -196,6 +196,7 @@ Initial helpers:
 - `compare_animation_to_brief(brief, prompt, subject_names, frame_start, frame_end)`
 - `review_playblast_against_brief(playblast, brief, prompt)`
 - `repair_animation_from_findings(findings, brief)`
+- `run_animation_repair_loop(playblast, brief, prompt, findings, repair_operations, max_iterations, max_operations)`
 - `animate_selected_transform(frame_start, frame_end, location_start, location_end, rotation_start, rotation_end, scale_start, scale_end)`
 - `create_camera_orbit(target_name, frame_start, frame_end, radius, height, name)`
 - `add_modifier(object_name, type, settings)`
@@ -266,7 +267,7 @@ By default, saved `.blend` files store viewport captures beside the project in `
 
 If Blender is running headless or the screenshot operator fails, the visual context records `requested: true` and `available: false` without blocking the prompt.
 
-`capture_animation_playblast` uses the same storage model to capture sampled viewport PNG frames across an animation range. It writes a playblast metadata manifest with frame resource URIs such as `blender://playblasts/{playblast_id}/frames/{frame}`. This is the first visual QA path for animation review: agents can compare visible sampled poses against the brief, timing, spacing, staging, arcs, and contact expectations. `review_playblast_against_brief` turns that metadata into frame-level visual evidence, coverage findings, compact pixel digests, frame-to-frame motion deltas, and repair operations that a later tool loop can execute deliberately through each operation's `tool_call` payload. It requires an interactive Blender window and fails soft in background mode.
+`capture_animation_playblast` uses the same storage model to capture sampled viewport PNG frames across an animation range. It writes a playblast metadata manifest with frame resource URIs such as `blender://playblasts/{playblast_id}/frames/{frame}`. This is the first visual QA path for animation review: agents can compare visible sampled poses against the brief, timing, spacing, staging, arcs, and contact expectations. `review_playblast_against_brief` turns that metadata into frame-level visual evidence, coverage findings, compact pixel digests, frame-to-frame motion deltas, and repair operations. `run_animation_repair_loop` can then execute a bounded set of those operations through safe helper tools, request a fresh playblast after mutating repairs, and re-run the review while leaving helper changes in the existing preview/commit workflow. Capture requires an interactive Blender window and fails soft in background mode.
 
 Production-helper visual QA has a separate background-safe path: `tests/smoke_refinement_visual_qa.py` renders tiny PNG stills for the product and character refinement kits and checks that the output is not blank. Set `CLAUDE_BLENDER_VISUAL_QA_DIR` to keep those render artifacts and their manifest for manual inspection.
 

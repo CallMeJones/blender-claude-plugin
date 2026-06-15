@@ -572,6 +572,259 @@ def repair_animation_from_findings(context, args):
     )
 
 
+_REPAIR_LOOP_READ_ONLY_TOOLS = {
+    "capture_animation_playblast",
+    "create_timing_chart",
+    "review_playblast_against_brief",
+    "repair_animation_from_findings",
+}
+
+_REPAIR_LOOP_DEFAULT_TOOLS = {
+    "capture_animation_playblast",
+    "create_timing_chart",
+    "set_action_interpolation",
+    "set_pose_hold",
+    "add_breakdown_pose",
+    "block_key_poses",
+    "create_camera_orbit",
+}
+
+
+def _brief_frame_range(context, brief):
+    timing = (brief or {}).get("timing") if isinstance(brief, dict) else {}
+    if not isinstance(timing, dict):
+        timing = {}
+    return (
+        int(timing.get("frame_start", context.scene.frame_start)),
+        int(timing.get("frame_end", context.scene.frame_end)),
+    )
+
+
+def _repair_loop_brief_text(brief, prompt):
+    text = str((brief or {}).get("user_visible_interpretation") or prompt or "").strip()
+    return text[:1000]
+
+
+def _repair_operation_parts(operation):
+    operation = operation if isinstance(operation, dict) else {}
+    tool_call = operation.get("tool_call") if isinstance(operation.get("tool_call"), dict) else {}
+    tool = str(tool_call.get("name") or operation.get("tool") or "")
+    tool_args = tool_call.get("input") if isinstance(tool_call.get("input"), dict) else None
+    if tool_args is None:
+        tool_args = operation.get("arguments") if isinstance(operation.get("arguments"), dict) else {}
+    return tool, dict(tool_args or {})
+
+
+def _repair_operation_key(tool, tool_args):
+    return (tool, json.dumps(tool_args, sort_keys=True, default=str))
+
+
+def _repair_operation_mutates(tool, operation):
+    if isinstance(operation, dict) and isinstance(operation.get("mutates_scene"), bool):
+        return bool(operation["mutates_scene"])
+    return tool not in _REPAIR_LOOP_READ_ONLY_TOOLS
+
+
+def _repair_operation_blocker(tool, tool_args):
+    if not tool:
+        return "repair operation has no tool name"
+    if tool == "review_playblast_against_brief":
+        return "review operations are handled by the loop itself"
+    if tool == "repair_animation_from_findings":
+        return "repair planning operations are handled by the loop itself"
+    if tool == "block_key_poses" and not tool_args.get("poses"):
+        return "block_key_poses requires explicit poses; this repair needs a planning pass first"
+    if tool in {"set_pose_hold", "set_action_interpolation", "add_breakdown_pose"} and not tool_args.get("object_names"):
+        return f"{tool} requires object_names"
+    if tool == "create_camera_orbit" and not tool_args.get("target_name"):
+        return "create_camera_orbit requires target_name"
+    return ""
+
+
+def _execute_repair_tool(context, tool, tool_args):
+    fn = TOOL_FUNCTIONS.get(tool)
+    if fn is None:
+        return {"ok": False, "message": f"Unknown Blender tool: {tool}"}
+    try:
+        result = fn(context, tool_args)
+    except Exception as exc:
+        return {"ok": False, "message": f"{type(exc).__name__}: {exc}"}
+    if isinstance(result, str):
+        try:
+            result = json.loads(result)
+        except json.JSONDecodeError:
+            result = {"ok": False, "message": result}
+    if not isinstance(result, dict):
+        result = {"ok": False, "message": "Tool returned an unexpected result"}
+    return _attach_preview_change_report(result)
+
+
+def _repair_loop_review(context, *, playblast=None, brief=None, prompt=""):
+    return animation_analysis.review_playblast_against_brief(
+        context,
+        playblast=playblast if isinstance(playblast, dict) else None,
+        brief=brief if isinstance(brief, dict) else None,
+        prompt=str(prompt or ""),
+    )
+
+
+def run_animation_repair_loop(context, args):
+    brief = args.get("brief") if isinstance(args.get("brief"), dict) else None
+    prompt = str(args.get("prompt") or "")
+    latest_playblast = args.get("playblast") if isinstance(args.get("playblast"), dict) else None
+    seed_findings = args.get("findings") if isinstance(args.get("findings"), list) else []
+    seed_operations = args.get("repair_operations") if isinstance(args.get("repair_operations"), list) else []
+    max_iterations = _bounded_int(args.get("max_iterations"), 2, minimum=1, maximum=4)
+    max_operations = _bounded_int(args.get("max_operations"), 4, minimum=1, maximum=12)
+    apply_mutating = bool(args.get("apply_mutating_repairs", True))
+    recapture_after_mutation = bool(args.get("recapture_after_mutation", True))
+    allowed_tools = set(_name_list(args.get("allowed_tools"))) or set(_REPAIR_LOOP_DEFAULT_TOOLS)
+    frame_start, frame_end = _brief_frame_range(context, brief or {})
+
+    reviews = []
+    executed = []
+    skipped = []
+    executed_keys = set()
+    final_review = {}
+    pending_seed_operations = list(seed_operations)
+
+    for iteration in range(1, max_iterations + 1):
+        if pending_seed_operations:
+            review = {
+                "ok": True,
+                "status": "needs_repair",
+                "message": "Using caller-provided repair operations",
+                "findings": seed_findings,
+                "repair_operations": pending_seed_operations,
+            }
+        else:
+            review = _repair_loop_review(context, playblast=latest_playblast, brief=brief, prompt=prompt)
+        final_review = review
+        operations = list(review.get("repair_operations") or [])
+        reviews.append(
+            {
+                "iteration": iteration,
+                "status": review.get("status", ""),
+                "finding_count": len(review.get("findings") or []),
+                "repair_operation_count": len(operations),
+            }
+        )
+        pending_seed_operations = []
+        if review.get("status") == "pass":
+            break
+
+        executed_this_iteration = []
+        mutating_this_iteration = False
+        captured_this_iteration = False
+        for operation_index, operation in enumerate(operations):
+            if len(executed) >= max_operations:
+                break
+            tool, tool_args = _repair_operation_parts(operation)
+            key = _repair_operation_key(tool, tool_args)
+            mutates = _repair_operation_mutates(tool, operation)
+            blocker = _repair_operation_blocker(tool, tool_args)
+            reason = ""
+            if key in executed_keys:
+                reason = "operation already executed in this repair loop"
+            elif tool not in allowed_tools:
+                reason = "tool is not in allowed_tools for this repair loop"
+            elif mutates and not apply_mutating:
+                reason = "mutating repairs are disabled for this repair loop"
+            elif blocker:
+                reason = blocker
+            if reason:
+                skipped.append({"iteration": iteration, "operation_index": operation_index, "tool": tool, "reason": reason, "operation": operation})
+                continue
+
+            result = _execute_repair_tool(context, tool, tool_args)
+            executed_keys.add(key)
+            item = {
+                "iteration": iteration,
+                "operation_index": operation_index,
+                "tool": tool,
+                "arguments": tool_args,
+                "ok": bool(result.get("ok")),
+                "message": str(result.get("message") or ""),
+                "mutates_scene": mutates,
+                "source_finding_index": operation.get("source_finding_index") if isinstance(operation, dict) else None,
+                "result": result,
+            }
+            executed.append(item)
+            executed_this_iteration.append(item)
+            mutating_this_iteration = mutating_this_iteration or mutates
+            captured_this_iteration = captured_this_iteration or tool == "capture_animation_playblast"
+            if isinstance(result.get("playblast"), dict):
+                latest_playblast = result["playblast"]
+
+        if (
+            mutating_this_iteration
+            and recapture_after_mutation
+            and not captured_this_iteration
+            and len(executed) < max_operations
+            and "capture_animation_playblast" in allowed_tools
+        ):
+            capture_args = {
+                "frame_start": frame_start,
+                "frame_end": frame_end,
+                "max_frames": 12,
+                "brief": _repair_loop_brief_text(brief or {}, prompt),
+            }
+            result = _execute_repair_tool(context, "capture_animation_playblast", capture_args)
+            item = {
+                "iteration": iteration,
+                "operation_index": -1,
+                "tool": "capture_animation_playblast",
+                "arguments": capture_args,
+                "ok": bool(result.get("ok")),
+                "message": str(result.get("message") or ""),
+                "mutates_scene": False,
+                "source_finding_index": None,
+                "result": result,
+            }
+            executed.append(item)
+            executed_this_iteration.append(item)
+            captured_this_iteration = True
+            if isinstance(result.get("playblast"), dict):
+                latest_playblast = result["playblast"]
+
+        if not executed_this_iteration:
+            break
+        final_review = _repair_loop_review(context, playblast=latest_playblast, brief=brief, prompt=prompt)
+        reviews.append(
+            {
+                "iteration": f"{iteration}.review",
+                "status": final_review.get("status", ""),
+                "finding_count": len(final_review.get("findings") or []),
+                "repair_operation_count": len(final_review.get("repair_operations") or []),
+            }
+        )
+        if final_review.get("status") == "pass":
+            break
+
+    if final_review.get("status") == "pass":
+        status = "pass"
+    elif executed:
+        status = "repairs_applied_needs_review"
+    elif skipped:
+        status = "needs_user_planning"
+    else:
+        status = "needs_repair"
+    return {
+        "ok": True,
+        "message": f"Animation repair loop finished with status: {status}",
+        "status": status,
+        "executed_count": len(executed),
+        "skipped_count": len(skipped),
+        "reviews": reviews,
+        "executed_operations": executed,
+        "skipped_operations": skipped,
+        "final_review": final_review,
+        "latest_playblast": latest_playblast or {},
+        "mutates_scene": any(item.get("mutates_scene") for item in executed),
+        "pending_preview": bool(getattr(context.scene.claude_blender, "pending_preview", False)) if hasattr(context.scene, "claude_blender") else False,
+    }
+
+
 def get_material_node_details(context, args):
     names = _name_list(args.get("material_names"))
     max_materials = _bounded_int(args.get("max_materials"), 8, maximum=25)
@@ -1778,6 +2031,7 @@ TOOL_FUNCTIONS = {
     "compare_animation_to_brief": compare_animation_to_brief,
     "review_playblast_against_brief": review_playblast_against_brief,
     "repair_animation_from_findings": repair_animation_from_findings,
+    "run_animation_repair_loop": run_animation_repair_loop,
     "get_material_node_details": get_material_node_details,
     "get_geometry_nodes_details": get_geometry_nodes_details,
     "get_shader_nodes_details": get_shader_nodes_details,

@@ -58,7 +58,7 @@ SYSTEM_PROMPT = (
     "For scene building and layout, prefer create_primitive, create_empty, duplicate_selected_objects, parent_selected_to_empty, align_selected_objects, distribute_selected_objects, set_object_visibility, set_object_display, assign_material_to_selected, assign_emission_material_to_selected, create_shader_material, create_text_object, create_curve_path, create_collection, link_selected_to_collection, add_light, add_camera, add_modifier_to_selected, add_geometry_nodes_modifier, add_track_to_constraint, add_copy_transform_constraint, create_basic_armature, add_particle_system_to_selected, set_render_settings, set_camera_settings, and set_world_background. "
     "For model refinement and production presentation, prefer shade_smooth_selected, add_bevel_and_subsurf, create_wheel_assembly, add_panel_seams, add_window_materials, apply_vehicle_refinement_template, apply_product_refinement_template, apply_character_refinement_template, create_studio_product_stage, add_dimension_callouts, apply_lighting_preset, create_material_palette, create_product_turntable_setup, and organize_scene_for_production when they fit the task. "
     "For shape-key animation, prefer create_shape_key and animate_shape_key before drafting Python. "
-    "For animation, use any animation_brief in context as the prompt contract; otherwise call create_animation_brief first when the prompt needs an explicit contract, success criteria, or later validation. Use create_timing_chart, block_key_poses, add_breakdown_pose, set_pose_hold, and create_motion_arc for animator-style blocking before spline/f-curve polish; then use analyze_animation_principles plus focused analyzers to check timing, spacing, arcs, pose clarity, anticipation, squash/stretch, and settle before repair. Use capture_animation_playblast and review_playblast_against_brief when visual frame evidence matters; if review or repair tools return repair_operations, execute relevant tool_call name/input entries deliberately, then review again. Then prefer set_scene_frame_range, set_animation_preview_range, animate_selected_transform, animate_object_bounce, animate_material_property, animate_light_property, create_follow_path_animation, create_turntable_animation, create_pulse_animation, create_reveal_animation, create_staggered_motion, set_action_interpolation, retime_actions, add_action_cycles, clear_animation, and create_camera_orbit. "
+    "For animation, use any animation_brief in context as the prompt contract; otherwise call create_animation_brief first when the prompt needs an explicit contract, success criteria, or later validation. Use create_timing_chart, block_key_poses, add_breakdown_pose, set_pose_hold, and create_motion_arc for animator-style blocking before spline/f-curve polish; then use analyze_animation_principles plus focused analyzers to check timing, spacing, arcs, pose clarity, anticipation, squash/stretch, and settle before repair. Use capture_animation_playblast and review_playblast_against_brief when visual frame evidence matters; if review or repair tools return repair_operations, prefer run_animation_repair_loop for bounded helper repair and review-again behavior, or execute relevant tool_call name/input entries deliberately when manual control is needed. Then prefer set_scene_frame_range, set_animation_preview_range, animate_selected_transform, animate_object_bounce, animate_material_property, animate_light_property, create_follow_path_animation, create_turntable_animation, create_pulse_animation, create_reveal_animation, create_staggered_motion, set_action_interpolation, retime_actions, add_action_cycles, clear_animation, and create_camera_orbit. "
     "For complex scene builds that need many objects or more than about eight helper calls, stage one cohesive Blender Python script with draft_script instead of making a long chain of helper calls. "
     "When helper tools cannot express the requested edit, use draft_script to stage Blender Python for user approval. "
     "When calling draft_script, put the complete Python source in the code field. Do not put script code in final chat text for the user to paste manually. "
@@ -442,6 +442,42 @@ def blender_tool_definitions():
                 "properties": {
                     "findings": {"type": "array", "items": {"type": "object"}},
                     "brief": {"type": "object"},
+                },
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "run_animation_repair_loop",
+            "description": "Apply a bounded set of animation repair_operations through safe helper tools, optionally recapture playblast evidence, and re-run review_playblast_against_brief. May leave preview changes pending for commit/revert.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "playblast": {"type": "object"},
+                    "brief": {"type": "object"},
+                    "prompt": {"type": "string"},
+                    "findings": {"type": "array", "items": {"type": "object"}},
+                    "repair_operations": {"type": "array", "items": {"type": "object"}},
+                    "max_iterations": {
+                        "type": "integer",
+                        "description": "Maximum review/repair iterations. Defaults to 2.",
+                    },
+                    "max_operations": {
+                        "type": "integer",
+                        "description": "Maximum helper operations to execute. Defaults to 4.",
+                    },
+                    "apply_mutating_repairs": {
+                        "type": "boolean",
+                        "description": "Whether to execute preview-safe mutating repair helpers. Defaults to true.",
+                    },
+                    "recapture_after_mutation": {
+                        "type": "boolean",
+                        "description": "Whether to request a fresh playblast after mutating repairs before final review. Defaults to true.",
+                    },
+                    "allowed_tools": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional allowlist of repair helper tool names for this loop.",
+                    },
                 },
                 "additionalProperties": False,
             },
@@ -2016,6 +2052,7 @@ _TOOL_GROUPS = {
         "compare_animation_to_brief",
         "review_playblast_against_brief",
         "repair_animation_from_findings",
+        "run_animation_repair_loop",
         "set_current_frame",
         "set_scene_frame_range",
         "animate_selected_transform",
@@ -2078,6 +2115,7 @@ _TOOL_GROUPS = {
         "review_playblast_against_brief",
         "capture_viewport",
         "capture_animation_playblast",
+        "run_animation_repair_loop",
     },
     "advanced_create": {
         "create_shader_material",
@@ -2086,6 +2124,7 @@ _TOOL_GROUPS = {
         "create_animation_brief",
         "create_timing_chart",
         "analyze_animation_principles",
+        "run_animation_repair_loop",
         "animate_shape_key",
         "animate_object_bounce",
         "animate_material_property",
@@ -2296,6 +2335,7 @@ def select_blender_tool_definitions(prompt="", context_bundle=None, *, max_schem
                 "compare_animation_to_brief",
                 "review_playblast_against_brief",
                 "repair_animation_from_findings",
+                "run_animation_repair_loop",
             }
         )
     if "draft_script" in selected:
@@ -2344,6 +2384,7 @@ TOOL_FUNCTIONS_FOR_MUTATION_COMPAT = {
     "add_action_cycles",
     "clear_animation",
     "set_animation_preview_range",
+    "run_animation_repair_loop",
     "create_turntable_animation",
     "create_pulse_animation",
     "create_reveal_animation",

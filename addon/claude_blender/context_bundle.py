@@ -225,6 +225,7 @@ def build_context_bundle(context, *, include_visual=False, capture_dir=None, max
             "compare_animation_to_brief",
             "review_playblast_against_brief",
             "repair_animation_from_findings",
+            "run_animation_repair_loop",
             "get_material_node_details",
             "get_geometry_nodes_details",
             "get_shader_nodes_details",

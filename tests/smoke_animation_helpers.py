@@ -36,6 +36,7 @@ ANIMATION_TOOLS = {
     "compare_animation_to_brief",
     "review_playblast_against_brief",
     "repair_animation_from_findings",
+    "run_animation_repair_loop",
     "animate_object_bounce",
     "animate_material_property",
     "animate_light_property",
@@ -403,6 +404,24 @@ def main():
         assert repair_plan["repair_operations"][0]["arguments"]["object_names"] == ["Cube"], repair_plan
         assert repair_plan["repair_operations"][0]["tool_call"]["input"]["object_names"] == ["Cube"], repair_plan
         assert repair_plan["repair_operations"][0]["source_finding_index"] == 0, repair_plan
+
+        repair_loop = _execute(
+            context,
+            "run_animation_repair_loop",
+            {
+                "brief": contract,
+                "findings": [{"severity": "warning", "message": "Contact points slide across the ground plane."}],
+                "repair_operations": repair_plan["repair_operations"],
+                "max_iterations": 1,
+                "max_operations": 1,
+                "recapture_after_mutation": False,
+            },
+        )
+        assert repair_loop["executed_operations"][0]["tool"] == "set_pose_hold", repair_loop
+        assert repair_loop["executed_operations"][0]["ok"] is True, repair_loop
+        assert repair_loop["final_review"]["ok"] is True, repair_loop
+        assert repair_loop["mutates_scene"] is True, repair_loop
+        assert repair_loop["pending_preview"] is True, repair_loop
 
         bounce = _execute(
             context,
