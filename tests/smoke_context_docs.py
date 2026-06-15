@@ -165,8 +165,8 @@ def main():
         assert docs["citations"], docs
         assert docs["citation_report"].startswith("Docs used:"), docs
 
-        synthetic_zip = os.path.join(cache_dir, "synthetic_docs.zip")
-        with zipfile.ZipFile(synthetic_zip, "w") as archive:
+        synthetic_api_zip = os.path.join(cache_dir, "synthetic_api_docs.zip")
+        with zipfile.ZipFile(synthetic_api_zip, "w") as archive:
             archive.writestr(
                 "blender_python_reference/index.html",
                 "<html><head><title>Blender Python API</title></head>"
@@ -177,11 +177,26 @@ def main():
                 "<html><head><title>Object(ID) - Blender Python API</title></head>"
                 "<body><h1>Object(ID)</h1><p>Object location rotation_euler scale animation_data constraints.</p></body></html>",
             )
+        synthetic_manual_zip = os.path.join(cache_dir, "synthetic_manual_docs.zip")
+        with zipfile.ZipFile(synthetic_manual_zip, "w") as archive:
+            archive.writestr(
+                "blender_manual_html/index.html",
+                "<html><head><title>Blender Manual</title></head>"
+                "<body><h1>Blender Manual</h1><p>Manual index page.</p></body></html>",
+            )
+            archive.writestr(
+                "blender_manual_html/modeling/modifiers/generate/bevel.html",
+                "<html><head><title>Bevel Modifier - Blender Manual</title></head>"
+                "<body><h1>Bevel Modifier</h1><p>The bevel modifier creates chamfered edges for product polish workflows.</p></body></html>",
+            )
 
         original_download = docs_index._download_zip
 
         def fake_download(url, destination):
-            shutil.copyfile(synthetic_zip, destination)
+            if url == docs_index.manual_zip_url(docs_index.blender_docs_version()):
+                shutil.copyfile(synthetic_manual_zip, destination)
+            else:
+                shutil.copyfile(synthetic_api_zip, destination)
 
         docs_index._download_zip = fake_download
         try:
@@ -190,15 +205,51 @@ def main():
             docs_index._download_zip = original_download
         assert status["full_index_exists"], status
         assert status["full_index_entries"] >= 2, status
+        assert status["manual_index_exists"], status
+        assert status["manual_index_entries"] >= 2, status
         indexed = docs_index.search_blender_docs("rotation_euler animation_data constraints", cache_dir=cache_dir)
         assert indexed["full_index_entries"] >= 2, indexed
-        assert any(result["source"] == "full_docs_index" for result in indexed["results"]), indexed
+        assert any(result["source"] == "full_api_index" for result in indexed["results"]), indexed
         assert indexed["citations"][0]["url"].startswith("https://docs.blender.org/api/"), indexed
+        assert indexed["searched_indexes"][2]["name"] == "manual_full_index", indexed
+        assert indexed["search_report"].startswith("Searched local docs"), indexed
         assert len(str(indexed)) < context_budget.MAX_DOC_RESULT_CHARS, indexed
+
+        manual_indexed = docs_index.search_blender_docs("bevel product polish workflow", cache_dir=cache_dir)
+        assert manual_indexed["manual_index_entries"] >= 2, manual_indexed
+        assert any(result["source"] == "full_manual_index" for result in manual_indexed["results"]), manual_indexed
+        assert any(citation["kind"] == "manual" for citation in manual_indexed["citations"]), manual_indexed
+        assert "full_manual_index" in manual_indexed["citation_report"], manual_indexed
+
+        partial_cache_dir = tempfile.mkdtemp(prefix="claude-blender-partial-docs-", dir=cache_dir)
+
+        def fail_manual_download(url, destination):
+            if url == docs_index.manual_zip_url(docs_index.blender_docs_version()):
+                raise RuntimeError("synthetic manual download failure")
+            shutil.copyfile(synthetic_api_zip, destination)
+
+        docs_index._download_zip = fail_manual_download
+        try:
+            partial_status = docs_index.build_full_docs_cache(
+                cache_dir=partial_cache_dir,
+                version=docs_index.blender_docs_version(),
+                force=True,
+            )
+        finally:
+            docs_index._download_zip = original_download
+        assert partial_status["full_index_exists"], partial_status
+        assert partial_status["full_index_entries"] >= 2, partial_status
+        assert not partial_status["manual_index_exists"], partial_status
+        assert not partial_status["build_ok"], partial_status
+        assert "synthetic manual download failure" in partial_status["manual_build_error"], partial_status
+        partial_search = docs_index.search_blender_docs("rotation_euler constraints", cache_dir=partial_cache_dir)
+        assert any(result["source"] == "full_api_index" for result in partial_search["results"]), partial_search
 
         fallback_docs = docs_index.search_blender_docs("zzzz_unmatched_docs_query", cache_dir=cache_dir)
         fallback_sources = {result["source"] for result in fallback_docs["results"]}
         assert "official_manual_url_candidate" in fallback_sources, fallback_docs
+        assert fallback_docs["used_official_fallbacks"], fallback_docs
+        assert {citation["kind"] for citation in fallback_docs["citations"]} == {"official"}, fallback_docs
 
         image_bundle = {
             "scene_summary": {"object_count": 0},

@@ -45,6 +45,10 @@ TOOL_CONTRACTS = {
         "description": "Return scene timeline, action, f-curve, and keyframe details",
         "mutates_scene": False,
     },
+    "create_animation_brief": {
+        "description": "Create a structured animation prompt contract from the user brief and scene context",
+        "mutates_scene": False,
+    },
     "get_material_node_details": {
         "description": "Return material node, socket, and link details",
         "mutates_scene": False,
@@ -340,6 +344,16 @@ TOOL_CONTRACTS = {
     },
     "apply_vehicle_refinement_template": {
         "description": "Apply a bounded vehicle detail kit with wheels, windows, seams, lights, and smoothing",
+        "mutates_scene": True,
+        "requires_live_preview": True,
+    },
+    "apply_product_refinement_template": {
+        "description": "Apply a bounded product presentation kit with material polish, smoothing, staging, callouts, and optional turntable",
+        "mutates_scene": True,
+        "requires_live_preview": True,
+    },
+    "apply_character_refinement_template": {
+        "description": "Apply a bounded character blockout/detail kit with body polish, head, eyes, shoulder marker, and optional guides",
         "mutates_scene": True,
         "requires_live_preview": True,
     },

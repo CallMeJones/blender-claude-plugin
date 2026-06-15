@@ -80,12 +80,20 @@ def _prefs(context):
 
 
 def _format_docs_status(status):
-    if not status.get("full_index_exists"):
-        return f"Docs {status['version']}: curated cache only"
-    return (
-        f"Docs {status['version']}: "
-        f"{status.get('full_index_entries', 0)} indexed pages"
-    )
+    errors = status.get("build_errors") or {}
+    if not status.get("full_index_exists") and not status.get("manual_index_exists"):
+        message = f"Docs {status['version']}: curated cache only"
+    else:
+        api_count = int(status.get("full_index_entries", 0) or 0)
+        manual_count = int(status.get("manual_index_entries", 0) or 0)
+        message = (
+            f"Docs {status['version']}: "
+            f"API {api_count} pages, Manual {manual_count} pages"
+        )
+    if errors:
+        error_text = "; ".join(f"{name} failed: {detail}" for name, detail in sorted(errors.items()))
+        message = f"{message} ({error_text})"
+    return message[:1000]
 
 
 def _format_bytes(size):
@@ -946,8 +954,8 @@ class CLAUDEBLENDER_OT_check_docs_cache(bpy.types.Operator):
 
 class CLAUDEBLENDER_OT_build_docs_cache(bpy.types.Operator):
     bl_idname = "claude_blender.build_docs_cache"
-    bl_label = "Build Full Python Docs Cache"
-    bl_description = "Download and index the full official Blender Python API docs for this Blender version"
+    bl_label = "Build Full Docs Cache"
+    bl_description = "Download and index the official Blender Python API and Manual docs for this Blender version"
 
     force: bpy.props.BoolProperty(
         name="Force Rebuild",

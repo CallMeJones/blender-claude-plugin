@@ -8,7 +8,7 @@ Start with the top-level `README.md`, then use these deeper notes for developmen
 - Sampled animation playblast frames are exposed through `blender://playblasts/latest/metadata`, exact playblast metadata resources, and frame PNG resources for animation review.
 - Saved `.blend` files store generated captures and playblast frames in project-local `.claude_blender/captures/<session_id>` folders by default. Unsaved or unwritable projects use the global user cache.
 - External script trust is runtime-only and can be granted from sidebar presets such as 15 minutes, 1 hour, 4 hours, or the current Blender session.
-- The helper catalog now includes production kits for lighting presets, material palettes, product turntable staging, and scene organization.
+- The helper catalog now includes production kits for lighting presets, material palettes, product/vehicle/character refinement, product turntable staging, and scene organization.
 
 ## MCP Client Refresh
 

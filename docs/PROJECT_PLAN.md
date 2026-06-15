@@ -128,6 +128,8 @@ Expose Claude to narrow client tools rather than raw Python first:
 - `add_panel_seams`: adds simple dark curve seams around a mesh body's bounds.
 - `add_window_materials`: creates/assigns blue glass and optional window panels.
 - `apply_vehicle_refinement_template`: applies a bounded vehicle detail kit with smoothing, wheels, glass, seams, headlights, and taillights.
+- `apply_product_refinement_template`: applies a bounded product presentation kit with material polish, smoothing, staging, callouts, and optional turntable setup.
+- `apply_character_refinement_template`: applies a bounded character blockout/detail kit with body polish, head/neck/eyes, shoulder marker, and optional gesture guides.
 - `create_studio_product_stage`: creates a bounded floor/backdrop/key-fill-rim-light/camera presentation setup around a target.
 - `add_dimension_callouts`: adds width/depth/height curve and text callouts around a target's bounds.
 - `apply_lighting_preset`: creates bounded product/gallery/dramatic area-light rigs around a target.
@@ -225,7 +227,7 @@ Acceptance:
 
 Status: Initial tool loop implemented for scene object listing, object selection, playhead changes, selected-object movement, absolute transform edits, primitive creation, material assignment, emission material assignment, collection creation/linking, bounded modifier creation, Track To constraints, timeline setup, active camera selection, selected-object transform keyframes, light creation, camera creation, camera orbit creation, scene inspection, docs lookup scaffold, commit, and revert.
 Advanced helper coverage is now implemented for Principled shader material setup, Geometry Nodes starter modifiers, shape key creation/animation, text objects, curve paths, bounded particles, basic armatures, copy-transform constraints, render settings, camera settings, and world background colors. These tools still use the reversible live-preview transaction; complex custom node graphs, production rigs, and simulation setups remain approval-gated Python.
-Model refinement helpers are now implemented for shade smoothing, bevel/subdivision stacks, wheel assemblies, panel seams, window/glass panels, and a first vehicle refinement template.
+Model refinement helpers are now implemented for shade smoothing, bevel/subdivision stacks, wheel assemblies, panel seams, window/glass panels, and bounded vehicle, product, and character refinement templates.
 The agent loop now uses request-specific tool schema selection so Claude receives a compact task-relevant subset instead of the whole growing toolbox.
 
 ### Milestone 4: Docs-Aware Coding
@@ -242,7 +244,7 @@ Acceptance:
 - Responses cite the docs snippets used in the local transcript/log.
 - Scripts use current Blender API names and avoid outdated examples.
 
-Status: Docs cache is implemented as a version-keyed local JSON cache with curated snippets, official Blender URL candidates, citation records/reporting, and an optional full Python API zip downloader/indexer. Official Manual search URL fallback exists for non-API workflow concepts; full Blender Manual indexing remains later work.
+Status: Docs cache is implemented as a version-keyed local JSON cache with curated snippets, official Blender URL candidates, citation records/reporting, and optional full Python API plus Blender Manual HTML zip downloaders/indexers. Search reports now include searched-index counts, source breakdowns, citation refs, and explicit fallback status.
 
 ### Milestone 4.5: Safe Editing Helpers
 
@@ -255,7 +257,7 @@ Acceptance:
 - Simple object, material, transform, camera, light, and keyframe changes do not require arbitrary generated Python.
 - Helper calls are reversible through undo/checkpoint flow.
 
-Status: Safe editing helpers now cover the original simple edits plus advanced bounded helpers, refinement helpers, object visibility/display, animation controls, rollback manifests, and generic preview change reports that summarize expected live-helper changes and rollback coverage.
+Status: Safe editing helpers now cover the original simple edits plus advanced bounded helpers, refinement helpers, vehicle/product/character production kits, object visibility/display, animation controls, rollback manifests, and domain-aware preview change reports that summarize expected live-helper changes and rollback coverage. Optional visual QA is covered by a background render smoke for the product and character refinement kits, with keepable artifacts via `CLAUDE_BLENDER_VISUAL_QA_DIR`.
 
 ### Milestone 5: Animation Workflows
 
@@ -317,6 +319,8 @@ Acceptance:
 - A prompt such as "make the red ball bounce three times and get smaller each bounce" becomes an explicit contract with object, count, timing, scale, camera, and validation criteria.
 - The agent can distinguish ambiguity that needs user input from detail that can be inferred safely.
 - The prompt contract is available to the generation, validation, and repair steps.
+
+Status: Initial `create_animation_brief` tool is implemented as a non-mutating prompt-contract helper that resolves subjects, timing, counts, secondary scale/visibility/brightness requirements, assumptions, ambiguities, success criteria, and validation-plan flags from the current Blender context.
 
 #### Milestone 7B: Timing Charts And Blocking Tools
 

@@ -56,9 +56,9 @@ SYSTEM_PROMPT = (
     "When the user asks to change the scene, use safe helper tools first so Blender changes immediately. "
     "Use direct Blender data concepts: objects, collections, materials, cameras, lights, actions, keyframes. "
     "For scene building and layout, prefer create_primitive, create_empty, duplicate_selected_objects, parent_selected_to_empty, align_selected_objects, distribute_selected_objects, set_object_visibility, set_object_display, assign_material_to_selected, assign_emission_material_to_selected, create_shader_material, create_text_object, create_curve_path, create_collection, link_selected_to_collection, add_light, add_camera, add_modifier_to_selected, add_geometry_nodes_modifier, add_track_to_constraint, add_copy_transform_constraint, create_basic_armature, add_particle_system_to_selected, set_render_settings, set_camera_settings, and set_world_background. "
-    "For model refinement and production presentation, prefer shade_smooth_selected, add_bevel_and_subsurf, create_wheel_assembly, add_panel_seams, add_window_materials, apply_vehicle_refinement_template, create_studio_product_stage, add_dimension_callouts, apply_lighting_preset, create_material_palette, create_product_turntable_setup, and organize_scene_for_production when they fit the task. "
+    "For model refinement and production presentation, prefer shade_smooth_selected, add_bevel_and_subsurf, create_wheel_assembly, add_panel_seams, add_window_materials, apply_vehicle_refinement_template, apply_product_refinement_template, apply_character_refinement_template, create_studio_product_stage, add_dimension_callouts, apply_lighting_preset, create_material_palette, create_product_turntable_setup, and organize_scene_for_production when they fit the task. "
     "For shape-key animation, prefer create_shape_key and animate_shape_key before drafting Python. "
-    "For animation, prefer set_scene_frame_range, set_animation_preview_range, animate_selected_transform, animate_object_bounce, animate_material_property, animate_light_property, create_follow_path_animation, create_turntable_animation, create_pulse_animation, create_reveal_animation, create_staggered_motion, set_action_interpolation, retime_actions, add_action_cycles, clear_animation, and create_camera_orbit. "
+    "For animation, use create_animation_brief first when the prompt needs an explicit contract, success criteria, or later validation, then prefer set_scene_frame_range, set_animation_preview_range, animate_selected_transform, animate_object_bounce, animate_material_property, animate_light_property, create_follow_path_animation, create_turntable_animation, create_pulse_animation, create_reveal_animation, create_staggered_motion, set_action_interpolation, retime_actions, add_action_cycles, clear_animation, and create_camera_orbit. "
     "For complex scene builds that need many objects or more than about eight helper calls, stage one cohesive Blender Python script with draft_script instead of making a long chain of helper calls. "
     "When helper tools cannot express the requested edit, use draft_script to stage Blender Python for user approval. "
     "When calling draft_script, put the complete Python source in the code field. Do not put script code in final chat text for the user to paste manually. "
@@ -224,6 +224,33 @@ def blender_tool_definitions():
                         "description": "Maximum keyframes to show per f-curve",
                     },
                 },
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "create_animation_brief",
+            "description": "Create a structured animation prompt contract with subjects, action, timing, assumptions, ambiguities, success criteria, and validation checks. Does not mutate the scene.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "prompt": {
+                        "type": "string",
+                        "description": "The user's animation request or concise animation intent to formalize.",
+                    },
+                    "subject_names": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional existing Blender object names to treat as animated subjects. Defaults to the current selection.",
+                    },
+                    "action": {"type": "string", "description": "Optional explicit primary action if the prompt is ambiguous."},
+                    "style": {"type": "string", "description": "Optional style/read such as playful, heavy, snappy, or cinematic."},
+                    "camera": {"type": "string", "description": "Optional camera name or framing requirement."},
+                    "frame_start": {"type": "integer"},
+                    "frame_end": {"type": "integer"},
+                    "constraints": {"type": "array", "items": {"type": "string"}},
+                    "success_criteria": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["prompt"],
                 "additionalProperties": False,
             },
         },
@@ -1278,6 +1305,37 @@ def blender_tool_definitions():
             },
         },
         {
+            "name": "apply_product_refinement_template",
+            "description": "Apply a bounded product presentation kit around a target: material polish, smoothing/bevels, optional studio stage, dimension callouts, and optional turntable. Applies immediately with preview revert support.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "target_name": {"type": "string"},
+                    "style": {"type": "string", "enum": ["studio", "catalog", "premium"]},
+                    "include_stage": {"type": "boolean"},
+                    "include_callouts": {"type": "boolean"},
+                    "include_turntable": {"type": "boolean"},
+                    "label": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "apply_character_refinement_template",
+            "description": "Apply a bounded character presentation kit around a target mesh: body polish, simple head/neck/eyes, shoulder marker, and optional gesture guides. Applies immediately with preview revert support.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "target_name": {"type": "string"},
+                    "character_style": {"type": "string", "enum": ["neutral", "toon"]},
+                    "detail_level": {"type": "string", "enum": ["low", "medium", "high"]},
+                    "create_guides": {"type": "boolean"},
+                    "label": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+        },
+        {
             "name": "create_studio_product_stage",
             "description": "Create a production-style product presentation stage around a target object: floor, backdrop, key/fill/rim area lights, target empty, and optional camera. Applies immediately with preview revert support.",
             "input_schema": {
@@ -1611,6 +1669,7 @@ _TOOL_GROUPS = {
     },
     "animation": {
         "get_animation_details",
+        "create_animation_brief",
         "set_current_frame",
         "set_scene_frame_range",
         "animate_selected_transform",
@@ -1664,6 +1723,7 @@ _TOOL_GROUPS = {
         "create_shader_material",
         "add_geometry_nodes_modifier",
         "create_shape_key",
+        "create_animation_brief",
         "animate_shape_key",
         "animate_object_bounce",
         "animate_material_property",
@@ -1689,6 +1749,8 @@ _TOOL_GROUPS = {
         "apply_lighting_preset",
         "create_material_palette",
         "create_product_turntable_setup",
+        "apply_product_refinement_template",
+        "apply_character_refinement_template",
         "organize_scene_for_production",
         "duplicate_selected_objects",
         "parent_selected_to_empty",
@@ -1705,6 +1767,8 @@ _TOOL_GROUPS = {
         "apply_lighting_preset",
         "create_material_palette",
         "create_product_turntable_setup",
+        "apply_product_refinement_template",
+        "apply_character_refinement_template",
         "organize_scene_for_production",
     },
     "vehicle": {
@@ -1725,6 +1789,31 @@ _TOOL_GROUPS = {
         "add_camera",
         "set_camera_settings",
     },
+    "product": {
+        "shade_smooth_selected",
+        "add_bevel_and_subsurf",
+        "create_studio_product_stage",
+        "add_dimension_callouts",
+        "apply_lighting_preset",
+        "create_material_palette",
+        "create_product_turntable_setup",
+        "apply_product_refinement_template",
+        "organize_scene_for_production",
+        "set_render_settings",
+        "set_camera_settings",
+    },
+    "character": {
+        "shade_smooth_selected",
+        "add_bevel_and_subsurf",
+        "create_basic_armature",
+        "add_copy_transform_constraint",
+        "create_text_object",
+        "create_curve_path",
+        "apply_character_refinement_template",
+        "create_studio_product_stage",
+        "apply_lighting_preset",
+        "organize_scene_for_production",
+    },
     "rigging": {"get_rigging_details", "create_basic_armature", "add_track_to_constraint", "add_copy_transform_constraint"},
     "curves_text": {"get_curve_text_details", "create_text_object", "create_curve_path", "create_follow_path_animation"},
     "particles": {"get_simulation_details", "add_particle_system_to_selected"},
@@ -1736,12 +1825,14 @@ _GROUP_KEYWORDS = {
     "selection": {"select", "selected", "active", "frame", "playhead", "inspect"},
     "basic_edit": {"make", "create", "add", "move", "scale", "rotate", "transform", "object", "primitive", "empty", "marker", "collection", "duplicate", "copy", "parent", "align", "distribute", "layout", "arrange", "hide", "unhide", "visibility", "visible", "display", "wireframe", "show name", "in front"},
     "materials": {"material", "shader", "color", "colour", "red", "blue", "green", "metal", "metallic", "chrome", "glass", "emission", "glow", "window"},
-    "animation": {"animate", "animation", "keyframe", "timeline", "frame", "orbit", "bounce", "driver", "motion", "follow path", "path", "retime", "interpolation", "easing", "loop", "cycles", "turntable", "pulse", "reveal", "stagger", "playblast", "timing", "spacing"},
+    "animation": {"animate", "animation", "animation brief", "prompt contract", "success criteria", "keyframe", "timeline", "frame", "orbit", "bounce", "driver", "motion", "follow path", "path", "retime", "interpolation", "easing", "loop", "cycles", "turntable", "pulse", "reveal", "stagger", "playblast", "timing", "spacing", "blocking"},
     "camera_render": {"camera", "render", "light", "lighting", "world", "background", "dof", "depth of field", "lens", "compositor", "resolution", "intensity", "studio", "product stage", "presentation", "turntable"},
     "deep_inspect": {"inspect", "analyze", "analyse", "summarize", "summary", "details", "world model", "what", "list", "screenshot", "viewport", "visual", "image", "capture", "playblast", "review"},
     "advanced_create": {"geometry nodes", "shape key", "text", "curve", "particle", "armature", "constraint", "rig", "driver", "callout", "dimension", "label", "palette", "swatch", "organize", "collection"},
     "refinement": {"refine", "polish", "smooth", "high poly", "high-poly", "detail", "bevel", "subdivision", "subsurf", "seam", "panel", "dimension", "callout", "stage", "palette", "lighting"},
     "vehicle": {"car", "vehicle", "truck", "wheel", "tire", "tyre", "rim", "headlight", "taillight", "windshield", "door", "grille"},
+    "product": {"product", "catalog", "catalogue", "packshot", "turntable", "presentation", "hero shot", "studio shot"},
+    "character": {"character", "humanoid", "person", "head", "face", "eyes", "shoulder", "body", "toon", "avatar"},
     "rigging": {"rig", "armature", "bone", "constraint", "copy location", "copy rotation", "track to"},
     "curves_text": {"curve", "path", "text", "label", "spline"},
     "particles": {"particle", "particles", "simulation", "sim", "spark", "dust"},
@@ -1879,6 +1970,8 @@ TOOL_FUNCTIONS_FOR_MUTATION_COMPAT = {
     "create_product_turntable_setup",
     "organize_scene_for_production",
     "apply_vehicle_refinement_template",
+    "apply_product_refinement_template",
+    "apply_character_refinement_template",
     "draft_script",
 }
 

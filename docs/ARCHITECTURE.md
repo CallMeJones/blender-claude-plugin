@@ -115,11 +115,11 @@ Recommended path:
 1. Detect the running Blender version with `bpy.app.version`.
 2. Search the curated local JSON docs cache for that version.
 3. Search the full local Python API docs index when the user has built it.
-4. Return concise snippets with API symbol names, examples, and URLs.
-5. Return official Blender docs index/search URLs when no local snippet matches.
-6. Later add Blender Manual indexing and richer ranking.
+4. Search the full local Blender Manual index for workflow/UI concepts when the user has built it.
+5. Return concise snippets with API symbol names, Manual sections, examples, URLs, and citation refs.
+6. Return official Blender docs index/search URLs when no local snippet matches.
 
-The docs tool should return concise snippets plus URLs, not whole pages. The agent should cite doc URLs in the transcript when docs influenced code.
+The docs tool should return concise snippets plus URLs, not whole pages. The agent should cite doc URLs in the transcript when docs influenced code and use the search report/source breakdown to explain whether results came from local indexes or official fallback URLs.
 
 For scripting tasks, the system prompt should tell Claude to look up docs before using APIs it is uncertain about, especially animation data, drivers, geometry nodes, operators with context requirements, and extension-specific behavior.
 
@@ -155,6 +155,8 @@ Common changes should use typed helper tools before arbitrary code:
 - `add_panel_seams`
 - `add_window_materials`
 - `apply_vehicle_refinement_template`
+- `apply_product_refinement_template`
+- `apply_character_refinement_template`
 - `create_studio_product_stage`
 - `add_dimension_callouts`
 - `apply_lighting_preset`
@@ -165,7 +167,7 @@ Common changes should use typed helper tools before arbitrary code:
 Helpers can validate object names, expected types, frame ranges, and value ranges before applying changes. When a helper is too limited, Claude can fall back to a proposed Python script.
 
 Advanced helpers live in `advanced_helpers.py` and still write through the live-preview transaction layer. They should cover bounded starter actions for deep systems, while arbitrary custom node graphs, rigs, simulations, and destructive edits stay in the approval-gated script path.
-Refinement helpers also live in `advanced_helpers.py` for now. If product/character/vehicle kits grow, split them into a dedicated template module with shared bounds/material/primitive utilities.
+Refinement helpers also live in `advanced_helpers.py` for now. If product/character/vehicle kits grow further, split them into a dedicated template module with shared bounds/material/primitive utilities.
 
 ## Live Preview Strategy
 

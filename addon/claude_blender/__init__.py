@@ -28,6 +28,7 @@ _MODULE_NAMES = (
     "world_model",
     "audit_log",
     "script_analysis",
+    "animation_brief",
     "advanced_helpers",
     "viewport_capture",
     "playblast_capture",

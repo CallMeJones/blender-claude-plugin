@@ -35,8 +35,16 @@ def main():
         assert "inspect_scene" in simple_names
         assert "list_scene_objects" in simple_names
         assert "apply_vehicle_refinement_template" not in simple_names
+        assert "apply_product_refinement_template" not in simple_names
+        assert "apply_character_refinement_template" not in simple_names
         assert simple_meta["selected_tool_count"] < len(full_tools)
         assert anthropic_client.estimate_request_chars(messages=[], tools=simple_tools) < full_chars
+
+        brief_summary_tools, brief_summary_meta = anthropic_client.select_blender_tool_definitions(
+            "Give me a brief summary of the current scene.",
+            bundle,
+        )
+        assert "create_animation_brief" not in _names(brief_summary_tools), brief_summary_meta
 
         vehicle_tools, vehicle_meta = anthropic_client.select_blender_tool_definitions(
             "Improve this car into a high-poly vehicle with wheels, windows, panel seams, headlights, and smoother bevels.",
@@ -55,6 +63,39 @@ def main():
             assert expected in vehicle_names, (expected, vehicle_meta)
         assert vehicle_meta["schema_chars"] <= anthropic_client.TOOL_SCHEMA_CHAR_BUDGET
 
+        product_tools, product_meta = anthropic_client.select_blender_tool_definitions(
+            "Polish this product into a premium catalog studio shot with dimensions and a turntable.",
+            bundle,
+        )
+        product_names = _names(product_tools)
+        for expected in {
+            "apply_product_refinement_template",
+            "create_studio_product_stage",
+            "add_dimension_callouts",
+            "create_product_turntable_setup",
+        }:
+            assert expected in product_names, (expected, product_meta)
+
+        character_tools, character_meta = anthropic_client.select_blender_tool_definitions(
+            "Turn this body mesh into a toon character blockout with a head, eyes, and guide lines.",
+            bundle,
+        )
+        character_names = _names(character_tools)
+        for expected in {
+            "apply_character_refinement_template",
+            "create_basic_armature",
+            "create_curve_path",
+        }:
+            assert expected in character_names, (expected, character_meta)
+
+        animation_tools, animation_meta = anthropic_client.select_blender_tool_definitions(
+            "Create an animation brief and prompt contract before making the cube bounce three times.",
+            bundle,
+        )
+        animation_names = _names(animation_tools)
+        assert "create_animation_brief" in animation_names, animation_meta
+        assert "animate_object_bounce" in animation_names, animation_meta
+
         captured_tool_names = []
 
         def fake_create_message_raw(*, messages, model, tools=None, max_tokens=1024):
@@ -70,6 +111,8 @@ def main():
         )
         assert text == "done", text
         assert "apply_vehicle_refinement_template" not in captured_tool_names
+        assert "apply_product_refinement_template" not in captured_tool_names
+        assert "apply_character_refinement_template" not in captured_tool_names
         assert len(captured_tool_names) < len(full_tools)
         print("smoke_tool_selection: ok")
     finally:

@@ -115,7 +115,7 @@ The docs engine should be version-aware and official-source-first.
 5. Return concise cached snippets and official Blender source URLs.
 6. Return official docs search/index URLs when the local cache has no targeted match.
 
-Current implementation: `docs_index.py` seeds a local JSON cache with targeted snippets for transforms, materials, lights, cameras, constraints, timeline settings, keyframes, Blender 5.1 layered Actions, and extension manifests. It can also download Blender's official versioned Python API zip, safely extract it, parse HTML pages, and build a compact `full_index.json`. Search results include compact citation records and a `citation_report` string that can be copied into transcript/status output when docs influenced code.
+Current implementation: `docs_index.py` seeds a local JSON cache with targeted snippets for transforms, materials, lights, cameras, constraints, timeline settings, keyframes, Blender 5.1 layered Actions, and extension manifests. It can also download Blender's official versioned Python API zip and official Manual HTML zip, safely extract them, parse HTML pages, and build compact `full_index.json` and `manual_index.json` files. Search results include citation refs, source breakdowns, searched-index reporting, and a `citation_report` string that can be copied into transcript/status output when docs influenced code.
 
 The cache layout is:
 
@@ -124,8 +124,11 @@ The cache layout is:
   blender_docs_5.1.json
   5.1/
     blender_python_reference_5_1.zip
+    blender_manual_html.zip
     html/
     full_index.json
+    manual_html/
+    manual_index.json
 ```
 
 The search tool returns only top matching snippets and URLs. It never sends the whole docs cache to Claude.
@@ -197,6 +200,8 @@ Initial helpers:
 - `add_panel_seams(target_name, bevel_depth)`
 - `add_window_materials(target_name, material_name, color, create_panels)`
 - `apply_vehicle_refinement_template(target_name, detail_level)`
+- `apply_product_refinement_template(target_name, style, include_stage, include_callouts, include_turntable)`
+- `apply_character_refinement_template(target_name, character_style, detail_level, create_guides)`
 - `create_studio_product_stage(target_name, stage_name, floor, backdrop, lighting, camera)`
 - `add_dimension_callouts(target_name, unit_label, include_width, include_depth, include_height)`
 - `apply_lighting_preset(target_name, preset, rig_name)`
@@ -207,7 +212,7 @@ Initial helpers:
 Helpers should validate inputs and return structured results. Claude can still propose Python for advanced operations, but the default path for common edits should be helper-first.
 
 The advanced helpers are intentionally bounded. They create useful starter states and simple edits without exposing arbitrary node graph, rig, or simulation mutation. When Claude needs a custom geometry-node network, production rig, compositor graph, destructive mesh operation, import/export, or complex simulation setup, it should draft approved Python after inspecting context and docs.
-Reusable refinement templates should stay bounded and composable. The first template is vehicle-focused; product and character kits should follow the same pattern: inspect bounds, add tasteful primitive/curve/material details, preserve preview rollback, and escalate to approved Python for topology-heavy work.
+Reusable refinement templates should stay bounded and composable. Vehicle, product, and character kits inspect bounds, add tasteful primitive/curve/material details, preserve preview rollback, and escalate to approved Python for topology-heavy work.
 
 ## Script Drafting Protocol
 
@@ -245,6 +250,8 @@ By default, saved `.blend` files store viewport captures beside the project in `
 If Blender is running headless or the screenshot operator fails, the visual context records `requested: true` and `available: false` without blocking the prompt.
 
 `capture_animation_playblast` uses the same storage model to capture sampled viewport PNG frames across an animation range. It writes a playblast metadata manifest with frame resource URIs such as `blender://playblasts/{playblast_id}/frames/{frame}`. This is the first visual QA path for animation review: agents can compare visible sampled poses against the brief, timing, spacing, staging, arcs, and contact expectations. It requires an interactive Blender window and fails soft in background mode.
+
+Production-helper visual QA has a separate background-safe path: `tests/smoke_refinement_visual_qa.py` renders tiny PNG stills for the product and character refinement kits and checks that the output is not blank. Set `CLAUDE_BLENDER_VISUAL_QA_DIR` to keep those render artifacts and their manifest for manual inspection.
 
 ## Guarded Execution
 

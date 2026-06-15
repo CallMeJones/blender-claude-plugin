@@ -7,7 +7,7 @@ import re
 
 import bpy
 
-from . import advanced_helpers, context_bundle, docs_index, live_preview, playblast_capture, preferences, script_runner, viewport_capture, world_model
+from . import animation_brief, advanced_helpers, context_bundle, docs_index, live_preview, playblast_capture, preferences, script_runner, viewport_capture, world_model
 
 
 def _float_list(values, length, default):
@@ -424,6 +424,21 @@ def get_animation_details(context, args):
         "missing_object_names": missing_objects,
         "missing_action_names": missing_actions,
     }
+
+
+def create_animation_brief(context, args):
+    return animation_brief.create_animation_brief(
+        context,
+        prompt=str(args.get("prompt") or ""),
+        subject_names=_name_list(args.get("subject_names")),
+        action=str(args.get("action") or ""),
+        style=str(args.get("style") or ""),
+        camera=str(args.get("camera") or ""),
+        frame_start=args.get("frame_start"),
+        frame_end=args.get("frame_end"),
+        constraints=_name_list(args.get("constraints")),
+        success_criteria=_name_list(args.get("success_criteria")),
+    )
 
 
 def get_material_node_details(context, args):
@@ -1167,6 +1182,29 @@ def apply_vehicle_refinement_template(context, args):
     )
 
 
+def apply_product_refinement_template(context, args):
+    return advanced_helpers.apply_product_refinement_template(
+        context,
+        target_name=str(args.get("target_name") or ""),
+        style=str(args.get("style") or "studio"),
+        include_stage=bool(args.get("include_stage", True)),
+        include_callouts=bool(args.get("include_callouts", True)),
+        include_turntable=bool(args.get("include_turntable", False)),
+        label=args.get("label", "Apply product refinement template"),
+    )
+
+
+def apply_character_refinement_template(context, args):
+    return advanced_helpers.apply_character_refinement_template(
+        context,
+        target_name=str(args.get("target_name") or ""),
+        character_style=str(args.get("character_style") or "neutral"),
+        detail_level=str(args.get("detail_level") or "medium"),
+        create_guides=bool(args.get("create_guides", True)),
+        label=args.get("label", "Apply character refinement template"),
+    )
+
+
 def create_studio_product_stage(context, args):
     return advanced_helpers.create_studio_product_stage(
         context,
@@ -1413,6 +1451,7 @@ def _compact_targets(step):
         "selected_objects",
         "actions",
         "materials",
+        "created",
         "created_objects",
         "duplicates",
         "collections",
@@ -1438,6 +1477,60 @@ def _compact_targets(step):
     return []
 
 
+def _format_count(noun, count):
+    count = int(count or 0)
+    suffix = "" if count == 1 else "s"
+    return f"{count} {noun}{suffix}"
+
+
+def _preview_expected_changes(step, label, kind, target_text):
+    custom = str(step.get("expected_changes") or "").strip()
+    if custom:
+        return custom
+    if kind == "create_studio_product_stage":
+        return (
+            f"{label}: creates a studio stage for {step.get('target') or target_text} with "
+            f"{_format_count('object', len(step.get('created_objects') or []))}, "
+            f"{_format_count('light', len(step.get('lights') or []))}, "
+            f"and {'a camera' if step.get('camera') else 'no camera'}."
+        )
+    if kind == "add_dimension_callouts":
+        axes = ", ".join(sorted((step.get("measurements") or {}).keys())) or "bounds"
+        return f"{label}: adds dimension callouts for {step.get('target') or target_text} covering {axes}."
+    if kind == "apply_lighting_preset":
+        return (
+            f"{label}: adds the {step.get('preset', 'production')} lighting preset around "
+            f"{step.get('target') or target_text} with {_format_count('light', len(step.get('lights') or []))}."
+        )
+    if kind == "create_material_palette":
+        return (
+            f"{label}: creates the {step.get('palette', 'production')} palette with "
+            f"{_format_count('material', len(step.get('materials') or []))} and "
+            f"{_format_count('swatch', len(step.get('swatches') or []))}."
+        )
+    if kind == "create_product_turntable_setup":
+        return (
+            f"{label}: sets up {step.get('target') or target_text} for a turntable from frame "
+            f"{step.get('frame_start')} to {step.get('frame_end')}, with "
+            f"{'stage, ' if step.get('stage_created') else ''}"
+            f"camera {step.get('camera') or 'none'} and action {step.get('action') or 'none'}."
+        )
+    if kind == "organize_scene_for_production":
+        return (
+            f"{label}: links {_format_count('object', len(step.get('linked') or []))} into "
+            f"{_format_count('production collection', len(step.get('collections') or []))} without deleting original links."
+        )
+    if kind == "apply_vehicle_refinement_template":
+        return (
+            f"{label}: adds a vehicle detail kit around {step.get('target') or target_text} with "
+            f"{_format_count('created object', len(step.get('created_objects') or []))}."
+        )
+    if kind in {"apply_product_refinement_template", "apply_character_refinement_template"}:
+        features = ", ".join(step.get("features") or []) or "bounded production details"
+        return f"{label}: applies {features} around {step.get('target') or target_text}."
+    return f"{label}: {kind} affects {target_text}."
+
+
 def _preview_change_report(transaction):
     steps = list((transaction or {}).get("applied_steps") or [])
     if not steps:
@@ -1452,11 +1545,13 @@ def _preview_change_report(transaction):
     manifest = live_preview.transaction_manifest(transaction)
     rollback_scopes = manifest.get("rollback_scopes") or []
     rollback_text = ", ".join(rollback_scopes[:5]) if rollback_scopes else "none"
+    expected_changes = _preview_expected_changes(step, label, kind, target_text)
+    expected_with_rollback = f"{expected_changes} Rollback snapshots: {rollback_text}."
     return {
         "label": label,
         "type": kind,
         "targets": targets,
-        "expected_changes": f"{label}: {kind} affects {target_text}. Rollback snapshots: {rollback_text}.",
+        "expected_changes": expected_with_rollback,
         "rollback_snapshot_count": int(manifest.get("snapshot_count", 0) or 0),
         "rollback_scopes": rollback_scopes,
     }
@@ -1482,6 +1577,7 @@ TOOL_FUNCTIONS = {
     "list_scene_objects": list_scene_objects,
     "get_object_details": get_object_details,
     "get_animation_details": get_animation_details,
+    "create_animation_brief": create_animation_brief,
     "get_material_node_details": get_material_node_details,
     "get_geometry_nodes_details": get_geometry_nodes_details,
     "get_shader_nodes_details": get_shader_nodes_details,
@@ -1539,6 +1635,8 @@ TOOL_FUNCTIONS = {
     "add_panel_seams": add_panel_seams,
     "add_window_materials": add_window_materials,
     "apply_vehicle_refinement_template": apply_vehicle_refinement_template,
+    "apply_product_refinement_template": apply_product_refinement_template,
+    "apply_character_refinement_template": apply_character_refinement_template,
     "create_studio_product_stage": create_studio_product_stage,
     "add_dimension_callouts": add_dimension_callouts,
     "apply_lighting_preset": apply_lighting_preset,

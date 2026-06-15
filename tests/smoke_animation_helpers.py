@@ -17,6 +17,7 @@ from claude_blender import anthropic_client, bridge_protocol, context_bundle, li
 
 
 ANIMATION_TOOLS = {
+    "create_animation_brief",
     "animate_object_bounce",
     "animate_material_property",
     "animate_light_property",
@@ -79,6 +80,44 @@ def main():
         assert ANIMATION_TOOLS.issubset(tool_names)
         contract_names = set(bridge_protocol.TOOL_CONTRACTS)
         assert ANIMATION_TOOLS.issubset(contract_names)
+
+        brief = _execute(
+            context,
+            "create_animation_brief",
+            {
+                "prompt": "Make the cube bounce three times and get smaller each bounce.",
+                "subject_names": ["Cube"],
+                "frame_start": 1,
+                "frame_end": 72,
+                "success_criteria": ["End smaller than it started."],
+            },
+        )
+        contract = brief["brief"]
+        assert contract["contract_id"].startswith("anim-"), contract
+        assert contract["subjects"][0]["name"] == "Cube", contract
+        assert contract["action"] == "bounce", contract
+        assert contract["timing"]["requested_count"] == 3, contract
+        assert "scale decreases over the animation" in contract["secondary_actions"], contract
+        assert contract["ready_for_generation"] is True, contract
+        assert contract["validation_plan"]["check_contact_physics"] is True, contract
+        assert any("exactly 3" in item for item in contract["success_criteria"]), contract
+        assert not scene.claude_blender.pending_preview
+
+        no_count = _execute(
+            context,
+            "create_animation_brief",
+            {"prompt": "Make one cube bounce.", "subject_names": ["Cube"], "frame_start": 1, "frame_end": 24},
+        )["brief"]
+        assert no_count["action"] == "bounce", no_count
+        assert no_count["timing"]["requested_count"] is None, no_count
+
+        inflected = _execute(
+            context,
+            "create_animation_brief",
+            {"prompt": "The cube bounces twice.", "subject_names": ["Cube"], "frame_start": 1, "frame_end": 24},
+        )["brief"]
+        assert inflected["action"] == "bounce", inflected
+        assert inflected["timing"]["requested_count"] == 2, inflected
 
         bounce = _execute(
             context,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 import math
 
 import bpy
@@ -69,6 +70,41 @@ MATERIAL_PALETTES = {
         ("Practical Glow", (1.0, 0.85, 0.2, 1.0)),
         ("Muted Skin", (0.72, 0.48, 0.36, 1.0)),
     ],
+}
+
+PRODUCT_REFINEMENT_STYLES = {
+    "studio": {
+        "material": ("Claude Product Satin White", (0.82, 0.84, 0.8, 1.0)),
+        "bevel_factor": 0.018,
+        "segments": 3,
+    },
+    "catalog": {
+        "material": ("Claude Product Catalog Blue", (0.05, 0.22, 0.72, 1.0)),
+        "bevel_factor": 0.014,
+        "segments": 2,
+    },
+    "premium": {
+        "material": ("Claude Product Premium Graphite", (0.035, 0.038, 0.042, 1.0)),
+        "bevel_factor": 0.02,
+        "segments": 4,
+    },
+}
+
+CHARACTER_PALETTES = {
+    "neutral": {
+        "skin": ("Claude Character Skin", (0.72, 0.48, 0.36, 1.0)),
+        "hair": ("Claude Character Hair", (0.09, 0.065, 0.045, 1.0)),
+        "eye": ("Claude Character Eye", (0.02, 0.025, 0.03, 1.0)),
+        "accent": ("Claude Character Accent", (0.18, 0.32, 0.72, 1.0)),
+        "guide": ("Claude Character Guide Lines", (0.04, 0.04, 0.045, 1.0)),
+    },
+    "toon": {
+        "skin": ("Claude Toon Skin", (0.95, 0.68, 0.48, 1.0)),
+        "hair": ("Claude Toon Hair", (0.03, 0.025, 0.055, 1.0)),
+        "eye": ("Claude Toon Eye", (0.0, 0.0, 0.0, 1.0)),
+        "accent": ("Claude Toon Accent", (0.95, 0.22, 0.16, 1.0)),
+        "guide": ("Claude Toon Guide Lines", (0.02, 0.02, 0.025, 1.0)),
+    },
 }
 
 
@@ -348,6 +384,33 @@ def _material_for_color(name, color):
     return material
 
 
+def _selection_snapshot(context):
+    active = context.view_layer.objects.active if context.view_layer else None
+    return {
+        "selected_names": [obj.name for obj in context.selected_objects],
+        "active_name": active.name if active else "",
+    }
+
+
+def _restore_selection_snapshot(context, snapshot):
+    bpy.ops.object.select_all(action="DESELECT")
+    for name in snapshot.get("selected_names", []):
+        obj = bpy.data.objects.get(name)
+        if obj:
+            obj.select_set(True)
+    if context.view_layer:
+        context.view_layer.objects.active = bpy.data.objects.get(snapshot.get("active_name", ""))
+
+
+@contextmanager
+def _preserve_selection(context):
+    snapshot = _selection_snapshot(context)
+    try:
+        yield
+    finally:
+        _restore_selection_snapshot(context, snapshot)
+
+
 def _bounds_world(obj):
     coords = [obj.matrix_world @ Vector(corner) for corner in obj.bound_box]
     min_x = min(vec.x for vec in coords)
@@ -379,6 +442,41 @@ def _create_cube_object(context, name, location, scale, material=None):
     obj.name = name
     obj.data.name = f"{name} Mesh"
     obj.scale = scale
+    if material:
+        obj.data.materials.append(material)
+    live_preview._record_created_id("object", obj.name)
+    live_preview._record_created_id("mesh", obj.data.name)
+    return obj
+
+
+def _create_uv_sphere_object(context, name, location, radius, material=None, *, segments=32, ring_count=16):
+    bpy.ops.mesh.primitive_uv_sphere_add(
+        segments=max(8, int(segments)),
+        ring_count=max(4, int(ring_count)),
+        radius=max(0.01, float(radius)),
+        location=location,
+    )
+    obj = context.object
+    obj.name = name
+    obj.data.name = f"{name} Mesh"
+    if material:
+        obj.data.materials.append(material)
+    live_preview._record_created_id("object", obj.name)
+    live_preview._record_created_id("mesh", obj.data.name)
+    return obj
+
+
+def _create_cylinder_object(context, name, location, radius, depth, material=None, *, vertices=32, rotation=(0.0, 0.0, 0.0)):
+    bpy.ops.mesh.primitive_cylinder_add(
+        vertices=max(8, int(vertices)),
+        radius=max(0.01, float(radius)),
+        depth=max(0.01, float(depth)),
+        location=location,
+        rotation=rotation,
+    )
+    obj = context.object
+    obj.name = name
+    obj.data.name = f"{name} Mesh"
     if material:
         obj.data.materials.append(material)
     live_preview._record_created_id("object", obj.name)
@@ -502,7 +600,7 @@ def create_shader_material(
     assign_to_selected=True,
     label="Create shader material",
 ):
-    transaction = live_preview.begin(label)
+    transaction = live_preview.begin(label, context)
     material = bpy.data.materials.get(name)
     created = material is None
     if material is None:
@@ -581,7 +679,7 @@ def add_geometry_nodes_modifier(
     targets = [obj for obj in (context.selected_objects if selected_only else context.scene.objects) if obj.type == "MESH"]
     if not targets:
         return {"ok": False, "message": "No mesh objects available for Geometry Nodes modifier"}
-    transaction = live_preview.begin(label)
+    transaction = live_preview.begin(label, context)
     group = bpy.data.node_groups.get(node_group_name)
     created_group = group is None
     if group is None:
@@ -3150,7 +3248,7 @@ def apply_vehicle_refinement_template(
     target = bpy.data.objects.get(target_name) if target_name else context.active_object
     if target is None or target.type != "MESH":
         return {"ok": False, "message": "A mesh target object is required for vehicle refinement"}
-    transaction = live_preview.begin(label)
+    transaction = live_preview.begin(label, context)
     bounds = _bounds_world(target)
     min_x, min_y, min_z = bounds["min"]
     max_x, max_y, max_z = bounds["max"]
@@ -3162,58 +3260,67 @@ def apply_vehicle_refinement_template(
     x_front = min_x + sx * 0.18
     x_rear = max_x - sx * 0.18
 
-    original_selection = list(context.selected_objects)
-    bpy.ops.object.select_all(action="DESELECT")
-    target.select_set(True)
-    context.view_layer.objects.active = target
-    add_bevel_and_subsurf(
-        context,
-        bevel_width=max(0.01, min(sx, sy, sz) * 0.018),
-        bevel_segments=3 if detail_level != "low" else 2,
-        subsurf_levels=1 if detail_level in {"medium", "high"} else 0,
-        weighted_normals=True,
-        label=label,
-    )
-    shade_smooth_selected(context, add_weighted_normals=True, label=label)
-
-    tire_material = _material_for_color("Claude Tire Rubber", (0.005, 0.005, 0.006, 1.0))
-    rim_material = _material_for_color("Claude Wheel Rim", (0.72, 0.72, 0.68, 1.0))
     created = []
-    for side_name, y in (("Left", min_y - y_offset * 0.08), ("Right", max_y + y_offset * 0.08)):
-        for axle_name, x in (("Front", x_front), ("Rear", x_rear)):
-            created.extend(
-                obj.name
-                for obj in _create_wheel_parts(
-                    context,
-                    name=f"{target.name} {side_name} {axle_name} Wheel",
-                    location=(x, y, z_wheel),
-                    radius=radius,
-                    thickness=thickness,
-                    axis="Y",
-                    tire_material=tire_material,
-                    rim_material=rim_material,
-                )
-            )
-
-    glass = add_window_materials(context, target_name=target.name, create_panels=True, label=label)
-    seams = add_panel_seams(context, target_name=target.name, bevel_depth=max(0.008, min(sx, sy, sz) * 0.006), label=label)
-    created.extend(glass.get("created_objects") or [])
-    created.extend(seams.get("objects") or [])
-
-    headlight_material = _material_for_color("Claude Headlight White", (1.0, 0.95, 0.82, 1.0))
-    tail_material = _material_for_color("Claude Tail Light Red", (1.0, 0.02, 0.0, 1.0))
-    light_z = min_z + sz * 0.36
-    light_scale = (sx * 0.035, sy * 0.035, sz * 0.09)
-    for y in (min_y + sy * 0.28, max_y - sy * 0.28):
-        created.append(_create_cube_object(context, f"{target.name} Front Headlight", (min_x - sx * 0.01, y, light_z), light_scale, headlight_material).name)
-        created.append(_create_cube_object(context, f"{target.name} Rear Taillight", (max_x + sx * 0.01, y, light_z), light_scale, tail_material).name)
-
-    bpy.ops.object.select_all(action="DESELECT")
-    for obj in original_selection:
-        if obj.name in bpy.data.objects:
-            obj.select_set(True)
-    if target.name in bpy.data.objects:
+    with _preserve_selection(context):
+        bpy.ops.object.select_all(action="DESELECT")
+        target.select_set(True)
         context.view_layer.objects.active = target
+        add_bevel_and_subsurf(
+            context,
+            bevel_width=max(0.01, min(sx, sy, sz) * 0.018),
+            bevel_segments=3 if detail_level != "low" else 2,
+            subsurf_levels=1 if detail_level in {"medium", "high"} else 0,
+            weighted_normals=True,
+            label=label,
+        )
+        shade_smooth_selected(context, add_weighted_normals=True, label=label)
+
+        tire_material = _material_for_color("Claude Tire Rubber", (0.005, 0.005, 0.006, 1.0))
+        rim_material = _material_for_color("Claude Wheel Rim", (0.72, 0.72, 0.68, 1.0))
+        for side_name, y in (("Left", min_y - y_offset * 0.08), ("Right", max_y + y_offset * 0.08)):
+            for axle_name, x in (("Front", x_front), ("Rear", x_rear)):
+                created.extend(
+                    obj.name
+                    for obj in _create_wheel_parts(
+                        context,
+                        name=f"{target.name} {side_name} {axle_name} Wheel",
+                        location=(x, y, z_wheel),
+                        radius=radius,
+                        thickness=thickness,
+                        axis="Y",
+                        tire_material=tire_material,
+                        rim_material=rim_material,
+                    )
+                )
+
+        glass = add_window_materials(context, target_name=target.name, create_panels=True, label=label)
+        seams = add_panel_seams(context, target_name=target.name, bevel_depth=max(0.008, min(sx, sy, sz) * 0.006), label=label)
+        created.extend(glass.get("created_objects") or [])
+        created.extend(seams.get("objects") or [])
+
+        headlight_material = _material_for_color("Claude Headlight White", (1.0, 0.95, 0.82, 1.0))
+        tail_material = _material_for_color("Claude Tail Light Red", (1.0, 0.02, 0.0, 1.0))
+        light_z = min_z + sz * 0.36
+        light_scale = (sx * 0.035, sy * 0.035, sz * 0.09)
+        for y in (min_y + sy * 0.28, max_y - sy * 0.28):
+            created.append(
+                _create_cube_object(
+                    context,
+                    f"{target.name} Front Headlight",
+                    (min_x - sx * 0.01, y, light_z),
+                    light_scale,
+                    headlight_material,
+                ).name
+            )
+            created.append(
+                _create_cube_object(
+                    context,
+                    f"{target.name} Rear Taillight",
+                    (max_x + sx * 0.01, y, light_z),
+                    light_scale,
+                    tail_material,
+                ).name
+            )
 
     transaction["applied_steps"].append(
         {"type": "apply_vehicle_refinement_template", "label": label, "target": target.name, "created_objects": created}
@@ -3225,6 +3332,281 @@ def apply_vehicle_refinement_template(
         "message": f"Applied vehicle refinement template around {target.name}",
         "target": target.name,
         "created_objects": created,
+        "transaction_id": transaction["id"],
+    }
+
+
+def apply_product_refinement_template(
+    context,
+    *,
+    target_name="",
+    style="studio",
+    include_stage=True,
+    include_callouts=True,
+    include_turntable=False,
+    label="Apply product refinement template",
+):
+    target = bpy.data.objects.get(target_name) if target_name else context.active_object
+    if target is None or not hasattr(target, "bound_box"):
+        return {"ok": False, "message": "A target object with bounds is required for product refinement"}
+    transaction = live_preview.begin(label, context)
+    bounds = _bounds_world(target)
+    sx, sy, sz = bounds["size"]
+    min_dim = max(0.05, min(sx, sy, sz))
+    style_key = str(style or "studio").lower()
+    style_spec = PRODUCT_REFINEMENT_STYLES.get(style_key) or PRODUCT_REFINEMENT_STYLES["studio"]
+    material_name, material_color = style_spec["material"]
+    material = _material_for_color(material_name, material_color)
+
+    stage_result = {}
+    callout_result = {}
+    turntable_result = {}
+    with _preserve_selection(context):
+        bpy.ops.object.select_all(action="DESELECT")
+        target.select_set(True)
+        context.view_layer.objects.active = target
+        if target.type == "MESH" and target.data:
+            live_preview._record_object_materials(target)
+            if target.material_slots:
+                target.material_slots[0].material = material
+            else:
+                target.data.materials.append(material)
+            add_bevel_and_subsurf(
+                context,
+                bevel_width=max(0.006, min_dim * float(style_spec["bevel_factor"])),
+                bevel_segments=int(style_spec["segments"]),
+                subsurf_levels=1,
+                weighted_normals=True,
+                label=label,
+            )
+            shade_smooth_selected(context, add_weighted_normals=True, label=label)
+
+        if include_stage:
+            stage_result = create_studio_product_stage(
+                context,
+                target_name=target.name,
+                stage_name=f"{target.name} Product Stage",
+                floor=True,
+                backdrop=True,
+                lighting=True,
+                camera=True,
+                label=label,
+            )
+
+        if include_callouts:
+            callout_result = add_dimension_callouts(
+                context,
+                target_name=target.name,
+                unit_label="bu",
+                include_width=True,
+                include_depth=True,
+                include_height=True,
+                label=label,
+            )
+
+        if include_turntable:
+            turntable_result = create_product_turntable_setup(
+                context,
+                target_name=target.name,
+                frame_start=context.scene.frame_start,
+                frame_end=max(context.scene.frame_end, context.scene.frame_start + 96),
+                revolutions=1.0,
+                setup_name=f"{target.name} Product Review",
+                create_stage=False,
+                label=label,
+            )
+
+    created = []
+    created.extend(stage_result.get("created_objects") or [])
+    created.extend(callout_result.get("created_objects") or [])
+    if turntable_result.get("camera_orbit", {}).get("camera"):
+        created.append(turntable_result["camera_orbit"]["camera"])
+    features = ["material polish"]
+    if target.type == "MESH":
+        features.append("smooth bevel stack")
+    if stage_result.get("ok"):
+        features.append("studio stage")
+    if callout_result.get("ok"):
+        features.append("dimension callouts")
+    if turntable_result.get("ok"):
+        features.append("turntable review")
+
+    transaction["applied_steps"].append(
+        {
+            "type": "apply_product_refinement_template",
+            "label": label,
+            "target": target.name,
+            "style": style_key if style_key in PRODUCT_REFINEMENT_STYLES else "studio",
+            "material": material.name,
+            "created_objects": created,
+            "features": features,
+            "expected_changes": f"Polishes {target.name} for product presentation with {', '.join(features)}.",
+        }
+    )
+    live_preview.redraw(context)
+    live_preview._mark_pending(context, label)
+    return {
+        "ok": True,
+        "message": f"Applied product refinement template around {target.name}",
+        "target": target.name,
+        "style": style_key if style_key in PRODUCT_REFINEMENT_STYLES else "studio",
+        "material": material.name,
+        "stage": stage_result,
+        "callouts": callout_result,
+        "turntable": turntable_result,
+        "created_objects": created,
+        "features": features,
+        "transaction_id": transaction["id"],
+    }
+
+
+def apply_character_refinement_template(
+    context,
+    *,
+    target_name="",
+    character_style="neutral",
+    detail_level="medium",
+    create_guides=True,
+    label="Apply character refinement template",
+):
+    target = bpy.data.objects.get(target_name) if target_name else context.active_object
+    if target is None or target.type != "MESH":
+        return {"ok": False, "message": "A mesh target object is required for character refinement"}
+    transaction = live_preview.begin(label, context)
+    bounds = _bounds_world(target)
+    min_x, min_y, min_z = bounds["min"]
+    max_x, max_y, max_z = bounds["max"]
+    center_x, center_y, center_z = bounds["center"]
+    sx, sy, sz = bounds["size"]
+    min_dim = max(0.05, min(sx, sy, sz))
+    max_dim = max(1.0, sx, sy, sz)
+    style_key = str(character_style or "neutral").lower()
+    palette = CHARACTER_PALETTES.get(style_key) or CHARACTER_PALETTES["neutral"]
+    skin_material = _material_for_color(*palette["skin"])
+    hair_material = _material_for_color(*palette["hair"])
+    eye_material = _material_for_color(*palette["eye"])
+    accent_material = _material_for_color(*palette["accent"])
+    guide_material = _material_for_color(*palette["guide"])
+
+    head_radius = max(0.12, min_dim * 0.32)
+    neck_height = head_radius * 0.65
+    head_z = max_z + neck_height + head_radius * 0.95
+    created = []
+    with _preserve_selection(context):
+        bpy.ops.object.select_all(action="DESELECT")
+        target.select_set(True)
+        context.view_layer.objects.active = target
+        live_preview._record_object_materials(target)
+        if target.material_slots:
+            target.material_slots[0].material = accent_material
+        else:
+            target.data.materials.append(accent_material)
+        add_bevel_and_subsurf(
+            context,
+            bevel_width=max(0.005, min_dim * 0.012),
+            bevel_segments=3 if detail_level != "low" else 2,
+            subsurf_levels=1 if detail_level in {"medium", "high"} else 0,
+            weighted_normals=True,
+            label=label,
+        )
+        shade_smooth_selected(context, add_weighted_normals=True, label=label)
+
+        neck = _create_cylinder_object(
+            context,
+            f"{target.name} Character Neck",
+            (center_x, center_y, max_z + neck_height * 0.42),
+            head_radius * 0.28,
+            neck_height,
+            skin_material,
+            vertices=24,
+        )
+        head = _create_uv_sphere_object(
+            context,
+            f"{target.name} Character Head",
+            (center_x, center_y, head_z),
+            head_radius,
+            skin_material,
+            segments=32,
+            ring_count=16,
+        )
+        hair = _create_uv_sphere_object(
+            context,
+            f"{target.name} Character Hair Cap",
+            (center_x, center_y + head_radius * 0.04, head_z + head_radius * 0.22),
+            head_radius * 0.92,
+            hair_material,
+            segments=32,
+            ring_count=8,
+        )
+        hair.scale.z = 0.42
+        shoulder = _create_cube_object(
+            context,
+            f"{target.name} Character Shoulder Line",
+            (center_x, center_y, max_z - sz * 0.08),
+            (max(0.1, sx * 0.62), max(0.02, sy * 0.05), max(0.02, sz * 0.035)),
+            accent_material,
+        )
+        created.extend([neck.name, head.name, hair.name, shoulder.name])
+
+        eye_z = head_z + head_radius * 0.12
+        eye_y = center_y - max(0.04, head_radius * 0.82)
+        eye_radius = head_radius * 0.095
+        for side, x in (("Left", center_x - head_radius * 0.32), ("Right", center_x + head_radius * 0.32)):
+            eye = _create_uv_sphere_object(
+                context,
+                f"{target.name} Character {side} Eye",
+                (x, eye_y, eye_z),
+                eye_radius,
+                eye_material,
+                segments=16,
+                ring_count=8,
+            )
+            created.append(eye.name)
+
+        guide_objects = []
+        if create_guides:
+            vertical = _create_curve_line(
+                context,
+                f"{target.name} Character Gesture Line",
+                [(center_x, center_y - sy * 0.08, min_z), (center_x, center_y - sy * 0.08, head_z + head_radius)],
+                max(0.004, max_dim * 0.004),
+                guide_material,
+            )
+            shoulder_line = _create_curve_line(
+                context,
+                f"{target.name} Character Shoulder Guide",
+                [(min_x, center_y - sy * 0.09, max_z - sz * 0.08), (max_x, center_y - sy * 0.09, max_z - sz * 0.08)],
+                max(0.004, max_dim * 0.004),
+                guide_material,
+            )
+            guide_objects.extend([vertical.name, shoulder_line.name])
+            created.extend(guide_objects)
+
+    features = ["body polish", "head blockout", "eyes", "shoulder marker"]
+    if create_guides:
+        features.append("gesture guides")
+    transaction["applied_steps"].append(
+        {
+            "type": "apply_character_refinement_template",
+            "label": label,
+            "target": target.name,
+            "style": style_key if style_key in CHARACTER_PALETTES else "neutral",
+            "detail_level": str(detail_level or "medium"),
+            "created_objects": created,
+            "features": features,
+            "expected_changes": f"Adds a bounded character presentation kit around {target.name}: {', '.join(features)}.",
+        }
+    )
+    live_preview.redraw(context)
+    live_preview._mark_pending(context, label)
+    return {
+        "ok": True,
+        "message": f"Applied character refinement template around {target.name}",
+        "target": target.name,
+        "style": style_key if style_key in CHARACTER_PALETTES else "neutral",
+        "detail_level": str(detail_level or "medium"),
+        "created_objects": created,
+        "features": features,
         "transaction_id": transaction["id"],
     }
 
