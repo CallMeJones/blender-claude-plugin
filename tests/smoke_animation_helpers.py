@@ -321,10 +321,23 @@ def main():
             "review_playblast_against_brief",
             {
                 "brief": contract,
-                "playblast": {"available": True, "playblast_id": "smoke", "frames": [{"frame": 1}, {"frame": 12}, {"frame": 24}]},
+                "playblast": {
+                    "available": True,
+                    "playblast_id": "smoke",
+                    "sampled_frames": [1, 12, 24],
+                    "frames": [
+                        {"frame": 1, "available": True, "path": "", "resource_uri": "blender://playblasts/smoke/frames/1", "size_bytes": 1, "width": 64, "height": 64},
+                        {"frame": 12, "available": True, "path": "", "resource_uri": "blender://playblasts/smoke/frames/12", "size_bytes": 1, "width": 64, "height": 64},
+                        {"frame": 24, "available": True, "path": "", "resource_uri": "blender://playblasts/smoke/frames/24", "size_bytes": 1, "width": 64, "height": 64},
+                    ],
+                },
             },
         )
         assert playblast_review["playblast_id"] == "smoke", playblast_review
+        assert playblast_review["visual_review"]["frames"][0]["resource_uri"].endswith("/1"), playblast_review
+        assert playblast_review["visual_review"]["frame_coverage"]["covers_start"] is True, playblast_review
+        assert playblast_review["visual_review"]["frame_coverage"]["covers_end"] is False, playblast_review
+        assert any(item["tool"] == "capture_animation_playblast" for item in playblast_review["repair_operations"]), playblast_review
 
         repair_plan = _execute(
             context,
@@ -332,6 +345,8 @@ def main():
             {"findings": [{"severity": "warning", "message": "Contact points slide across the ground plane."}], "brief": contract},
         )
         assert repair_plan["suggested_tool_calls"][0]["tool"] == "set_pose_hold", repair_plan
+        assert repair_plan["repair_operations"][0]["arguments"]["object_names"] == ["Cube"], repair_plan
+        assert repair_plan["repair_operations"][0]["source_finding_index"] == 0, repair_plan
 
         bounce = _execute(
             context,

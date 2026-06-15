@@ -423,7 +423,7 @@ def blender_tool_definitions():
         },
         {
             "name": "review_playblast_against_brief",
-            "description": "Review playblast metadata and current animation state against a prompt contract.",
+            "description": "Review playblast visual frame evidence and current animation state against a prompt contract. Returns structured findings and suggested repair operations.",
             "input_schema": {
                 "type": "object",
                 "properties": {
@@ -436,7 +436,7 @@ def blender_tool_definitions():
         },
         {
             "name": "repair_animation_from_findings",
-            "description": "Turn structured animation findings into focused repair tool suggestions without mutating the scene.",
+            "description": "Turn structured animation findings into focused repair operations with suggested helper tool arguments. Does not mutate the scene.",
             "input_schema": {
                 "type": "object",
                 "properties": {

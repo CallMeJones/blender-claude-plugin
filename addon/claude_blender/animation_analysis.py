@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import math
+import os
 
 import bpy
 import mathutils
 from bpy_extras.object_utils import world_to_camera_view
 
-from . import animation_brief, live_preview
+from . import animation_brief, live_preview, playblast_capture
 
 
 def _name_list(value):
@@ -549,44 +550,365 @@ def compare_animation_to_brief(context, *, brief=None, prompt="", subject_names=
     }
 
 
-def review_playblast_against_brief(context, *, playblast=None, brief=None, prompt=""):
-    metadata = playblast if isinstance(playblast, dict) else {}
+def _brief_subject_names(brief):
+    if not isinstance(brief, dict):
+        return []
+    return [item["name"] for item in brief.get("subjects") or [] if isinstance(item, dict) and item.get("name")] or _name_list(brief.get("subject_names"))
+
+
+def _brief_frame_range(context, brief):
+    timing = brief.get("timing") if isinstance(brief, dict) else {}
+    return (
+        int(timing.get("frame_start", context.scene.frame_start) if isinstance(timing, dict) else context.scene.frame_start),
+        int(timing.get("frame_end", context.scene.frame_end) if isinstance(timing, dict) else context.scene.frame_end),
+    )
+
+
+def _finding(severity, message, *, principle="", requirement="", object_name="", frame=None, recommendation="", repair_tool="", evidence=None):
+    item = {
+        "severity": severity,
+        "message": message,
+    }
+    if principle:
+        item["principle"] = principle
+    if requirement:
+        item["requirement"] = requirement
+    if object_name:
+        item["object"] = object_name
+    if frame is not None:
+        item["frame"] = int(frame)
+    if recommendation:
+        item["recommendation"] = recommendation
+    if repair_tool:
+        item["repair_tool"] = repair_tool
+    if evidence:
+        item["evidence"] = evidence
+    return item
+
+
+def _normalize_playblast(context, playblast):
+    if isinstance(playblast, dict) and playblast:
+        return playblast
+    return playblast_capture.latest_playblast_metadata(context=context)
+
+
+def _playblast_frame_evidence(playblast):
+    evidence = []
     findings = []
-    if not metadata.get("available") and not metadata.get("frames"):
-        findings.append({"severity": "warning", "message": "No playblast frames are available for review."})
-    frames = metadata.get("frames") or []
-    if frames and len(frames) < 3:
-        findings.append({"severity": "info", "message": "Playblast has very few sampled frames; timing review may be weak."})
-    comparison = compare_animation_to_brief(context, brief=brief, prompt=prompt) if (brief or prompt) else {}
-    findings.extend(comparison.get("findings") or [])
+    frames = playblast.get("frames") or []
+    for frame in frames:
+        frame_number = int(frame.get("frame", 0) or 0)
+        path = str(frame.get("path") or "")
+        file_exists = bool(path and os.path.isfile(path))
+        available = bool(frame.get("available")) and (not path or file_exists)
+        width = int(frame.get("width", 0) or 0)
+        height = int(frame.get("height", 0) or 0)
+        size_bytes = int(frame.get("size_bytes", 0) or 0)
+        item = {
+            "frame": frame_number,
+            "available": available,
+            "resource_uri": str(frame.get("resource_uri") or ""),
+            "path": path,
+            "file_exists": file_exists,
+            "size_bytes": size_bytes,
+            "width": width,
+            "height": height,
+            "note": str(frame.get("note") or ""),
+        }
+        evidence.append(item)
+        if frame.get("available") and path and not file_exists:
+            findings.append(
+                _finding(
+                    "warning",
+                    "A playblast frame is marked available but the PNG file is missing.",
+                    principle="visual_review",
+                    frame=frame_number,
+                    repair_tool="capture_animation_playblast",
+                    evidence={"path": path},
+                )
+            )
+        if available and (width <= 0 or height <= 0 or size_bytes <= 0):
+            findings.append(
+                _finding(
+                    "warning",
+                    "A playblast frame has incomplete image metadata.",
+                    principle="visual_review",
+                    frame=frame_number,
+                    repair_tool="capture_animation_playblast",
+                    evidence={"width": width, "height": height, "size_bytes": size_bytes},
+                )
+            )
+    return evidence, findings
+
+
+def _playblast_coverage(context, playblast, brief):
+    frame_start, frame_end = _brief_frame_range(context, brief)
+    sampled_frames = [int(frame) for frame in playblast.get("sampled_frames") or []]
+    if not sampled_frames:
+        sampled_frames = [int(frame.get("frame", 0) or 0) for frame in playblast.get("frames") or [] if frame.get("frame") is not None]
+    sampled_frames = sorted(set(frame for frame in sampled_frames if frame))
+    if not sampled_frames:
+        return {
+            "brief_frame_start": frame_start,
+            "brief_frame_end": frame_end,
+            "sampled_frames": [],
+            "covers_start": False,
+            "covers_end": False,
+            "covers_range": False,
+        }
     return {
-        "ok": True,
-        "message": "Reviewed playblast metadata and current animation state against brief",
-        "status": "pass" if not findings else "needs_repair",
-        "playblast_id": metadata.get("playblast_id", ""),
-        "frame_count": len(frames),
-        "findings": findings,
-        "comparison": comparison,
+        "brief_frame_start": frame_start,
+        "brief_frame_end": frame_end,
+        "sampled_frames": sampled_frames,
+        "first_sampled_frame": sampled_frames[0],
+        "last_sampled_frame": sampled_frames[-1],
+        "covers_start": sampled_frames[0] <= frame_start,
+        "covers_end": sampled_frames[-1] >= frame_end,
+        "covers_range": sampled_frames[0] <= frame_start and sampled_frames[-1] >= frame_end,
     }
 
 
-def repair_animation_from_findings(context, *, findings=None, brief=None):
-    suggestions = []
-    for finding in findings or []:
-        text = str(finding.get("message") or "").lower()
-        if "camera" in text or "framing" in text:
-            suggestions.append({"tool": "create_camera_orbit", "reason": "Repair camera framing around the subject."})
-        elif "linear" in text or "spacing" in text:
-            suggestions.append({"tool": "set_action_interpolation", "reason": "Adjust interpolation/easing for less mechanical spacing."})
-        elif "contact" in text or "slide" in text:
-            suggestions.append({"tool": "set_pose_hold", "reason": "Hold or re-key contact poses to reduce sliding."})
-        elif "motion" in text:
-            suggestions.append({"tool": "block_key_poses", "reason": "Create or revise readable key poses."})
-    if not suggestions and brief:
-        suggestions.append({"tool": "create_timing_chart", "reason": "Rebuild a timing chart from the prompt contract before targeted repair."})
+def review_playblast_against_brief(context, *, playblast=None, brief=None, prompt=""):
+    metadata = _normalize_playblast(context, playblast)
+    brief = _brief_from_args(context, brief=brief, prompt=prompt, subject_names=None) if (brief or prompt) else (brief or {})
+    findings = []
+    visual_evidence, frame_findings = _playblast_frame_evidence(metadata)
+    findings.extend(frame_findings)
+    frames = metadata.get("frames") or []
+    usable_frames = [frame for frame in visual_evidence if frame.get("available")]
+    if not metadata.get("available") and not usable_frames:
+        findings.append(
+            _finding(
+                "warning",
+                "No playblast frames are available for visual animation review.",
+                principle="visual_review",
+                repair_tool="capture_animation_playblast",
+            )
+        )
+    if frames and len(usable_frames) < len(frames):
+        findings.append(
+            _finding(
+                "warning",
+                "Some requested playblast frames are unavailable.",
+                principle="visual_review",
+                repair_tool="capture_animation_playblast",
+                evidence={"requested_frame_count": len(frames), "usable_frame_count": len(usable_frames)},
+            )
+        )
+    if usable_frames and len(usable_frames) < 3:
+        findings.append(
+            _finding(
+                "info",
+                "Playblast has very few usable sampled frames; timing and spacing review may be weak.",
+                principle="visual_review",
+                repair_tool="capture_animation_playblast",
+                evidence={"usable_frame_count": len(usable_frames)},
+            )
+        )
+    coverage = _playblast_coverage(context, metadata, brief)
+    if coverage["sampled_frames"] and not coverage["covers_range"]:
+        findings.append(
+            _finding(
+                "warning",
+                "Playblast samples do not cover the full animation brief frame range.",
+                principle="visual_review",
+                repair_tool="capture_animation_playblast",
+                evidence=coverage,
+            )
+        )
+    requested_count = ((brief or {}).get("timing") or {}).get("requested_count") if isinstance(brief, dict) else None
+    if requested_count and usable_frames and len(usable_frames) < max(3, int(requested_count) * 2 + 1):
+        findings.append(
+            _finding(
+                "info",
+                "Playblast may be undersampled for the requested repeated action count.",
+                principle="timing_spacing",
+                repair_tool="capture_animation_playblast",
+                evidence={"requested_count": int(requested_count), "usable_frame_count": len(usable_frames)},
+            )
+        )
+    comparison = compare_animation_to_brief(context, brief=brief, prompt=prompt) if (brief or prompt) else {}
+    findings.extend(comparison.get("findings") or [])
+    repair_plan = repair_animation_from_findings(context, findings=findings, brief=brief if isinstance(brief, dict) else None)
     return {
         "ok": True,
-        "message": f"Created {len(suggestions)} repair suggestion(s)",
+        "message": "Reviewed playblast visual evidence and current animation state against brief",
+        "status": "pass" if not findings else "needs_repair",
+        "playblast_id": metadata.get("playblast_id", ""),
+        "frame_count": len(frames),
+        "usable_frame_count": len(usable_frames),
+        "visual_review": {
+            "available": bool(metadata.get("available")) and bool(usable_frames),
+            "metadata_uri": metadata.get("metadata_uri", ""),
+            "resource_type": metadata.get("resource_type", ""),
+            "frame_coverage": coverage,
+            "frames": visual_evidence,
+            "review_hints": metadata.get("review_hints") or [],
+        },
+        "findings": findings,
+        "comparison": comparison,
+        "repair_operations": repair_plan.get("repair_operations", []),
+        "suggested_tool_calls": repair_plan.get("suggested_tool_calls", []),
+    }
+
+
+def _operation(tool, reason, *, arguments=None, source_index=None, finding=None, confidence="medium"):
+    operation = {
+        "tool": tool,
+        "arguments": arguments or {},
+        "reason": reason,
+        "confidence": confidence,
+        "mutates_scene": tool not in {"capture_animation_playblast", "create_timing_chart", "review_playblast_against_brief"},
+    }
+    if source_index is not None:
+        operation["source_finding_index"] = int(source_index)
+    if finding:
+        operation["source_finding"] = {
+            "severity": finding.get("severity", ""),
+            "principle": finding.get("principle", ""),
+            "requirement": finding.get("requirement", ""),
+            "message": finding.get("message", ""),
+        }
+    return operation
+
+
+def _dedupe_operations(operations):
+    result = []
+    seen = set()
+    for operation in operations:
+        key = (
+            operation.get("tool"),
+            repr(sorted((operation.get("arguments") or {}).items())),
+            operation.get("reason"),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(operation)
+    return result
+
+
+def repair_animation_from_findings(context, *, findings=None, brief=None):
+    operations = []
+    subject_names = _brief_subject_names(brief)
+    frame_start, frame_end = _brief_frame_range(context, brief or {})
+    primary_subject = subject_names[0] if subject_names else ""
+    for index, finding in enumerate(findings or []):
+        text = " ".join(
+            str(finding.get(key) or "")
+            for key in ("message", "principle", "requirement", "repair_tool", "recommendation")
+        ).lower()
+        if "playblast" in text or "visual_review" in text or "frame" in text and "unavailable" in text:
+            operations.append(
+                _operation(
+                    "capture_animation_playblast",
+                    "Capture a fresh sampled playblast so visual review has usable frame evidence.",
+                    arguments={"frame_start": frame_start, "frame_end": frame_end, "max_frames": 12, "brief": (brief or {}).get("user_visible_interpretation", "")},
+                    source_index=index,
+                    finding=finding,
+                )
+            )
+        if "camera" in text or "framing" in text:
+            operations.append(
+                _operation(
+                    "create_camera_orbit",
+                    "Repair camera framing around the animated subject.",
+                    arguments={"target_name": primary_subject, "frame_start": frame_start, "frame_end": frame_end},
+                    source_index=index,
+                    finding=finding,
+                )
+            )
+        if "linear" in text or "spacing" in text or "slow" in text:
+            operations.append(
+                _operation(
+                    "set_action_interpolation",
+                    "Adjust interpolation/easing for less mechanical spacing.",
+                    arguments={"object_names": subject_names, "interpolation": "BEZIER"},
+                    source_index=index,
+                    finding=finding,
+                )
+            )
+        if "contact" in text or "slide" in text:
+            hold_frame = int(finding.get("frame", frame_start) or frame_start)
+            operations.append(
+                _operation(
+                    "set_pose_hold",
+                    "Hold or re-key contact poses to reduce sliding and improve weight.",
+                    arguments={"object_names": subject_names, "frame": hold_frame, "hold_frames": 4, "paths": ["location"]},
+                    source_index=index,
+                    finding=finding,
+                )
+            )
+        if "settle" in text or "follow" in text or "overshoot" in text:
+            operations.append(
+                _operation(
+                    "add_breakdown_pose",
+                    "Add a final settle or overshoot breakdown near the end of the action.",
+                    arguments={"object_names": subject_names, "frame": max(frame_start, frame_end - 4), "paths": ["location", "scale"], "factor": 0.85},
+                    source_index=index,
+                    finding=finding,
+                    confidence="low",
+                )
+            )
+        if "anticipation" in text:
+            operations.append(
+                _operation(
+                    "add_breakdown_pose",
+                    "Add an anticipation breakdown before the main action.",
+                    arguments={"object_names": subject_names, "frame": min(frame_end, frame_start + 4), "paths": ["location", "scale"], "factor": 0.15},
+                    source_index=index,
+                    finding=finding,
+                    confidence="low",
+                )
+            )
+        if "squash" in text or "stretch" in text or "scale change" in text or "scale animation" in text:
+            operations.append(
+                _operation(
+                    "block_key_poses",
+                    "Revise the blocking pass with explicit scale poses for squash/stretch or requested size change.",
+                    arguments={"object_names": subject_names, "poses": [], "interpolation": "CONSTANT"},
+                    source_index=index,
+                    finding=finding,
+                    confidence="low",
+                )
+            )
+        if "no sampled world-space motion" in text or "clear motion" in text:
+            operations.append(
+                _operation(
+                    "create_timing_chart",
+                    "Rebuild a timing chart from the prompt contract before reblocking motion.",
+                    arguments={"brief": brief or {}, "frame_start": frame_start, "frame_end": frame_end},
+                    source_index=index,
+                    finding=finding,
+                )
+            )
+            operations.append(
+                _operation(
+                    "block_key_poses",
+                    "Create or revise readable key poses after the timing chart is reviewed.",
+                    arguments={"object_names": subject_names, "poses": [], "interpolation": "CONSTANT"},
+                    source_index=index,
+                    finding=finding,
+                    confidence="low",
+                )
+            )
+    if not operations and brief:
+        operations.append(
+            _operation(
+                "create_timing_chart",
+                "Rebuild a timing chart from the prompt contract before targeted repair.",
+                arguments={"brief": brief, "frame_start": frame_start, "frame_end": frame_end},
+            )
+        )
+    operations = _dedupe_operations(operations)
+    suggestions = [
+        {"tool": operation["tool"], "arguments": operation["arguments"], "reason": operation["reason"]}
+        for operation in operations
+    ]
+    return {
+        "ok": True,
+        "message": f"Created {len(operations)} repair operation suggestion(s)",
+        "repair_operations": operations,
         "suggested_tool_calls": suggestions,
         "mutates_scene": False,
     }
