@@ -198,10 +198,12 @@ def _capture_file_candidates(capture_dir):
 
 def _latest_capture_entry(capture_dir=None, *, context=None, preferred_dir=None):
     candidates = _capture_dir_candidates(capture_dir, context=context, preferred_dir=preferred_dir)
+    newest = []
     for resolved in candidates:
         paths = _capture_file_candidates(resolved["capture_dir"])
-        if paths:
-            return max(paths, key=lambda path: (os.path.getmtime(path), path)), resolved
+        newest.extend((path, resolved) for path in paths)
+    if newest:
+        return max(newest, key=lambda item: (os.path.getmtime(item[0]), item[0]))
     return "", candidates[0]
 
 

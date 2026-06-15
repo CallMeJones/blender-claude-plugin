@@ -54,6 +54,30 @@ def main():
         assert resolved_capture_dir["capture_dir"].startswith(
             os.path.join(project_dir, ".claude_blender", "captures")
         ), resolved_capture_dir
+        project_capture_path = os.path.join(resolved_capture_dir["capture_dir"], "viewport-old-project.png")
+        os.makedirs(os.path.dirname(project_capture_path), exist_ok=True)
+        with open(project_capture_path, "wb") as handle:
+            handle.write(b"project")
+        fallback_capture_dir = os.path.join(
+            viewport_capture.default_capture_dir(),
+            resolved_capture_dir["project_id"],
+            resolved_capture_dir["session_id"],
+        )
+        fallback_capture_path = os.path.join(fallback_capture_dir, "viewport-new-fallback.png")
+        os.makedirs(fallback_capture_dir, exist_ok=True)
+        with open(fallback_capture_path, "wb") as handle:
+            handle.write(b"fallback")
+        os.utime(project_capture_path, (1000, 1000))
+        os.utime(fallback_capture_path, (2000, 2000))
+        latest_path = viewport_capture.latest_capture_path(
+            context=bpy.context,
+            preferred_dir=viewport_capture.default_capture_dir(),
+        )
+        assert latest_path == fallback_capture_path, latest_path
+        shutil.rmtree(
+            os.path.join(viewport_capture.default_capture_dir(), resolved_capture_dir["project_id"]),
+            ignore_errors=True,
+        )
 
         tiny_png = os.path.join(cache_dir, "tiny.png")
         with open(tiny_png, "wb") as handle:

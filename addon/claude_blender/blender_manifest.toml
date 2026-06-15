@@ -13,4 +13,4 @@ license = [
 
 [permissions]
 network = "Call Anthropic/docs; expose optional localhost MCP bridge"
-files = "Use local docs cache and save blend checkpoints"
+files = "Docs, captures, checkpoints, transcripts, and audit logs"

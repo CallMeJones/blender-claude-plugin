@@ -52,7 +52,7 @@ The add-on should be packaged as a Blender extension:
 - `type = "add-on"`.
 - `blender_version_min = "4.2.0"` unless testing shows a newer minimum is needed.
 - `[permissions] network = "..."`
-- `[permissions] files = "..."` if checkpoints, docs cache, transcripts, or exports are written.
+- `[permissions] files = "..."` if docs caches, viewport captures, checkpoints, transcripts, audit logs, or exports are written.
 
 The UI should use normal Blender classes:
 
