@@ -90,6 +90,50 @@ def main():
         )
         assert log_resource["mimeType"] == "text/plain", log_resource
 
+        synthetic_id = "tracked-running-complete-frames"
+        synthetic_job_dir = os.path.join(status["capture_dir"], "render-jobs", synthetic_id)
+        synthetic_frames_dir = os.path.join(synthetic_job_dir, "frames")
+        os.makedirs(synthetic_frames_dir, exist_ok=True)
+        synthetic_metadata_path = os.path.join(synthetic_job_dir, render_jobs.METADATA_FILENAME)
+        with open(os.path.join(synthetic_frames_dir, "frame_0001.png"), "wb") as handle:
+            handle.write(b"not-a-real-png")
+        with open(synthetic_metadata_path, "w", encoding="utf-8", newline="\n") as handle:
+            json.dump(
+                {
+                    "ok": True,
+                    "available": True,
+                    "status": "running",
+                    "job_id": synthetic_id,
+                    "metadata_path": synthetic_metadata_path,
+                    "child_status_path": os.path.join(synthetic_job_dir, render_jobs.CHILD_STATUS_FILENAME),
+                    "log_path": os.path.join(synthetic_job_dir, render_jobs.LOG_FILENAME),
+                    "frames_dir": synthetic_frames_dir,
+                    "output_kind": "frames",
+                    "total_frames": 1,
+                    "frame_start": 1,
+                    "frame_end": 1,
+                    "message": "Synthetic tracked process",
+                },
+                handle,
+                indent=2,
+                sort_keys=True,
+            )
+
+        class RunningProcess:
+            def poll(self):
+                return None
+
+        render_jobs._PROCESSES[synthetic_id] = RunningProcess()
+        try:
+            tracked = render_jobs.render_job_status(synthetic_id, capture_dir=status["capture_dir"], context=bpy.context)
+            assert tracked["status"] == "running", tracked
+            assert tracked["frame_count"] == 1, tracked
+        finally:
+            render_jobs._PROCESSES.pop(synthetic_id, None)
+        restored = render_jobs.render_job_status(synthetic_id, capture_dir=status["capture_dir"], context=bpy.context)
+        assert restored["status"] == "completed", restored
+        assert restored["message"] == "All expected frame files are present", restored
+
         guarded = _execute(
             bpy.context,
             "draft_script",

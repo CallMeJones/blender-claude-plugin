@@ -443,11 +443,12 @@ def render_job_status(job_id, *, context=None, preferred_dir=None, capture_dir=N
     total = int(metadata.get("total_frames", 0) or 0)
     status = str(metadata.get("status") or "unknown")
     message = str(metadata.get("message") or "")
+    process_running = process is not None and returncode is None
 
     if child_status:
         status = str(child_status.get("status") or status)
         message = str(child_status.get("message") or message)
-    if returncode is None and process is not None:
+    if process_running:
         status = "running"
     elif returncode == 0 and status not in {"completed", "cancelled"}:
         status = "completed"
@@ -458,7 +459,7 @@ def render_job_status(job_id, *, context=None, preferred_dir=None, capture_dir=N
     elif process is None and status == "running":
         status = "unknown"
         message = "Render process is not tracked by this Blender bridge session"
-    if metadata.get("output_kind") == "frames" and total and frame_count >= total and status in {"running", "unknown"}:
+    if metadata.get("output_kind") == "frames" and total and frame_count >= total and status == "unknown":
         status = "completed"
         message = "All expected frame files are present"
 
