@@ -884,6 +884,86 @@ def animate_object_bounce(
     }
 
 
+def create_progressive_bounce_animation(
+    context,
+    *,
+    object_name="",
+    frame_start,
+    frame_end,
+    axis="Z",
+    distance=2.0,
+    cycles=2,
+    scale_end_factor=0.6,
+    interpolation="BEZIER",
+    label="Create progressive bounce animation",
+):
+    obj = bpy.data.objects.get(object_name) if object_name else context.active_object
+    if obj is None:
+        return {"ok": False, "message": "Object not found for progressive bounce animation"}
+    frame_start, frame_end, error = _normalize_frame_range(frame_start, frame_end, "Progressive bounce animation")
+    if error:
+        return error
+    cycles = max(1, min(24, int(cycles)))
+    axis_index, axis = _axis_index(axis)
+    distance = float(distance)
+    scale_end_factor = max(0.01, float(scale_end_factor))
+
+    transaction = live_preview.begin(label, context)
+    scene = context.scene
+    live_preview._record_scene_timeline(scene)
+    scene.frame_start = min(scene.frame_start, frame_start)
+    scene.frame_end = max(scene.frame_end, frame_end)
+
+    live_preview._record_object_transform(obj)
+    action = live_preview._assign_preview_action(obj)
+    base_location = [float(value) for value in obj.location]
+    base_scale = [float(value) for value in obj.scale]
+    span = frame_end - frame_start
+    step_count = cycles * 2
+    keyed_frames = []
+    scale_keys = []
+    for step in range(step_count + 1):
+        progress = step / step_count if step_count else 1.0
+        frame = round(frame_start + (span * progress))
+        factor = 1.0 + ((scale_end_factor - 1.0) * progress)
+        location = list(base_location)
+        location[axis_index] += distance if step % 2 else 0.0
+        obj.location = location
+        obj.scale = [component * factor for component in base_scale]
+        obj.keyframe_insert(data_path="location", frame=frame)
+        obj.keyframe_insert(data_path="scale", frame=frame)
+        keyed_frames.append(int(frame))
+        scale_keys.append({"frame": int(frame), "factor": round(float(factor), 6)})
+    _set_action_interpolation(action, interpolation)
+    scene.frame_set(frame_start)
+    transaction["applied_steps"].append(
+        {
+            "type": "create_progressive_bounce_animation",
+            "label": label,
+            "object": obj.name,
+            "axis": axis,
+            "distance": distance,
+            "cycles": cycles,
+            "frames": keyed_frames,
+            "scale_end_factor": scale_end_factor,
+        }
+    )
+    live_preview.redraw(context)
+    live_preview._mark_pending(context, label)
+    return {
+        "ok": True,
+        "message": f"Animated progressive bounce on {obj.name} over {cycles} cycle(s)",
+        "object": obj.name,
+        "frame_start": frame_start,
+        "frame_end": frame_end,
+        "frames": keyed_frames,
+        "scale_keys": scale_keys,
+        "scale_end_factor": scale_end_factor,
+        "action": action.name,
+        "transaction_id": transaction["id"],
+    }
+
+
 def _resolve_animation_material(context, material_name="", object_name="", create_if_missing=True):
     material = bpy.data.materials.get(str(material_name or "")) if material_name else None
     obj = bpy.data.objects.get(str(object_name or "")) if object_name else context.active_object

@@ -89,6 +89,7 @@ def _generation_tool_calls(brief, chart, *, frame_start, frame_end):
     primary = _primary_subject(subject_names)
     action = str((brief or {}).get("action") or "").lower()
     secondary_actions = [str(item).lower() for item in ((brief or {}).get("secondary_actions") or [])]
+    scale_decreases = any("scale decreases" in item or "get smaller" in item or "smaller" in item for item in secondary_actions)
     calls = []
     blockers = []
 
@@ -96,7 +97,7 @@ def _generation_tool_calls(brief, chart, *, frame_start, frame_end):
         calls.append(
             _tool_call(
                 "select_objects",
-                {"object_names": subject_names, "active_object_name": primary, "replace": True},
+                {"object_names": subject_names, "active_object_name": primary, "extend": False},
                 reason="Select the resolved animation subject before applying selected-object helpers.",
                 mutates_scene=True,
             )
@@ -120,7 +121,25 @@ def _generation_tool_calls(brief, chart, *, frame_start, frame_end):
         )
     )
 
-    if action in {"bounce", "jump"}:
+    if action in {"bounce", "jump"} and scale_decreases:
+        calls.append(
+            _tool_call(
+                "create_progressive_bounce_animation",
+                {
+                    "object_name": primary,
+                    "frame_start": frame_start,
+                    "frame_end": frame_end,
+                    "axis": "Z",
+                    "cycles": _requested_count(brief, default=2),
+                    "scale_end_factor": 0.6,
+                    "interpolation": "BEZIER",
+                },
+                reason="Use the bounded progressive bounce helper for vertical motion plus scale decrease.",
+                mutates_scene=True,
+                requires_live_preview=True,
+            )
+        )
+    elif action in {"bounce", "jump"}:
         calls.append(
             _tool_call(
                 "animate_object_bounce",
@@ -179,7 +198,7 @@ def _generation_tool_calls(brief, chart, *, frame_start, frame_end):
             "No single high-level helper confidently matches the primary action; use the timing chart to plan concrete block_key_poses poses before scripting."
         )
 
-    if any("scale decreases" in item or "get smaller" in item or "smaller" in item for item in secondary_actions):
+    if scale_decreases and action not in {"bounce", "jump"}:
         blockers.append(
             "Secondary scale decrease requires explicit scale poses or a purpose-built helper; do not skip brief, scene context, and timing chart before using draft_script."
         )
@@ -276,6 +295,7 @@ def _script_fallback_policy(brief, generation_blockers):
             "set_scene_frame_range",
             "set_animation_preview_range",
             "animate_object_bounce",
+            "create_progressive_bounce_animation",
             "create_turntable_animation",
             "create_reveal_animation",
             "create_pulse_animation",

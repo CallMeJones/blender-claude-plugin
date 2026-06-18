@@ -161,6 +161,10 @@ TOOL_CONTRACTS = {
         "description": "Apply bounded animation repair operations and re-run playblast/brief review",
         "mutates_scene": True,
     },
+    "create_progressive_bounce_animation": {
+        "description": "Create repeated bounce keyframes plus decreasing scale keys for one object",
+        "mutates_scene": True,
+    },
     "get_material_node_details": {
         "description": "Return material node, socket, and link details",
         "mutates_scene": False,

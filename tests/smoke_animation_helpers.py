@@ -41,6 +41,7 @@ ANIMATION_TOOLS = {
     "repair_animation_from_findings",
     "run_animation_repair_loop",
     "animate_object_bounce",
+    "create_progressive_bounce_animation",
     "animate_material_property",
     "animate_light_property",
     "create_follow_path_animation",
@@ -191,18 +192,19 @@ def main():
             },
         )
         plan = workflow["workflow"]
-        assert plan["status"] == "ready_with_helper_gaps", plan
+        assert plan["status"] == "ready", plan
         assert plan["brief"]["action"] == "bounce", plan
         assert plan["brief"]["timing"]["requested_count"] == 2, plan
         assert plan["timing_chart"]["frame_end"] == 72, plan
         call_names = [call["name"] for call in plan["next_tool_calls"]]
-        assert "animate_object_bounce" in call_names, plan
+        assert "create_progressive_bounce_animation" in call_names, plan
+        assert "animate_object_bounce" not in call_names, plan
         assert "analyze_animation_principles" in call_names, plan
         assert "capture_animation_playblast" in call_names, plan
         assert "review_playblast_against_brief" in call_names, plan
         assert "draft_script" not in call_names, plan
         assert plan["script_fallback_policy"]["allowed"] is True, plan
-        assert any("scale" in item for item in plan["generation_blockers"]), plan
+        assert not any("scale" in item for item in plan["generation_blockers"]), plan
         assert not scene.claude_blender.pending_preview
 
         workflow_run = _execute(
@@ -221,12 +223,15 @@ def main():
         assert workflow_run["result_type"] == "live_preview_helper_workflow", workflow_run
         assert workflow_run["status"] == "generated_needs_repair", workflow_run
         assert workflow_run["pending_preview"] is True, workflow_run
-        assert any(item["tool"] == "animate_object_bounce" and item["ok"] for item in workflow_run["executed"]), workflow_run
-        assert any("scale" in item for item in workflow_run["generation_blockers"]), workflow_run
+        progressive_exec = next(item for item in workflow_run["executed"] if item["tool"] == "create_progressive_bounce_animation")
+        assert progressive_exec["ok"] is True, workflow_run
+        assert progressive_exec["result"]["scale_keys"][-1]["factor"] == 0.6, progressive_exec
+        assert not any("scale" in item for item in workflow_run["generation_blockers"]), workflow_run
         assert workflow_run["review"]["principles"]["ok"] is True, workflow_run
         assert workflow_run["review"]["comparison"]["ok"] is True, workflow_run
         assert workflow_run["review"]["repair_plan"]["repair_operations"], workflow_run
-        assert any(item.get("principle") == "secondary_action" for item in workflow_run["review"]["findings"]), workflow_run
+        assert workflow_run["review"]["principles"]["principle_checks"][0]["secondary_action"] == "pass", workflow_run
+        assert not any(item.get("principle") == "secondary_action" for item in workflow_run["review"]["findings"]), workflow_run
         reverted_workflow = _execute(context, "revert_preview", {})
         assert not reverted_workflow.get("rollback_warnings"), reverted_workflow
         assert not scene.claude_blender.pending_preview

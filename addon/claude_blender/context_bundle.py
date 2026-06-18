@@ -260,6 +260,7 @@ def build_context_bundle(context, *, include_visual=False, capture_dir=None, max
             "create_shape_key",
             "animate_shape_key",
             "animate_object_bounce",
+            "create_progressive_bounce_animation",
             "animate_material_property",
             "animate_light_property",
             "create_follow_path_animation",

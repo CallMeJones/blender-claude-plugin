@@ -490,6 +490,7 @@ _WORKFLOW_GENERATION_TOOLS = {
     "set_scene_frame_range",
     "set_animation_preview_range",
     "animate_object_bounce",
+    "create_progressive_bounce_animation",
     "create_turntable_animation",
     "create_reveal_animation",
     "create_pulse_animation",
@@ -523,9 +524,24 @@ def _execute_workflow_tool(context, tool, tool_args):
 
 def _workflow_findings(*results):
     findings = []
+    seen = set()
     for result in results:
         if isinstance(result, dict):
-            findings.extend(item for item in (result.get("findings") or []) if isinstance(item, dict))
+            for item in result.get("findings") or []:
+                if not isinstance(item, dict):
+                    continue
+                key = (
+                    str(item.get("severity") or ""),
+                    str(item.get("principle") or ""),
+                    str(item.get("requirement") or ""),
+                    str(item.get("object") or ""),
+                    str(item.get("frame") or ""),
+                    str(item.get("message") or ""),
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                findings.append(item)
     return findings
 
 
@@ -1438,6 +1454,22 @@ def animate_object_bounce(context, args):
         cycles=_bounded_int(args.get("cycles"), 1, minimum=1, maximum=24),
         interpolation=str(args.get("interpolation") or "BEZIER"),
         label=args.get("label", "Animate object bounce"),
+    )
+
+
+def create_progressive_bounce_animation(context, args):
+    active = context.active_object.name if context.active_object else ""
+    return advanced_helpers.create_progressive_bounce_animation(
+        context,
+        object_name=str(args.get("object_name") or active),
+        frame_start=int(args.get("frame_start", context.scene.frame_start)),
+        frame_end=int(args.get("frame_end", context.scene.frame_end)),
+        axis=str(args.get("axis") or "Z"),
+        distance=float(args.get("distance", 2.0)),
+        cycles=_bounded_int(args.get("cycles"), 2, minimum=1, maximum=24),
+        scale_end_factor=float(args.get("scale_end_factor", 0.6)),
+        interpolation=str(args.get("interpolation") or "BEZIER"),
+        label=args.get("label", "Create progressive bounce animation"),
     )
 
 
@@ -2373,6 +2405,7 @@ TOOL_FUNCTIONS = {
     "create_shape_key": create_shape_key,
     "animate_shape_key": animate_shape_key,
     "animate_object_bounce": animate_object_bounce,
+    "create_progressive_bounce_animation": create_progressive_bounce_animation,
     "animate_material_property": animate_material_property,
     "animate_light_property": animate_light_property,
     "create_follow_path_animation": create_follow_path_animation,
