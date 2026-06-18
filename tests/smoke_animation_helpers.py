@@ -154,6 +154,23 @@ def main():
         assert guarded_script["code"] == "animation_workflow_required", guarded_script
         assert "run_animation_workflow" in guarded_script["recommended_tools"], guarded_script
 
+        explicit_gap_script = json.loads(
+            tool_dispatcher.execute_tool(
+                context,
+                "draft_script",
+                {
+                    "intent": "Animate the cube with a custom helper gap; helper tools cannot express this diagnostic fallback.",
+                    "expected_changes": "A diagnostic custom property is set; no animation helper can express the exact test condition.",
+                    "risk_level": "low",
+                    "code": "scene['claude_animation_helper_gap_smoke'] = 'staged'",
+                },
+            )
+        )
+        assert explicit_gap_script["ok"], explicit_gap_script
+        assert explicit_gap_script["requires_user_approval"] is True, explicit_gap_script
+        rejected_gap_script = script_runner.reject_pending_script(context)
+        assert rejected_gap_script["ok"], rejected_gap_script
+
         preflight_context = {}
         clarification = agent_loop._apply_animation_brief_preflight(
             scene.name,
@@ -292,6 +309,21 @@ def main():
         assert ambiguous_plan["status"] == "needs_clarification", ambiguous_plan
         assert ambiguous_plan["next_tool_calls"] == [], ambiguous_plan
         assert ambiguous_plan["script_fallback_policy"]["allowed"] is False, ambiguous_plan
+        blocked_after_ambiguous = json.loads(
+            tool_dispatcher.execute_tool(
+                context,
+                "draft_script",
+                {
+                    "intent": "Animate the cube with a quick Python fallback after an ambiguous workflow.",
+                    "expected_changes": "No script should be staged because the workflow still needs clarification.",
+                    "risk_level": "low",
+                    "code": "print('ambiguous animation fallback should stay blocked')",
+                },
+            )
+        )
+        assert blocked_after_ambiguous["ok"] is False, blocked_after_ambiguous
+        assert blocked_after_ambiguous["code"] == "animation_workflow_required", blocked_after_ambiguous
+        assert blocked_after_ambiguous["animation_workflow_seen"] is True, blocked_after_ambiguous
 
         no_count = _execute(
             context,

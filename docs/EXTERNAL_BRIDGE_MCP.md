@@ -123,6 +123,18 @@ Set `BLENDER_MCP_FULL_TOOL_LIST=1` in the MCP server environment to expose every
 
 For advanced animation, compact MCP mode exposes the animation workflow directly. Use `run_animation_task` when a client has one prompt and should take the default helper-first path. Use `plan_animation_workflow` for read-only manual planning before repair, generation, or arbitrary Python; it creates the animation brief, animation-aware scene context, timing chart, ordered helper/evaluator/repair tool-call payloads, and explicit `draft_script` fallback rules. For common helper-backed requests, `run_animation_workflow` executes the plan through allowlisted helpers, runs structured evaluator review, optionally captures playblast evidence, optionally applies bounded repair operations, and leaves helper edits as a normal live preview. Bounce requests that also ask the subject to get smaller route through `create_progressive_bounce_animation` instead of script fallback. The MCP catalog boosts animation workflow tools for prompts with bounce, jump, keyframe, pose, timing, arcs, settle, squash/stretch, playblast, f-curve, spacing, or contact terms, while `draft_script` is kept as an explicit script/Python fallback. `get_animation_scene_context` remains the lower-level routing tool for likely edit targets, rig-driven meshes, rig control candidates, shape keys, drivers, constraints, physics hints, contact surfaces, camera readiness, subject routing, and recommended deeper inspection tools.
 
+### Animation Routing Regression Prompts
+
+Use these prompts after installing a fresh zip and refreshing the MCP client. During routing tests, revoke external script trust in Blender so early `draft_script` fallback is visible. Trust mode should still not bypass workflow guidance: animation-like `draft_script` calls are refused until an animation workflow has allowed script fallback or the client states an explicit helper gap.
+
+| Prompt | Expected tool path | Pass condition |
+| --- | --- | --- |
+| `make selected cube bounce twice and get smaller each bounce` | `run_animation_task` -> `run_animation_workflow` -> `create_progressive_bounce_animation` -> review tools | The client uses `run_animation_task` or `run_animation_workflow` before any `draft_script`. |
+| `block a jump with anticipation, contact, apex, settle` | `plan_animation_workflow` or `run_animation_task` -> `create_timing_chart` / blocking helpers -> evaluators | The client plans or runs the animation workflow and does not start with Python. |
+| `review this animation for spacing/contact` | `plan_animation_workflow` or evaluator tools -> `review_playblast_against_brief` / `repair_animation_from_findings` when evidence exists | The client uses workflow/evaluator/review helpers before considering script repair. |
+
+If a client still calls `draft_script` first for these prompts, refresh or restart the MCP client, press `Copy MCP Config` again, confirm `tools/list` includes `run_animation_task`, and check `blender_bridge_status` for matching add-on, bridge, MCP server, and config versions.
+
 ## Resources
 
 Current resources:

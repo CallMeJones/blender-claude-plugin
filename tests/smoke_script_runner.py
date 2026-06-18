@@ -371,6 +371,25 @@ print("created", obj.name)
         assert not state.pending_script
         assert script_runner.external_script_trust_active(context, state=state)
 
+        animation_guarded_under_trust = json.loads(
+            tool_dispatcher.execute_tool(
+                context,
+                "draft_script",
+                {
+                    "intent": "Animate the cube with a two-bounce keyframe script.",
+                    "expected_changes": "Cube bounces twice and gets smaller each bounce.",
+                    "risk_level": "low",
+                    "code": "scene['claude_animation_trust_bypass_smoke'] = 'should_not_run'",
+                },
+            )
+        )
+        assert not animation_guarded_under_trust["ok"], animation_guarded_under_trust
+        assert animation_guarded_under_trust["code"] == "animation_workflow_required", animation_guarded_under_trust
+        assert "auto_ran" not in animation_guarded_under_trust, animation_guarded_under_trust
+        assert not state.pending_script
+        assert "claude_animation_trust_bypass_smoke" not in context.scene
+        assert script_runner.external_script_trust_active(context, state=state)
+
         trusted_blocked = script_runner.stage_script(
             context,
             intent="Try blocked code during an active trust window",

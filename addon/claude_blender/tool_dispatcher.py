@@ -61,6 +61,19 @@ _ANIMATION_INTENT_TERMS = {
     "anticipation",
     "contact sliding",
 }
+_ANIMATION_HELPER_GAP_TERMS = {
+    "helper gap",
+    "helpers cannot express",
+    "helper tools cannot express",
+    "workflow cannot express",
+    "no helper can express",
+    "no helper tool can express",
+    "script_fallback_policy",
+    "script fallback policy",
+    "fallback allowed",
+    "requires custom blender python",
+    "requires custom python",
+}
 
 
 def _name_list(value):
@@ -107,15 +120,41 @@ def _animation_workflow_marker_key(context):
     return getattr(scene, "name", "") or "active_scene"
 
 
-def _mark_animation_workflow_seen(context):
-    _ANIMATION_WORKFLOW_MARKERS[_animation_workflow_marker_key(context)] = time.monotonic()
+def _mark_animation_workflow_seen(context, result=None):
+    workflow = result.get("workflow") if isinstance(result, dict) and isinstance(result.get("workflow"), dict) else {}
+    fallback_policy = workflow.get("script_fallback_policy") if isinstance(workflow.get("script_fallback_policy"), dict) else {}
+    _ANIMATION_WORKFLOW_MARKERS[_animation_workflow_marker_key(context)] = {
+        "marked_at": time.monotonic(),
+        "status": str(workflow.get("status") or ""),
+        "script_fallback_allowed": bool(fallback_policy.get("allowed", True)) and workflow.get("status") != "needs_clarification",
+    }
+
+
+def _animation_workflow_recent_context(context):
+    marker = _ANIMATION_WORKFLOW_MARKERS.get(_animation_workflow_marker_key(context))
+    if not marker:
+        return {}
+    if isinstance(marker, dict):
+        marked_at = marker.get("marked_at")
+    else:
+        marked_at = marker
+        marker = {"marked_at": marked_at, "script_fallback_allowed": True}
+    if not marked_at:
+        return {}
+    if (time.monotonic() - float(marked_at)) > _ANIMATION_WORKFLOW_TTL_SECONDS:
+        return {}
+    return dict(marker)
 
 
 def _animation_workflow_recently_seen(context):
-    marked_at = _ANIMATION_WORKFLOW_MARKERS.get(_animation_workflow_marker_key(context))
-    if not marked_at:
+    return bool(_animation_workflow_recent_context(context))
+
+
+def _animation_script_fallback_recently_allowed(context):
+    marker = _animation_workflow_recent_context(context)
+    if not marker:
         return False
-    return (time.monotonic() - float(marked_at)) <= _ANIMATION_WORKFLOW_TTL_SECONDS
+    return bool(marker.get("script_fallback_allowed", False))
 
 
 def _looks_like_animation_intent(text):
@@ -128,6 +167,11 @@ def _looks_like_animation_intent(text):
         if re.search(rf"(?<![a-z0-9_]){pattern}(?![a-z0-9_])", normalized):
             return True
     return False
+
+
+def _has_explicit_animation_helper_gap(text):
+    normalized = str(text or "").lower()
+    return any(term in normalized for term in _ANIMATION_HELPER_GAP_TERMS)
 
 
 def _resolve_objects(context, args, *, default_to_scene=False):
@@ -545,7 +589,7 @@ def plan_animation_workflow(context, args):
         findings=args.get("findings") if isinstance(args.get("findings"), list) else None,
     )
     if isinstance(result, dict) and result.get("ok"):
-        _mark_animation_workflow_seen(context)
+        _mark_animation_workflow_seen(context, result)
     return result
 
 
@@ -806,7 +850,6 @@ def run_animation_workflow(context, args):
 
 def run_animation_task(context, args):
     prompt = str(args.get("prompt") or "")
-    _mark_animation_workflow_seen(context)
     result = run_animation_workflow(
         context,
         {
@@ -2340,12 +2383,24 @@ def draft_script(context, args):
         for key in ("intent", "expected_changes", "brief", "prompt")
     )
     guard_text = "\n".join([intent_text, script_text[:4000]])
-    if _looks_like_animation_intent(guard_text) and not _animation_workflow_recently_seen(context):
+    if (
+        _looks_like_animation_intent(guard_text)
+        and not _animation_script_fallback_recently_allowed(context)
+        and not _has_explicit_animation_helper_gap(guard_text)
+    ):
+        workflow_seen = _animation_workflow_recently_seen(context)
         return {
             "ok": False,
             "code": "animation_workflow_required",
-            "message": "Use run_animation_workflow first unless helpers cannot express this.",
+            "message": (
+                "The recent animation workflow did not allow script fallback; use run_animation_workflow again "
+                "or state the helper gap explicitly."
+                if workflow_seen
+                else "Use run_animation_workflow first unless helpers cannot express this."
+            ),
             "requires_user_approval": False,
+            "animation_workflow_seen": workflow_seen,
+            "explicit_helper_gap_required": True,
             "recommended_tools": [
                 "plan_animation_workflow",
                 "run_animation_workflow",

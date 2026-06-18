@@ -61,6 +61,7 @@ Defaults and boundaries:
 - MCP clients call `mcp_server.py`; they do not import Blender Python or touch `bpy`.
 - Mutating helper tools still run inside Blender and use the live-preview/revert path.
 - Generated arbitrary Python is normally staged with `draft_script` and must be approved in Blender. When the user grants a runtime external script trust window, `draft_script` auto-runs scripts that pass static checks until trust is revoked or expires.
+- External script trust does not bypass animation workflow routing. Animation-like `draft_script` calls are refused until the client has run the Milestone 7 animation workflow and script fallback is allowed, or until the request states an explicit helper gap that workflow helpers cannot express.
 - Viewport screenshots and sampled animation playblast frames exposed through MCP capture resources are local artifacts. Saved `.blend` files use a project-local `.claude_blender/captures/` folder by default, while unsaved or unwritable projects use the global user cache.
 - External clients should surface tool calls clearly because MCP tools are model-controlled.
 
@@ -111,6 +112,7 @@ Before approved execution:
 - Record the generated script and result log locally.
 - For external clients, require the approval token to match the current pending script and consume it before execution.
 - If an external script trust window is active, auto-run `draft_script` calls after static checks pass and accept tokenless external execution only within the runtime grant for a currently staged script that still passes static checks.
+- For animation-like scripts, enforce workflow-first routing before considering trust auto-run.
 
 During live preview:
 
