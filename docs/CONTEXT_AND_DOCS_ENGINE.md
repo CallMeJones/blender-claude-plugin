@@ -182,6 +182,7 @@ Initial helpers:
 - `get_animation_scene_context(object_names, selected_only, max_objects)`
 - `create_animation_brief(prompt, subject_names, frame_start, frame_end)`
 - `create_timing_chart(prompt, brief, subject_names, frame_start, frame_end, beats)`
+- `plan_animation_workflow(prompt, subject_names, frame_start, frame_end, mode, brief, timing_chart, playblast, findings)`
 - `block_key_poses(object_names, poses, selected_only, interpolation)`
 - `add_breakdown_pose(object_names, frame, previous_frame, next_frame, factor, location, rotation, scale, paths)`
 - `set_pose_hold(object_names, frame, hold_frames, paths)`

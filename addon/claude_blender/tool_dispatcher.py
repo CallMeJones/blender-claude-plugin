@@ -7,7 +7,7 @@ import re
 
 import bpy
 
-from . import animation_analysis, animation_brief, advanced_helpers, context_bundle, docs_index, live_preview, playblast_capture, preferences, script_runner, viewport_capture, world_model
+from . import animation_analysis, animation_brief, animation_workflow, advanced_helpers, context_bundle, docs_index, live_preview, playblast_capture, preferences, script_runner, viewport_capture, world_model
 
 
 def _float_list(values, length, default):
@@ -465,6 +465,23 @@ def create_timing_chart(context, args):
         frame_start=args.get("frame_start"),
         frame_end=args.get("frame_end"),
         beats=args.get("beats") if isinstance(args.get("beats"), list) else None,
+    )
+
+
+def plan_animation_workflow(context, args):
+    return animation_workflow.plan_animation_workflow(
+        context,
+        prompt=str(args.get("prompt") or ""),
+        subject_names=_name_list(args.get("subject_names")),
+        frame_start=args.get("frame_start"),
+        frame_end=args.get("frame_end"),
+        mode=str(args.get("mode") or "full"),
+        selected_only=bool(args.get("selected_only", False)),
+        max_objects=_bounded_int(args.get("max_objects"), 20, minimum=1, maximum=80),
+        brief=args.get("brief") if isinstance(args.get("brief"), dict) else None,
+        timing_chart=args.get("timing_chart") if isinstance(args.get("timing_chart"), dict) else None,
+        playblast=args.get("playblast") if isinstance(args.get("playblast"), dict) else None,
+        findings=args.get("findings") if isinstance(args.get("findings"), list) else None,
     )
 
 
@@ -2078,6 +2095,7 @@ TOOL_FUNCTIONS = {
     "get_animation_scene_context": get_animation_scene_context,
     "create_animation_brief": create_animation_brief,
     "create_timing_chart": create_timing_chart,
+    "plan_animation_workflow": plan_animation_workflow,
     "analyze_motion_arcs": analyze_motion_arcs,
     "analyze_fcurve_spacing": analyze_fcurve_spacing,
     "analyze_pose_clarity": analyze_pose_clarity,

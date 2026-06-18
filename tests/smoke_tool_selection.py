@@ -93,6 +93,7 @@ def main():
             bundle,
         )
         animation_names = _names(animation_tools)
+        assert "plan_animation_workflow" in animation_names, animation_meta
         assert "create_animation_brief" in animation_names, animation_meta
         assert "create_timing_chart" in animation_names, animation_meta
         assert "animate_object_bounce" in animation_names, animation_meta
@@ -113,6 +114,7 @@ def main():
             bundle,
         )
         principles_names = _names(principles_tools)
+        assert "plan_animation_workflow" in principles_names, principles_meta
         assert "get_animation_scene_context" in principles_names, principles_meta
         assert "analyze_animation_principles" in principles_names, principles_meta
         assert "analyze_motion_arcs" in principles_names, principles_meta

@@ -176,7 +176,7 @@ def should_create_brief(prompt):
 def _infer_secondary_actions(prompt):
     text = prompt.lower()
     secondary = []
-    if any(phrase in text for phrase in ("get smaller", "gets smaller", "shrink", "shrinks", "scale down")):
+    if any(phrase in text for phrase in ("get smaller", "gets smaller", "getting smaller", "shrink", "shrinks", "scale down")):
         secondary.append("scale decreases over the animation")
     if any(phrase in text for phrase in ("get bigger", "gets bigger", "grow", "grows", "scale up")):
         secondary.append("scale increases over the animation")

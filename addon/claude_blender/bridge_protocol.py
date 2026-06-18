@@ -57,6 +57,28 @@ TOOL_CONTRACTS = {
         "description": "Create a structured timing/blocking chart from an animation brief",
         "mutates_scene": False,
     },
+    "plan_animation_workflow": {
+        "description": "Plan the Milestone 7 animation workflow with brief, scene routing, timing chart, helper calls, evaluator calls, repair calls, and script fallback rules",
+        "mutates_scene": False,
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "prompt": {"type": "string"},
+                "subject_names": {"type": "array", "items": {"type": "string"}},
+                "frame_start": {"type": "integer"},
+                "frame_end": {"type": "integer"},
+                "mode": {"type": "string", "enum": ["generate", "review", "repair", "full"]},
+                "selected_only": {"type": "boolean"},
+                "max_objects": {"type": "integer"},
+                "brief": {"type": "object"},
+                "timing_chart": {"type": "object"},
+                "playblast": {"type": "object"},
+                "findings": {"type": "array", "items": {"type": "object"}},
+            },
+            "required": ["prompt"],
+            "additionalProperties": False,
+        },
+    },
     "analyze_motion_arcs": {
         "description": "Analyze sampled location motion arcs for selected or named objects",
         "mutates_scene": False,

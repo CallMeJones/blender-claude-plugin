@@ -461,8 +461,8 @@ Acceptance:
 
 Real-client testing showed that a connected MCP client can successfully inspect Blender and iterate with the user, but may still skip the intended Milestone 7 helper workflow and fall back to `draft_script` / `run_approved_script` too early. This produces useful Blender edits, but it bypasses animation briefs, timing charts, preview-safe helper transactions, structured validation, and repair loops.
 
-- Add stronger agent and MCP guidance: for animation requests, prefer `get_animation_scene_context`, `create_animation_brief`, `create_timing_chart`, `block_key_poses`, evaluator tools, and repair-loop tools before `draft_script`.
-- Add a higher-level orchestration tool for common animation workflows, such as `create_animation_from_brief` or a focused `create_progressive_bounce_animation`, that runs the brief -> timing chart -> helper blocking -> validation -> repair planning path internally.
+- Add stronger agent and MCP guidance: for animation requests, prefer `plan_animation_workflow`, `get_animation_scene_context`, `create_animation_brief`, `create_timing_chart`, `block_key_poses`, evaluator tools, and repair-loop tools before `draft_script`.
+- Add a higher-level orchestration tool for common animation workflows, such as `plan_animation_workflow`, `create_animation_from_brief`, or a focused `create_progressive_bounce_animation`, that runs or plans the brief -> timing chart -> helper blocking -> validation -> repair planning path.
 - Make the orchestrator report whether changes are true live-preview helper edits, checkpoint-backed script edits, or read-only plans, so the client cannot incorrectly claim "commit/revert preview" for arbitrary approved scripts.
 - Add real-client smoke prompts that verify Claude/Codex-style MCP clients choose the helper workflow for common animation requests instead of script-first execution.
 - Use the real bounce test as a fixture: "Make the cube bounce twice over 72 frames, getting smaller each bounce. Check it against the brief and leave it as a preview."
@@ -474,7 +474,7 @@ Acceptance:
 - The orchestrator can produce a pending preview for at least one full start-to-finish animation workflow, then run structured validation and return commit/revert guidance.
 - Real-client testing demonstrates that model behavior matches the intended workflow, not just that individual tools exist.
 
-Status: Planned from real Claude MCP testing. The bridge connection and iterative Blender edits worked, but the client bypassed the intended helper sequence, manually reviewed keyframes, and described approved-script edits as preview state. Next work is tool-choice guidance plus a higher-level orchestration helper that makes the correct Phase 7 path easier than script fallback.
+Status: Initial orchestration and guidance pass implemented. `plan_animation_workflow` is a read-only Milestone 7 entry point that creates the animation brief, animation-aware scene context, timing chart, ordered helper/evaluator/repair tool-call payloads, and explicit `draft_script` fallback rules. The Anthropic system prompt, tool-selection protection, context bundle, bridge contract, and MCP prompt templates now point animation generation/review/repair tasks at this workflow before arbitrary Python. Remaining 7H work is a mutating end-to-end helper path for at least one common workflow and real-client smoke that proves Claude/Codex-style MCP clients follow the plan.
 
 ## Open Questions
 

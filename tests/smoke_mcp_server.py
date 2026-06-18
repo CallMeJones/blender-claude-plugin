@@ -763,6 +763,7 @@ def main():
         prompts = _send(proc, {"jsonrpc": "2.0", "id": 41, "method": "prompts/list"})
         prompt_names = {item["name"] for item in prompts["result"]["prompts"]}
         assert "safe_scene_change" in prompt_names, prompts
+        assert "advanced_animation_workflow" in prompt_names, prompts
 
         prompt = _send(
             proc,
@@ -774,6 +775,18 @@ def main():
             },
         )
         assert "add a light" in prompt["result"]["messages"][0]["content"]["text"], prompt
+        animation_prompt = _send(
+            proc,
+            {
+                "jsonrpc": "2.0",
+                "id": 43,
+                "method": "prompts/get",
+                "params": {"name": "advanced_animation_workflow", "arguments": {"goal": "make the cube bounce"}},
+            },
+        )
+        animation_prompt_text = animation_prompt["result"]["messages"][0]["content"]["text"]
+        assert "plan_animation_workflow" in animation_prompt_text, animation_prompt
+        assert "draft_script only" in animation_prompt_text, animation_prompt
 
         resource = _send(
             proc,

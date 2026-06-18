@@ -21,6 +21,7 @@ from claude_blender import agent_loop, anthropic_client, bridge_protocol, contex
 ANIMATION_TOOLS = {
     "create_animation_brief",
     "create_timing_chart",
+    "plan_animation_workflow",
     "block_key_poses",
     "add_breakdown_pose",
     "set_pose_hold",
@@ -176,6 +177,46 @@ def main():
         assert contract["validation_plan"]["check_contact_physics"] is True, contract
         assert any("exactly 3" in item for item in contract["success_criteria"]), contract
         assert not scene.claude_blender.pending_preview
+
+        workflow = _execute(
+            context,
+            "plan_animation_workflow",
+            {
+                "prompt": "Make the cube bounce twice over 72 frames, getting smaller each bounce. Check it against the brief and leave it as a preview.",
+                "subject_names": ["Cube"],
+                "frame_start": 1,
+                "frame_end": 72,
+                "mode": "full",
+            },
+        )
+        plan = workflow["workflow"]
+        assert plan["status"] == "ready_with_helper_gaps", plan
+        assert plan["brief"]["action"] == "bounce", plan
+        assert plan["brief"]["timing"]["requested_count"] == 2, plan
+        assert plan["timing_chart"]["frame_end"] == 72, plan
+        call_names = [call["name"] for call in plan["next_tool_calls"]]
+        assert "animate_object_bounce" in call_names, plan
+        assert "analyze_animation_principles" in call_names, plan
+        assert "capture_animation_playblast" in call_names, plan
+        assert "review_playblast_against_brief" in call_names, plan
+        assert "draft_script" not in call_names, plan
+        assert plan["script_fallback_policy"]["allowed"] is True, plan
+        assert any("scale" in item for item in plan["generation_blockers"]), plan
+        assert not scene.claude_blender.pending_preview
+
+        ambiguous_workflow = _execute(
+            context,
+            "plan_animation_workflow",
+            {
+                "prompt": "Animate the cube.",
+                "subject_names": ["Cube"],
+                "mode": "generate",
+            },
+        )
+        ambiguous_plan = ambiguous_workflow["workflow"]
+        assert ambiguous_plan["status"] == "needs_clarification", ambiguous_plan
+        assert ambiguous_plan["next_tool_calls"] == [], ambiguous_plan
+        assert ambiguous_plan["script_fallback_policy"]["allowed"] is False, ambiguous_plan
 
         no_count = _execute(
             context,

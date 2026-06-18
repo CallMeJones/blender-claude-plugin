@@ -194,6 +194,24 @@ PROMPTS = {
             "Only call draft_script when helper tools cannot express the change."
         ),
     },
+    "advanced_animation_workflow": {
+        "name": "advanced_animation_workflow",
+        "title": "Run Advanced Animation Workflow",
+        "description": "Guide an MCP client through the Milestone 7 animation brief, helper, evaluation, and repair workflow before scripts.",
+        "arguments": [
+            {
+                "name": "goal",
+                "description": "The animation generation, review, or repair goal.",
+                "required": True,
+            }
+        ],
+        "template": (
+            "Handle this Blender animation task through the Milestone 7 workflow: {goal}\n\n"
+            "Call plan_animation_workflow first. Follow its next_tool_calls in order for brief, "
+            "scene routing, timing, helper generation, validation, playblast review, and repair. "
+            "Use draft_script only when the workflow's script_fallback_policy says helpers cannot express the edit."
+        ),
+    },
     "draft_approved_script": {
         "name": "draft_approved_script",
         "title": "Draft Approval-Gated Blender Python",
