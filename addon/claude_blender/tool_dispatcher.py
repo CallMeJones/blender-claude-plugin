@@ -1,4 +1,4 @@
-"""Execute Claude-requested Blender tools on the main Blender thread."""
+"""Execute external-agent Blender tools on the main Blender thread."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Blender background smoke test for approval-gated script execution."""
+﻿"""Blender background smoke test for approval-gated script execution."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.join(ROOT, "addon"))
 
 import claude_blender  # noqa: E402
 from claude_blender import (  # noqa: E402
-    anthropic_client,
+    agent_tools,
     bridge_protocol,
     bridge_server,
     build_info,
@@ -27,8 +27,8 @@ from claude_blender import (  # noqa: E402
 )
 
 
-OBJECT_NAME = "Claude Script Smoke Object"
-MESH_NAME = "Claude Script Smoke Mesh"
+OBJECT_NAME = "Agent Bridge Script Smoke Object"
+MESH_NAME = "Agent Bridge Script Smoke Mesh"
 
 
 def _cleanup():
@@ -79,7 +79,7 @@ def main():
         assert "BLENDER_BRIDGE_TOKEN" not in env, env
         assert f"MCP config v{build_info.MCP_CONFIG_VERSION}" in state.status, state.status
 
-        internal_tool_names = {tool["name"] for tool in anthropic_client.blender_tool_definitions()}
+        internal_tool_names = {tool["name"] for tool in agent_tools.blender_tool_definitions()}
         assert "run_approved_script" not in internal_tool_names
         bridge_tools = {tool["name"]: tool for tool in bridge_server._tool_definitions()}
         external_tool = bridge_tools["run_approved_script"]

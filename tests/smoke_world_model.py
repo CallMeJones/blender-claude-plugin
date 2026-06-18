@@ -1,4 +1,4 @@
-"""Smoke tests for deep Blender world-model inspection tools."""
+﻿"""Smoke tests for deep Blender world-model inspection tools."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(ROOT, "addon"))
 
 import claude_blender  # noqa: E402
-from claude_blender import anthropic_client, context_bundle, tool_dispatcher  # noqa: E402
+from claude_blender import agent_tools, context_bundle, tool_dispatcher  # noqa: E402
 
 
 def _execute(context, name, args=None):
@@ -141,7 +141,7 @@ def main():
         assert "get_geometry_nodes_details" in bundle["available_tools"]
         assert "get_animation_scene_context" in bundle["available_tools"]
 
-        tool_names = {tool["name"] for tool in anthropic_client.blender_tool_definitions()}
+        tool_names = {tool["name"] for tool in agent_tools.blender_tool_definitions()}
         for expected in {
             "get_animation_scene_context",
             "get_geometry_nodes_details",

@@ -7,7 +7,7 @@ import re
 
 import bpy
 
-MEMORY_TEXT_NAME = "Claude Agent Memory"
+MEMORY_TEXT_NAME = "Blender Agent Bridge Memory"
 MAX_MEMORY_CHARS = 14_000
 MAX_PROMPT_CHARS = 1_200
 MAX_RESPONSE_CHARS = 2_400
@@ -33,7 +33,7 @@ def _read():
 
 def _meaningful_memory():
     memory = _read().strip()
-    if memory in {"", "# Claude Agent Memory"}:
+    if memory in {"", "# Claude Agent Memory", "# Blender Agent Bridge Memory"}:
         return ""
     return memory
 
@@ -70,7 +70,7 @@ def _prune(body):
     if first_turn > 0:
         tail = tail[first_turn + 1 :]
     return (
-        "# Claude Agent Memory\n"
+        "# Blender Agent Bridge Memory\n"
         "\n[Older memory was pruned to fit the request budget.]\n\n"
         f"{tail.strip()}\n"
     )
@@ -92,7 +92,7 @@ def get_memory(scene=None):
 
 
 def clear_memory(scene=None):
-    _write("# Claude Agent Memory\n")
+    _write("# Blender Agent Bridge Memory\n")
     if scene:
         _set_state(scene, status="Memory cleared")
     return {"ok": True, "message": "Agent memory cleared", "text_datablock": MEMORY_TEXT_NAME}
@@ -128,12 +128,12 @@ def record_turn(scene, *, user_prompt, assistant_response, context_summary=""):
 
     existing = _read().strip()
     if not existing:
-        existing = "# Claude Agent Memory"
+        existing = "# Blender Agent Bridge Memory"
     entry = (
         f"\n\n## Turn {_now()}\n"
         f"User goal/request:\n{_compact(user_prompt, MAX_PROMPT_CHARS)}\n\n"
         f"Scene context at request:\n{_compact(context_summary, 600) or 'Not captured'}\n\n"
-        f"Claude result / next state:\n{_compact(assistant_response, MAX_RESPONSE_CHARS)}\n"
+        f"Agent result / next state:\n{_compact(assistant_response, MAX_RESPONSE_CHARS)}\n"
     )
     text = _write(_prune(existing + entry))
     if state:

@@ -11,10 +11,8 @@ import bpy
 
 from . import (
     agent_memory,
-    agent_loop,
     bridge_server,
     build_info,
-    chat_history,
     context_bundle,
     context_planner,
     docs_index,
@@ -28,38 +26,6 @@ from . import (
 
 _docs_results = queue.Queue()
 _docs_timer_registered = False
-
-ACK_PROMPTS = {
-    "ok",
-    "okay",
-    "yes",
-    "yep",
-    "yeah",
-    "continue",
-    "go on",
-    "proceed",
-    "do it",
-    "sounds good",
-}
-
-CONTINUE_PROMPT = (
-    "Continue the current Blender task from the previous Claude response, agent_memory, "
-    "and the authoritative current scene. If the previous response offered code manually "
-    "or said draft_script was missing its code parameter, retry by calling draft_script "
-    "with complete Blender Python in the code field. Do not ask the user to paste code manually."
-)
-
-PENDING_SCRIPT_ACK_PROMPT = (
-    "The user acknowledged the pending script. Do not execute it yourself. "
-    "Briefly explain that the Run Approved Script button is the explicit approval path, "
-    "or stage a revised script with draft_script only if a correction is needed."
-)
-
-RETRY_DRAFT_PROMPT = (
-    "Retry the previous scene/animation task by staging one pending Blender Python script "
-    "with draft_script. Search Blender docs again if needed, keep the script concise, "
-    "put the complete Python source in the code field, and do not paste code into chat."
-)
 
 TRUST_DURATION_SECONDS = {
     "MIN_15": 15 * 60,
@@ -126,19 +92,6 @@ def _draw_section(layout, title):
     box = layout.box()
     box.label(text=title)
     return box
-
-
-def _normalize_prompt(value):
-    return " ".join(str(value or "").strip().lower().split())
-
-
-def _resolve_prompt(raw_prompt, state):
-    prompt = str(raw_prompt or "").strip()
-    if _normalize_prompt(prompt) not in ACK_PROMPTS:
-        return prompt
-    if getattr(state, "pending_script", False):
-        return PENDING_SCRIPT_ACK_PROMPT
-    return CONTINUE_PROMPT
 
 
 def _update_screenshot_state(state, bundle):
@@ -213,46 +166,6 @@ def _build_context_bundle(context, state, prefs, *, prompt=""):
     return planned
 
 
-def _submit_prompt(context, raw_prompt, *, display_prompt=None):
-    state = context.scene.claude_blender
-    prefs = _prefs(context)
-    if prefs is None:
-        state.status = "Preferences unavailable"
-        return {"CANCELLED"}
-    raw_prompt = str(raw_prompt or "").strip()
-    if not raw_prompt:
-        state.status = "Enter a prompt first"
-        return {"CANCELLED"}
-    prompt = _resolve_prompt(raw_prompt, state)
-    if not prompt:
-        state.status = "Enter a prompt first"
-        return {"CANCELLED"}
-    bundle = _build_context_bundle(context, state, prefs, prompt=prompt)
-    _update_screenshot_state(state, bundle)
-    state.last_context_summary = context_bundle.summarize_for_status(bundle)
-    state.last_user_prompt = str(display_prompt or raw_prompt)[:1800]
-    state.last_effective_prompt = prompt[:2400]
-    state.status = "Sending to Claude..."
-    state.prompt = ""
-    chat_history.append_message(
-        context.scene,
-        role="user",
-        title="You",
-        content=str(display_prompt or raw_prompt),
-        context_summary=state.last_context_summary,
-        effective_prompt=prompt,
-    )
-    transcript.record_user_prompt(prompt, state.last_context_summary)
-    agent_loop.submit_prompt(
-        scene_name=context.scene.name,
-        prompt=prompt,
-        context_bundle=bundle,
-        model=prefs.model,
-        context_summary=state.last_context_summary,
-    )
-    return {"FINISHED"}
-
-
 class CLAUDEBLENDER_OT_capture_context(bpy.types.Operator):
     bl_idname = "claude_blender.capture_context"
     bl_label = "Capture Context"
@@ -261,7 +174,7 @@ class CLAUDEBLENDER_OT_capture_context(bpy.types.Operator):
     def execute(self, context):
         state = context.scene.claude_blender
         prefs = _prefs(context)
-        bundle = _build_context_bundle(context, state, prefs, prompt=state.prompt)
+        bundle = _build_context_bundle(context, state, prefs, prompt="")
         _update_screenshot_state(state, bundle)
         state.last_context_summary = context_bundle.summarize_for_status(bundle)
         state.last_response = (
@@ -275,35 +188,6 @@ class CLAUDEBLENDER_OT_capture_context(bpy.types.Operator):
         )
         state.status = "Context captured"
         return {"FINISHED"}
-
-
-class CLAUDEBLENDER_OT_send_prompt(bpy.types.Operator):
-    bl_idname = "claude_blender.send_prompt"
-    bl_label = "Send"
-    bl_description = "Send prompt and scene context to Claude"
-
-    def execute(self, context):
-        state = context.scene.claude_blender
-        prompt = state.prompt.strip()
-        return _submit_prompt(context, prompt)
-
-
-class CLAUDEBLENDER_OT_continue_task(bpy.types.Operator):
-    bl_idname = "claude_blender.continue_task"
-    bl_label = "Continue"
-    bl_description = "Continue the current Claude work session from memory and the current scene"
-
-    def execute(self, context):
-        return _submit_prompt(context, "continue", display_prompt="Continue")
-
-
-class CLAUDEBLENDER_OT_retry_draft_script(bpy.types.Operator):
-    bl_idname = "claude_blender.retry_draft_script"
-    bl_label = "Retry Draft"
-    bl_description = "Ask Claude to retry staging a pending script instead of pasting code in chat"
-
-    def execute(self, context):
-        return _submit_prompt(context, RETRY_DRAFT_PROMPT, display_prompt="Retry script staging")
 
 
 class CLAUDEBLENDER_OT_commit_preview(bpy.types.Operator):
@@ -357,7 +241,7 @@ class CLAUDEBLENDER_OT_undo_last(bpy.types.Operator):
 class CLAUDEBLENDER_OT_clear_agent_memory(bpy.types.Operator):
     bl_idname = "claude_blender.clear_agent_memory"
     bl_label = "Clear Memory"
-    bl_description = "Clear Claude's running memory for this Blender scene"
+    bl_description = "Clear the bridge memory for this Blender scene"
 
     def execute(self, context):
         result = agent_memory.clear_memory(context.scene)
@@ -366,33 +250,8 @@ class CLAUDEBLENDER_OT_clear_agent_memory(bpy.types.Operator):
         return {"FINISHED"}
 
 
-class CLAUDEBLENDER_OT_clear_chat_history(bpy.types.Operator):
-    bl_idname = "claude_blender.clear_chat_history"
-    bl_label = "Clear Chat"
-    bl_description = "Clear the visible Claude chat history for this Blender file"
-
-    def execute(self, context):
-        result = chat_history.clear_history(context.scene)
-        state = context.scene.claude_blender
-        state.last_response = result["message"]
-        state.last_user_prompt = ""
-        state.status = result["message"]
-        return {"FINISHED"}
-
-
-class CLAUDEBLENDER_OT_copy_chat_history(bpy.types.Operator):
-    bl_idname = "claude_blender.copy_chat_history"
-    bl_label = "Copy Chat"
-    bl_description = "Copy the full Claude chat history to the clipboard"
-
-    def execute(self, context):
-        context.window_manager.clipboard = chat_history.chat_text()
-        context.scene.claude_blender.status = "Copied chat history"
-        return {"FINISHED"}
-
-
 def _draw_ask_section(layout, state, prefs):
-    ask_box = _draw_section(layout, "Chat")
+    ask_box = _draw_section(layout, "Bridge")
     bridge_running = bridge_server.is_running()
     _draw_wrapped(ask_box, build_info.diagnostics_summary(), width=46, max_lines=2)
     ask_box.label(text=f"Bridge: {'On' if bridge_running else 'Off'}")
@@ -421,22 +280,12 @@ def _draw_ask_section(layout, state, prefs):
     if trust_status != script_runner.NO_EXTERNAL_TRUST_STATUS:
         _draw_field(ask_box, "Script Trust", trust_status, width=44, max_lines=2)
 
-    ask_box.prop(state, "prompt", text="")
-
-    if prefs:
-        ask_box.prop(prefs, "model", text="Model")
-    else:
-        ask_box.label(text="Model: preferences unavailable")
-
     toggle_row = ask_box.row(align=True)
     toggle_row.prop(state, "include_screenshot", toggle=True)
     toggle_row.prop(state, "live_helpers", toggle=True)
     toggle_row.prop(state, "agent_memory_enabled", toggle=True)
 
-    send_row = ask_box.row(align=True)
-    send_row.operator("claude_blender.send_prompt", text="Send", icon="PLAY")
-    send_row.operator("claude_blender.continue_task", text="Continue", icon="TRIA_RIGHT")
-    send_row.operator("claude_blender.capture_context", icon="VIEWZOOM")
+    ask_box.operator("claude_blender.capture_context", text="Capture Context", icon="VIEWZOOM")
 
     if prefs:
         ask_box.label(text=f"Execution: {prefs.execution_mode.replace('_', ' ').title()}")
@@ -549,13 +398,10 @@ def _draw_script_section(layout, state):
             _draw_field(script_box, "Trust Window", trust_snapshot["status"], width=42, max_lines=2)
 
         if state.pending_script_status == "Script failed" or state.last_script_error_summary:
-            script_box.operator("claude_blender.repair_script", icon="FILE_REFRESH")
             if state.last_script_error_summary:
                 _draw_field(script_box, "Last Error", state.last_script_error_summary, width=42, max_lines=4)
     else:
         script_box.label(text="No pending script")
-        if state.last_response and ("paste" in state.last_response.lower() or "code parameter" in state.last_response.lower()):
-            script_box.operator("claude_blender.retry_draft_script", icon="FILE_REFRESH")
 
     checkpoint = state.last_checkpoint_path or state.last_checkpoint_status
     if checkpoint and checkpoint != "No script checkpoint yet":
@@ -608,12 +454,8 @@ def _draw_action_center(layout, state):
         if trust_snapshot["active"] or trust_snapshot["expired"]:
             _draw_field(actions, "Trust Window", trust_snapshot["status"], width=44, max_lines=2)
         if state.pending_script_status == "Script failed" or state.last_script_error_summary:
-            actions.operator("claude_blender.repair_script", text="Repair", icon="FILE_REFRESH")
             if state.last_script_error_summary:
                 _draw_field(actions, "Last Error", state.last_script_error_summary, width=44, max_lines=3)
-    elif state.last_response and ("paste" in state.last_response.lower() or "code parameter" in state.last_response.lower()):
-        has_action = True
-        actions.operator("claude_blender.retry_draft_script", text="Retry Draft", icon="FILE_REFRESH")
 
     if state.pending_preview:
         has_action = True
@@ -671,43 +513,10 @@ def _draw_action_center(layout, state):
         actions.label(text="No pending agent actions")
 
 
-def _draw_conversation_section(layout, state):
-    conversation = _draw_section(layout, "Conversation")
-    messages = chat_history.recent_messages(limit=state.chat_history_limit)
-    if not messages:
-        conversation.label(text="No messages yet")
-    for message in messages:
-        role = str(message.get("role") or "system").lower()
-        if role == "user":
-            label = "You"
-            max_lines = 3
-        elif role == "assistant":
-            label = "Claude"
-            max_lines = 6
-        elif role == "error":
-            label = "Error"
-            max_lines = 5
-        else:
-            label = "System"
-            max_lines = 3
-        row = conversation.row(align=True)
-        row.label(text=label)
-        if message.get("timestamp"):
-            row.label(text=str(message.get("timestamp"))[-8:])
-        _draw_wrapped(conversation, message.get("content", ""), width=46, max_lines=max_lines)
-    row = conversation.row(align=True)
-    row.operator("claude_blender.continue_task", text="Continue", icon="TRIA_RIGHT")
-    row.operator("claude_blender.copy_chat_history", text="Copy")
-    row.operator("claude_blender.clear_chat_history", text="Clear", icon="TRASH")
-    conversation.prop(state, "chat_history_limit", text="Shown")
-    conversation.label(text=f"Chat: {chat_history.CHAT_HISTORY_TEXT_NAME}")
-    conversation.label(text=f"Transcript: {transcript.TRANSCRIPT_NAME}")
-
-
 class CLAUDEBLENDER_OT_copy_last_response(bpy.types.Operator):
     bl_idname = "claude_blender.copy_last_response"
     bl_label = "Copy Last Response"
-    bl_description = "Copy Claude's latest response to the system clipboard"
+    bl_description = "Copy the latest bridge response/status to the system clipboard"
 
     def execute(self, context):
         state = context.scene.claude_blender
@@ -719,7 +528,7 @@ class CLAUDEBLENDER_OT_copy_last_response(bpy.types.Operator):
 class CLAUDEBLENDER_OT_run_approved_script(bpy.types.Operator):
     bl_idname = "claude_blender.run_approved_script"
     bl_label = "Run Approved Script"
-    bl_description = "Run the pending Claude-generated Blender Python script"
+    bl_description = "Run the pending agent-generated Blender Python script"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
@@ -859,7 +668,7 @@ class CLAUDEBLENDER_OT_revoke_external_script_trust(bpy.types.Operator):
 class CLAUDEBLENDER_OT_reject_script(bpy.types.Operator):
     bl_idname = "claude_blender.reject_script"
     bl_label = "Reject Script"
-    bl_description = "Clear the pending Claude-generated script without running it"
+    bl_description = "Clear the pending agent-generated script without running it"
 
     def execute(self, context):
         state = context.scene.claude_blender
@@ -883,47 +692,6 @@ class CLAUDEBLENDER_OT_restore_last_checkpoint(bpy.types.Operator):
             state.last_response = message
         self.report({"INFO"} if result.get("ok") else {"ERROR"}, message)
         return {"FINISHED"} if result.get("ok") else {"CANCELLED"}
-
-
-class CLAUDEBLENDER_OT_repair_script(bpy.types.Operator):
-    bl_idname = "claude_blender.repair_script"
-    bl_label = "Repair Script"
-    bl_description = "Send the failed pending script and traceback back to Claude for repair"
-
-    def execute(self, context):
-        state = context.scene.claude_blender
-        prefs = _prefs(context)
-        if prefs is None:
-            state.status = "Preferences unavailable"
-            return {"CANCELLED"}
-        repair_context = script_runner.repair_context_text(context)
-        if not script_runner.pending_script_source(context):
-            state.status = "No pending script to repair"
-            return {"CANCELLED"}
-        if len(repair_context) > 60_000:
-            repair_context = f"{repair_context[:60_000]}\n\n[Repair context truncated]"
-        prompt = (
-            "Repair this failed Blender Python script. Use the traceback and current scene context. "
-            "Search Blender docs if an API is uncertain. Stage a corrected script with draft_script. "
-            "Do not claim it executed and do not ask the user to paste code manually.\n\n"
-            f"{repair_context}"
-        )
-        bundle = _build_context_bundle(context, state, prefs, prompt=prompt)
-        _update_screenshot_state(state, bundle)
-        state.last_context_summary = context_bundle.summarize_for_status(bundle)
-        state.status = "Asking Claude to repair script..."
-        state.last_response = "Repair request sent to Claude."
-        state.last_user_prompt = "Repair failed pending script"
-        state.last_effective_prompt = prompt[:2400]
-        transcript.record_user_prompt("Repair failed pending script", state.last_context_summary)
-        agent_loop.submit_prompt(
-            scene_name=context.scene.name,
-            prompt=prompt,
-            context_bundle=bundle,
-            model=prefs.model,
-            context_summary=state.last_context_summary,
-        )
-        return {"FINISHED"}
 
 
 class CLAUDEBLENDER_OT_capture_viewport_preview(bpy.types.Operator):
@@ -1013,7 +781,7 @@ class CLAUDEBLENDER_OT_build_docs_cache(bpy.types.Operator):
             except Exception as exc:
                 _docs_results.put((scene_name, False, f"{type(exc).__name__}: {exc}"))
 
-        threading.Thread(target=worker, name="ClaudeBlenderDocsCache", daemon=True).start()
+        threading.Thread(target=worker, name="BlenderAgentBridgeDocsCache", daemon=True).start()
         return {"FINISHED"}
 
 
@@ -1056,7 +824,7 @@ class CLAUDEBLENDER_OT_stop_bridge(bpy.types.Operator):
 class CLAUDEBLENDER_OT_copy_mcp_config(bpy.types.Operator):
     bl_idname = "claude_blender.copy_mcp_config"
     bl_label = "Copy MCP Config"
-    bl_description = "Copy a JSON MCP server config for Claude/Codex-style clients"
+    bl_description = "Copy a JSON MCP server config for external MCP clients"
     bl_options = {"REGISTER"}
 
     def execute(self, context):
@@ -1073,10 +841,10 @@ class CLAUDEBLENDER_OT_copy_mcp_config(bpy.types.Operator):
 
 class CLAUDEBLENDER_PT_sidebar(bpy.types.Panel):
     bl_idname = "CLAUDEBLENDER_PT_sidebar"
-    bl_label = "Claude"
+    bl_label = "Agent Bridge"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
-    bl_category = "Claude"
+    bl_category = "Agent Bridge"
 
     def draw(self, context):
         layout = self.layout
@@ -1085,22 +853,16 @@ class CLAUDEBLENDER_PT_sidebar(bpy.types.Panel):
 
         _draw_ask_section(layout, state, prefs)
         _draw_action_center(layout, state)
-        _draw_conversation_section(layout, state)
         _draw_status_section(layout, state)
         _draw_memory_section(layout, state)
 
 
 classes = (
     CLAUDEBLENDER_OT_capture_context,
-    CLAUDEBLENDER_OT_send_prompt,
-    CLAUDEBLENDER_OT_continue_task,
-    CLAUDEBLENDER_OT_retry_draft_script,
     CLAUDEBLENDER_OT_commit_preview,
     CLAUDEBLENDER_OT_revert_preview,
     CLAUDEBLENDER_OT_undo_last,
     CLAUDEBLENDER_OT_clear_agent_memory,
-    CLAUDEBLENDER_OT_clear_chat_history,
-    CLAUDEBLENDER_OT_copy_chat_history,
     CLAUDEBLENDER_OT_copy_last_response,
     CLAUDEBLENDER_OT_run_approved_script,
     CLAUDEBLENDER_OT_approve_external_script_run,
@@ -1108,7 +870,6 @@ classes = (
     CLAUDEBLENDER_OT_revoke_external_script_trust,
     CLAUDEBLENDER_OT_reject_script,
     CLAUDEBLENDER_OT_restore_last_checkpoint,
-    CLAUDEBLENDER_OT_repair_script,
     CLAUDEBLENDER_OT_capture_viewport_preview,
     CLAUDEBLENDER_OT_open_last_screenshot,
     CLAUDEBLENDER_OT_check_docs_cache,

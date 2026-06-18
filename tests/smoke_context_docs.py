@@ -1,4 +1,4 @@
-"""Blender background smoke test for context, docs, and image payload wiring."""
+﻿"""Blender background smoke test for context, docs, and image payload wiring."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(ROOT, "addon"))
 
 import claude_blender  # noqa: E402
-from claude_blender import anthropic_client, bridge_protocol, context_budget, context_bundle, docs_index, inspection_render, lab_parity, playblast_capture, tool_dispatcher, viewport_capture  # noqa: E402
+from claude_blender import agent_tools, bridge_protocol, context_budget, context_bundle, docs_index, inspection_render, lab_parity, playblast_capture, tool_dispatcher, viewport_capture  # noqa: E402
 
 
 def main():
@@ -44,19 +44,19 @@ def main():
         assert "validate_render_job_output" in bundle["available_tools"]
         assert "jump_to_workspace" in bundle["available_tools"]
         assert "focus_object_in_viewport" in bundle["available_tools"]
-        assert "capture_viewport" in {tool["name"] for tool in anthropic_client.blender_tool_definitions()}
-        assert "capture_animation_playblast" in {tool["name"] for tool in anthropic_client.blender_tool_definitions()}
-        assert "capture_object_inspection_renders" in {tool["name"] for tool in anthropic_client.blender_tool_definitions()}
-        assert "get_blend_file_diagnostics" in {tool["name"] for tool in anthropic_client.blender_tool_definitions()}
-        assert "get_workspace_layout" in {tool["name"] for tool in anthropic_client.blender_tool_definitions()}
-        assert "render_scene_thumbnail" in {tool["name"] for tool in anthropic_client.blender_tool_definitions()}
-        assert "start_render_job" in {tool["name"] for tool in anthropic_client.blender_tool_definitions()}
-        assert "get_render_job_status" in {tool["name"] for tool in anthropic_client.blender_tool_definitions()}
-        assert "cancel_render_job" in {tool["name"] for tool in anthropic_client.blender_tool_definitions()}
-        assert "assemble_render_job_video" in {tool["name"] for tool in anthropic_client.blender_tool_definitions()}
-        assert "validate_render_job_output" in {tool["name"] for tool in anthropic_client.blender_tool_definitions()}
-        assert "jump_to_workspace" in {tool["name"] for tool in anthropic_client.blender_tool_definitions()}
-        assert "focus_object_in_viewport" in {tool["name"] for tool in anthropic_client.blender_tool_definitions()}
+        assert "capture_viewport" in {tool["name"] for tool in agent_tools.blender_tool_definitions()}
+        assert "capture_animation_playblast" in {tool["name"] for tool in agent_tools.blender_tool_definitions()}
+        assert "capture_object_inspection_renders" in {tool["name"] for tool in agent_tools.blender_tool_definitions()}
+        assert "get_blend_file_diagnostics" in {tool["name"] for tool in agent_tools.blender_tool_definitions()}
+        assert "get_workspace_layout" in {tool["name"] for tool in agent_tools.blender_tool_definitions()}
+        assert "render_scene_thumbnail" in {tool["name"] for tool in agent_tools.blender_tool_definitions()}
+        assert "start_render_job" in {tool["name"] for tool in agent_tools.blender_tool_definitions()}
+        assert "get_render_job_status" in {tool["name"] for tool in agent_tools.blender_tool_definitions()}
+        assert "cancel_render_job" in {tool["name"] for tool in agent_tools.blender_tool_definitions()}
+        assert "assemble_render_job_video" in {tool["name"] for tool in agent_tools.blender_tool_definitions()}
+        assert "validate_render_job_output" in {tool["name"] for tool in agent_tools.blender_tool_definitions()}
+        assert "jump_to_workspace" in {tool["name"] for tool in agent_tools.blender_tool_definitions()}
+        assert "focus_object_in_viewport" in {tool["name"] for tool in agent_tools.blender_tool_definitions()}
         assert "capture_viewport" in bridge_protocol.TOOL_CONTRACTS
         assert "capture_animation_playblast" in bridge_protocol.TOOL_CONTRACTS
         assert "capture_object_inspection_renders" in bridge_protocol.TOOL_CONTRACTS
@@ -434,11 +434,10 @@ def main():
                 }
             },
         }
-        messages = anthropic_client.initial_messages("describe the viewport", image_bundle)
-        content = messages[0]["content"]
-        assert content[0]["type"] == "text"
-        assert "_attachments" not in content[0]["text"]
-        assert any(block.get("type") == "image" for block in content)
+        public_image_bundle = context_bundle.public_bundle(image_bundle)
+        public_image_text = context_budget.dumps_json_for_prompt(public_image_bundle)
+        assert "_attachments" not in public_image_text
+        assert "viewport_image" not in public_image_text
 
         huge_bundle = {
             "scene_summary": {"object_count": 5000},
@@ -454,13 +453,12 @@ def main():
             },
             "huge_local_docs_mistake": "docs " * 100_000,
         }
-        huge_messages = anthropic_client.initial_messages("budget this", huge_bundle)
-        huge_text = huge_messages[0]["content"][0]["text"]
+        huge_text = context_budget.dumps_json_for_prompt(huge_bundle)
         assert len(huge_text) < context_budget.MAX_CONTEXT_JSON_CHARS + 1_000
         assert "truncated" in huge_text
-        assert anthropic_client.estimate_request_chars(
-            messages=huge_messages,
-            tools=anthropic_client.blender_tool_definitions(),
+        assert agent_tools.estimate_request_chars(
+            messages=[{"role": "user", "content": huge_text}],
+            tools=agent_tools.blender_tool_definitions(),
         ) < context_budget.MAX_CONTEXT_JSON_CHARS + 80_000
 
         claude_blender.unregister()

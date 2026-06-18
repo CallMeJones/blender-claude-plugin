@@ -3,7 +3,7 @@ schema_version = "1.0.0"
 id = "claude_blender"
 version = "0.1.0"
 name = "Blender Agent Bridge"
-tagline = "Scene-aware bridge for Claude, Codex, and MCP agents"
+tagline = "Safe scene bridge for external AI agents"
 maintainer = "Michael"
 type = "add-on"
 blender_version_min = "5.1.0"
@@ -12,5 +12,5 @@ license = [
 ]
 
 [permissions]
-network = "Call Anthropic/docs; expose optional localhost MCP bridge"
+network = "Fetch Blender docs; expose optional localhost MCP bridge"
 files = "Docs, captures, checkpoints, transcripts, and audit logs"

@@ -2,13 +2,13 @@
 
 ## Core Principle
 
-Claude can suggest changes, inspect scene state, and call narrow tools. It should not receive unchecked authority to run arbitrary Python in Blender by default.
+External agents can suggest changes, inspect scene state, and call narrow tools. They should not receive unchecked authority to run arbitrary Python in Blender by default.
 
 ## Execution Modes
 
 ### Suggest Only
 
-Claude can analyze and draft code, but nothing runs.
+External agents can analyze and draft code, but nothing runs.
 
 Use this when:
 
@@ -18,31 +18,31 @@ Use this when:
 
 ### Approval Required
 
-Claude drafts a script, the add-on shows it, and the user explicitly approves execution.
+An external agent drafts a script, the add-on shows it, and the user explicitly approves execution.
 
 This should be the default.
 
 Current implementation:
 
-- Claude can stage code with `draft_script`.
-- The add-on writes the code to the `Claude Pending Script` Text datablock.
+- External agents can stage code with `draft_script`.
+- The add-on writes the code to the `Agent Bridge Pending Script` Text datablock.
 - Static checks block obvious risky imports and calls before the Run button is enabled.
 - The sidebar shows status, risk, intent, expected changes, static issues/warnings, and Run/Reject controls.
 - Static analysis reports both declared script risk and detected risk (`low`, `medium`, `high`, or `blocked`) with risk reasons and checkpoint recommendation.
-- Execution pushes a Blender undo step when possible, saves a timestamped `.blend` checkpoint when enabled, and records stdout/errors in `Claude Script Log`.
-- Failed scripts keep their pending code and expose a `Repair Script` action that sends the failed code and traceback back to Claude for a corrected draft.
+- Execution pushes a Blender undo step when possible, saves a timestamped `.blend` checkpoint when enabled, and records stdout/errors in `Agent Bridge Script Log`.
+- Failed scripts keep their pending code, traceback, and logs available locally so the external client can inspect and stage a corrected draft.
 - External clients can normally call `run_approved_script` with a short-lived one-time token issued by the Blender UI for the current pending script.
 - Users can also enable a Blender-side external script trust window from sidebar presets. During that runtime-only window, external clients may call `draft_script` and have it auto-run after static checks pass, or run an already staged script without a per-script token. Blocked scripts remain refused. Timed grants expire; session grants last until Revoke, add-on reload, file load, or bridge start.
 
 ### Limited Autonomous
 
-Claude can call only allowlisted tools such as `inspect_scene`, `capture_viewport`, `capture_animation_playblast`, `capture_object_inspection_renders`, `set_object_transform`, or `add_light`. Arbitrary Python stays blocked.
+External agents can call only allowlisted tools such as `inspect_scene`, `capture_viewport`, `capture_animation_playblast`, `capture_object_inspection_renders`, `set_object_transform`, or `add_light`. Arbitrary Python stays blocked.
 
 Use this later for fast iterative workflows.
 
 ### Live Helpers
 
-Claude can apply low-risk helper changes immediately to the open scene. Each change must be part of a preview transaction with visible commit/revert controls.
+External agents can apply low-risk helper changes immediately to the open scene. Each change must be part of a preview transaction with visible commit/revert controls.
 
 Use this for transforms, primitive/empty creation, object visibility/display, materials, lights, cameras, timeline settings, camera orbit setup, bounded keyframe edits, and bounded advanced helpers such as shader material setup, Geometry Nodes starter modifiers, shape keys, text/curve creation, simple particles, basic armatures, copy-transform constraints, render settings, camera settings, and world background color.
 
@@ -95,7 +95,7 @@ Live-preview reverts return a rollback manifest and warnings when restoration is
 
 ## Privacy Rules
 
-- Never send the API key to Claude.
+- Do not store provider API keys in Blender Agent Bridge.
 - Let users toggle screenshot inclusion.
 - Let users choose whether file paths, object names, material names, and custom properties are sent.
 - Do not send raw mesh data unless the user requests it.
@@ -108,7 +108,7 @@ Live-preview reverts return a rollback manifest and warnings when restoration is
 Before approved execution:
 
 - Push an undo step when possible.
-- Save a timestamped Claude-created `.blend` checkpoint when checkpoints are enabled.
+- Save a timestamped bridge-created `.blend` checkpoint when checkpoints are enabled.
 - Record the generated script and result log locally.
 - For external clients, require the approval token to match the current pending script and consume it before execution.
 - If an external script trust window is active, auto-run `draft_script` calls after static checks pass and accept tokenless external execution only within the runtime grant for a currently staged script that still passes static checks.
@@ -126,8 +126,8 @@ After execution:
 
 - Show success/failure clearly.
 - Offer undo for the last action.
-- Offer explicit restore of the last Claude-created checkpoint.
-- Return execution errors and checkpoint status back into the Claude conversation so it can draft a repaired script without running it automatically.
+- Offer explicit restore of the last bridge-created checkpoint.
+- Return execution errors and checkpoint status back through tool results so the external client can draft a repaired script without running it automatically.
 
 ## Documentation Access
 

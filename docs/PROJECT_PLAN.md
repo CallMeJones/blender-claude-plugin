@@ -6,13 +6,13 @@ Blender Agent Bridge
 
 ## North Star
 
-Let a Blender user ask Claude in Blender, or connect Codex/Claude Code/other MCP-capable agents externally, to understand, critique, and modify the active scene. The assistant surface should combine structured scene inspection, viewport vision, Blender Python scripting, documentation lookup, and safe editing helpers so changing objects, materials, lights, cameras, and animations feels straightforward.
+Make Blender Agent Bridge the safe, production-shaped bridge between Blender and external AI agents. Blender should provide structured scene inspection, viewport/render/playblast evidence, Blender Python staging, documentation lookup, safe editing helpers, preview rollback, approvals, checkpoints, and MCP resources. External clients should host the model/provider and decide what to send to their own LLMs.
 
 ## Evidence From Current Docs
 
-- Anthropic tool use supports client tools where Claude returns a structured tool call, the application executes it, then sends back a tool result.
-- Anthropic vision supports image inputs through API requests, which fits viewport screenshots and preview renders.
-- Anthropic Files API can avoid repeated upload of frequently reused files/images, but it is currently beta and has retention implications.
+- Modern MCP-capable agent clients support structured tool calls where the client asks Blender Agent Bridge to execute bounded operations and then consumes structured tool results.
+- Modern multimodal agent clients can use image resources for viewport screenshots, preview renders, and playblast frames when the bridge exposes them.
+- External client hosts can decide whether to upload, cache, or retain visual resources; Blender Agent Bridge should expose resources and metadata without owning provider retention policy.
 - Prompt caching can reduce cost and latency for stable system prompts, tool definitions, and possibly documentation excerpts.
 - Blender 4.2+ extensions use `blender_manifest.toml`, can bundle Python wheels, and must declare resource permissions such as network and files access.
 - Blender Python exposes panels, operators, add-on preferences, scene data, object data, animation data, and render/viewport operations through `bpy`.
@@ -21,12 +21,12 @@ Let a Blender user ask Claude in Blender, or connect Codex/Claude Code/other MCP
 
 The first milestone should be useful but controlled:
 
-- 3D View sidebar panel with a prompt box, response area, and run controls.
-- Add-on preferences for API key, model, privacy defaults, and execution mode.
-- Claude Messages API integration using Blender-compatible Python.
+- 3D View sidebar panel for bridge status, MCP config, context capture, script approvals, trust controls, preview commit/revert, docs status, and diagnostics.
+- Add-on preferences for bridge settings, local paths, privacy defaults, and execution mode.
+- No in-add-on LLM provider transport; external MCP clients host Anthropic/OpenAI/Gemini/etc. connections.
 - Scene summary generation for selected objects and overall scene state.
 - Layered context bundles that describe Blender version, mode, scene graph, selection, render settings, and animation state before Claude writes code.
-- Optional viewport screenshot sent as an image input.
+- Optional viewport screenshot exposed as local metadata/resources.
 - Live preview mode for approved low-risk helper changes, with immediate viewport/timeline redraw and revert/commit controls.
 - Script proposal flow where Claude drafts Blender Python but the user approves before execution.
 - Undo/checkpoint support before running generated scripts.
@@ -198,8 +198,7 @@ Acceptance:
 
 Status: Initial scene context, per-project agent memory, token-aware context planning, sidebar char/token estimates, and read-only detail retrieval tools are implemented.
 Deep world-model inspection is now available for geometry nodes, shader nodes, rigging/constraints/drivers, shape keys, curves/text, simulations, collection/view-layer organization, render/camera settings, and compositor nodes.
-Short acknowledgements such as `ok` and the `Continue` button now continue the current agent task from memory/current scene rather than acting as script approval.
-The sidebar now has persistent `Claude Chat History`, clears the input after send, shows recent chat turns, and groups pending work in an Action Center.
+The sidebar no longer hosts provider chat. It now focuses on bridge status, MCP config, script/action approvals, context capture, memory, docs, and diagnostics.
 
 ### Milestone 2: Screenshot/Vision Context
 
@@ -480,7 +479,7 @@ Status: Orchestration, guidance, and routing reliability are implemented in code
 
 ## Open Questions
 
-- Should the Anthropic API transport stay inside Blender, or move to the companion bridge once the tool loop grows?
+- Which client-host integrations should be documented first after MCP: Claude Desktop, Claude Code, Codex, Cursor, or a small standalone example?
 - How much autonomy should the default mode allow: suggest-only, approval-required, or limited autonomous tools?
 - How strict should the default docs-first rule be before Claude is allowed to generate Blender Python?
 - Which changes are safe enough for immediate live preview, and which must stay preview-only until explicit approval?
@@ -489,8 +488,7 @@ Status: Orchestration, guidance, and routing reliability are implemented in code
 
 - Blender target is 5.1.
 - Use a Blender extension plus local companion bridge/MCP surface over time.
-- Use direct Anthropic API for MVP with provider-shaped internal interfaces.
-- Read the API key from `ANTHROPIC_API_KEY`.
+- Keep LLM provider clients and API keys out of the production add-on.
 - Apply safe helper changes immediately in the live Blender scene.
 - Generated arbitrary Python always requires approval.
 - Save checkpoints before risky changes when enabled.

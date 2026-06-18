@@ -1,53 +1,12 @@
-"""Small stdlib Anthropic Messages API client.
-
-This keeps extension packaging simple for the first build. The public surface is
-provider-shaped so another backend can be added later.
-"""
+"""Provider-neutral tool catalog and routing hints for external agents."""
 
 from __future__ import annotations
 
 import json
-import os
-import urllib.error
-import urllib.request
-
-from . import context_budget
 
 
-ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
-ANTHROPIC_VERSION = "2023-06-01"
-MAX_TOOL_LOOPS = 24
-DEFAULT_MAX_TOKENS = 4096
-TOOL_LOOP_MAX_TOKENS = 8192
-
-
-class AnthropicClientError(RuntimeError):
-    pass
-
-
-def api_key_from_environment():
-    return os.environ.get("ANTHROPIC_API_KEY", "").strip()
-
-
-def _extract_text(response_body):
-    parts = []
-    for block in response_body.get("content", []):
-        if block.get("type") == "text":
-            parts.append(block.get("text", ""))
-    return "\n".join(part for part in parts if part).strip()
-
-
-def _public_context_bundle(context_bundle):
-    return {key: value for key, value in context_bundle.items() if key != "_attachments"}
-
-
-def _attachment_blocks(context_bundle):
-    attachments = context_bundle.get("_attachments") or {}
-    return [value for value in attachments.values() if value.get("type") == "image"]
-
-
-SYSTEM_PROMPT = (
-    "You are Claude inside Blender. Use the provided scene context and Blender tools. "
+AGENT_GUIDANCE = (
+    "You are an external agent connected to Blender Agent Bridge. Use the provided scene context and Blender tools. "
     "If agent_memory is enabled, treat it as the running project thread so the user can work progressively across prompts. "
     "Use prior goals, attempted steps, and remaining tasks from agent_memory, but treat the current Blender scene context as authoritative if they conflict. "
     "Read context_plan before acting. It explains which scene details were included or omitted to stay within the request budget. "
@@ -76,33 +35,10 @@ SYSTEM_PROMPT = (
 )
 
 
-def initial_messages(prompt, context_bundle):
-    public_context = _public_context_bundle(context_bundle)
-    context_text = context_budget.dumps_json_for_prompt(public_context)
-    content = [
-        {
-            "type": "text",
-            "text": (
-                "User request:\n"
-                f"{prompt}\n\n"
-                "Blender context bundle:\n"
-                f"{context_text}"
-            ),
-        }
-    ]
-    content.extend(_attachment_blocks(context_bundle))
-    return [
-        {
-            "role": "user",
-            "content": content,
-        }
-    ]
-
-
-def estimate_request_chars(*, messages, tools=None, system=SYSTEM_PROMPT):
+def estimate_request_chars(*, messages=None, tools=None, system=AGENT_GUIDANCE):
     payload = {
         "system": system,
-        "messages": messages,
+        "messages": messages or [],
         "tools": tools or [],
     }
     return len(json.dumps(payload, sort_keys=True))
@@ -123,7 +59,7 @@ def blender_tool_definitions():
         },
         {
             "name": "capture_viewport",
-            "description": "Capture the current Blender viewport/window and return visual context metadata plus a local artifact path. Use the Viewport context toggle when Claude needs actual image blocks; this callable tool is for explicit screenshot requests and MCP clients.",
+            "description": "Capture the current Blender viewport/window and return visual context metadata plus a local artifact path. Use when an external agent needs explicit screenshot evidence or MCP-readable image resources.",
             "input_schema": {
                 "type": "object",
                 "properties": {
@@ -2662,12 +2598,12 @@ _GROUP_KEYWORDS = {
     "basic_edit": {"make", "create", "add", "move", "scale", "rotate", "transform", "object", "primitive", "empty", "marker", "collection", "duplicate", "copy", "parent", "align", "distribute", "layout", "arrange", "hide", "unhide", "visibility", "visible", "display", "wireframe", "show name", "in front"},
     "materials": {"material", "shader", "color", "colour", "red", "blue", "green", "metal", "metallic", "chrome", "glass", "emission", "glow", "window"},
     "animation": {"animate", "animation", "animation brief", "prompt contract", "success criteria", "timing chart", "key pose", "key poses", "hold", "breakdown", "keyframe", "timeline", "frame", "orbit", "bounce", "driver", "motion", "motion arc", "arc", "follow path", "path", "retime", "interpolation", "easing", "loop", "cycles", "turntable", "pulse", "reveal", "stagger", "playblast", "timing", "spacing", "blocking", "anticipation", "squash", "stretch", "settle", "follow-through", "principles", "center of mass", "support", "contact sliding"},
-    "camera_render": {"camera", "render", "render job", "quality check", "thumbnail", "still", "mp4", "video assembly", "assemble video", "validate render", "1080p", "4k", "frame sequence", "samples", "light", "lighting", "world", "background", "dof", "depth of field", "lens", "compositor", "resolution", "intensity", "studio", "product stage", "presentation", "turntable", "close-up", "closeup", "underside"},
+    "camera_render": {"camera", "render", "render job", "quality check", "thumbnail", "still", "mp4", "video assembly", "assemble video", "validate render", "1080p", "4k", "frame sequence", "samples", "light", "lighting", "world", "background", "dof", "depth of field", "lens", "compositor", "resolution", "intensity", "studio", "product stage", "presentation", "close-up", "closeup", "underside"},
     "deep_inspect": {"inspect", "analyze", "analyse", "summarize", "summary", "details", "world model", "what", "list", "screenshot", "viewport", "visual", "image", "capture", "playblast", "review", "diagnostic", "diagnostics", "missing external", "linked library", "linked libraries", "blend file", "data-block", "datablock", "backup", "workspace", "layout json", "underside", "gear"},
     "advanced_create": {"geometry nodes", "shape key", "text", "curve", "particle", "armature", "constraint", "rig", "driver", "callout", "dimension", "label", "palette", "swatch", "organize", "collection"},
     "refinement": {"refine", "polish", "smooth", "high poly", "high-poly", "detail", "bevel", "subdivision", "subsurf", "seam", "panel", "dimension", "callout", "stage", "palette", "lighting"},
     "vehicle": {"car", "vehicle", "truck", "wheel", "tire", "tyre", "rim", "headlight", "taillight", "windshield", "door", "grille"},
-    "product": {"product", "catalog", "catalogue", "packshot", "turntable", "presentation", "hero shot", "studio shot"},
+    "product": {"product", "catalog", "catalogue", "packshot", "presentation", "hero shot", "studio shot"},
     "character": {"character", "humanoid", "person", "head", "face", "eyes", "shoulder", "body", "toon", "avatar"},
     "rigging": {"rig", "armature", "bone", "constraint", "copy location", "copy rotation", "track to"},
     "curves_text": {"curve", "path", "text", "label", "spline"},
@@ -2799,6 +2735,10 @@ def select_blender_tool_definitions(prompt="", context_bundle=None, *, max_schem
                 "create_pulse_animation",
                 "create_reveal_animation",
                 "create_staggered_motion",
+                "set_action_interpolation",
+                "retime_actions",
+                "add_action_cycles",
+                "clear_animation",
             }
         )
     if "draft_script" in selected:
@@ -2886,74 +2826,6 @@ def blender_tool_definitions_for_request(prompt="", context_bundle=None, *, max_
         max_schema_chars=max_schema_chars,
     )
     return tools
-
-
-def create_message_raw(*, messages, model, tools=None, max_tokens=DEFAULT_MAX_TOKENS):
-    api_key = api_key_from_environment()
-    if not api_key:
-        raise AnthropicClientError("ANTHROPIC_API_KEY is not set")
-
-    body = {
-        "model": model,
-        "max_tokens": int(max_tokens),
-        "system": SYSTEM_PROMPT,
-        "messages": messages,
-    }
-    if tools:
-        body["tools"] = tools
-
-    request = urllib.request.Request(
-        ANTHROPIC_MESSAGES_URL,
-        data=json.dumps(body).encode("utf-8"),
-        headers={
-            "content-type": "application/json",
-            "x-api-key": api_key,
-            "anthropic-version": ANTHROPIC_VERSION,
-        },
-        method="POST",
-    )
-
-    try:
-        with urllib.request.urlopen(request, timeout=90) as response:
-            response_body = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise AnthropicClientError(f"Anthropic API error {exc.code}: {detail}") from exc
-    except OSError as exc:
-        raise AnthropicClientError(f"Anthropic API request failed: {exc}") from exc
-
-    return response_body
-
-
-def extract_text(response_body):
-    text = _extract_text(response_body)
-    if text:
-        return text
-    tool_uses = [block for block in response_body.get("content", []) if block.get("type") == "tool_use"]
-    if tool_uses:
-        names = ", ".join(block.get("name", "unknown_tool") for block in tool_uses)
-        return (
-            "Claude requested Blender tool calls but did not return a final text summary yet. "
-            f"Requested tool(s): {names}."
-        )
-    return json.dumps(response_body, indent=2, sort_keys=True)
-
-
-def create_message(*, prompt, context_bundle, model, max_tokens=DEFAULT_MAX_TOKENS):
-    tools, _tool_metadata = select_blender_tool_definitions(
-        prompt=prompt,
-        context_bundle=context_bundle,
-    )
-    response_body = create_message_raw(
-        messages=initial_messages(prompt, context_bundle),
-        model=model,
-        tools=tools,
-        max_tokens=max_tokens,
-    )
-    return {
-        "text": extract_text(response_body),
-        "raw": response_body,
-    }
 
 
 def register():

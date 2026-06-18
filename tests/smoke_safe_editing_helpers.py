@@ -1,4 +1,4 @@
-"""Blender background smoke test for common safe editing helper tools."""
+﻿"""Blender background smoke test for common safe editing helper tools."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(ROOT, "addon"))
 
 import claude_blender  # noqa: E402
-from claude_blender import anthropic_client, bridge_protocol, context_bundle, tool_dispatcher  # noqa: E402
+from claude_blender import agent_tools, bridge_protocol, context_bundle, tool_dispatcher  # noqa: E402
 
 
 SAFE_EDIT_TOOLS = {
@@ -92,7 +92,7 @@ def main():
     try:
         bundle = context_bundle.build_context_bundle(context)
         assert SAFE_EDIT_TOOLS.issubset(set(bundle["available_tools"]))
-        tool_names = {tool["name"] for tool in anthropic_client.blender_tool_definitions()}
+        tool_names = {tool["name"] for tool in agent_tools.blender_tool_definitions()}
         assert SAFE_EDIT_TOOLS.issubset(tool_names)
         assert SAFE_EDIT_TOOLS.issubset(set(bridge_protocol.TOOL_CONTRACTS))
 

@@ -2,14 +2,14 @@
 
 ## Goal
 
-Changes should appear in Blender as soon as they are safe to apply. The user should be able to watch Claude build or adjust the scene, while still having an obvious way to commit, undo, or revert changes.
+Changes should appear in Blender as soon as they are safe to apply. The user should be able to watch external agents build or adjust the scene, while still having an obvious way to commit, undo, or revert changes.
 
 ## Product Behavior
 
 Live preview should feel like this:
 
 1. User asks for a change.
-2. Claude inspects scene context and chooses safe helper calls where possible.
+2. An external agent inspects scene context and chooses safe helper calls where possible.
 3. The add-on applies each low-risk helper call immediately.
 4. Blender's viewport, timeline, and relevant UI redraw.
 5. The sidebar logs what changed and keeps `Commit`, `Revert`, and `Undo` available.
@@ -95,7 +95,7 @@ Expected implementation responsibilities:
 - Include rollback coverage in tool results so external clients and the sidebar can show what was protected.
 - Update scene/view layer state after mutation.
 - Request redraw for 3D View, Timeline, Graph Editor, Dope Sheet, and Properties areas when relevant.
-- Report success/failure back into the Claude tool loop.
+- Report success/failure back through tool results.
 
 ## Animation Preview
 

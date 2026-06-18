@@ -493,7 +493,7 @@ def _resize_png_to_fit(filepath, max_bytes):
 
 
 def prepare_image_attachment(filepath, *, max_bytes=DEFAULT_MAX_BYTES, capture_method="file", capture_info=None):
-    """Prepare a captured PNG as a bounded Anthropic image attachment."""
+    """Prepare a captured PNG as bounded visual evidence for external clients."""
 
     max_bytes = int(max_bytes or DEFAULT_MAX_BYTES)
     capture_info = dict(capture_info or {})
@@ -544,9 +544,9 @@ def prepare_image_attachment(filepath, *, max_bytes=DEFAULT_MAX_BYTES, capture_m
         width = int(resize_info.get("width") or 0)
         height = int(resize_info.get("height") or 0)
 
-    note = "Viewport screenshot attached to the Claude request"
+    note = "Viewport screenshot prepared for the external client request"
     if resize_info.get("resized"):
-        note = "Viewport screenshot resized and attached to the Claude request"
+        note = "Viewport screenshot resized and prepared for the external client request"
     capture_id = _capture_id_from_path(prepared_path)
     resource_uri = _resource_uri(capture_id)
     metadata_uri = _metadata_uri(capture_id)

@@ -1,26 +1,20 @@
-# Architecture
+﻿# Architecture
 
 ## System Shape
 
 ```mermaid
 flowchart LR
   User["User in Blender"] --> UI["Sidebar Panel + Operators"]
-  MCPClient["External MCP Client"] --> MCP["mcp_server.py"]
+  AgentHost["External Agent Host\n(Codex, Claude Desktop, Cursor, etc.)"] --> MCP["mcp_server.py"]
   MCP --> Bridge["bridge_server.py localhost JSON"]
   Bridge --> Tools
   UI --> Context["Scene + Viewport Context"]
   Context --> Bundle["context_bundle.py"]
-  Context --> SceneDigest["scene_snapshot.py"]
   Context --> WorldModel["world_model.py"]
   Context --> Screenshot["viewport_capture.py"]
-  UI --> Agent["agent_loop.py"]
   UI --> Preview["live_preview.py"]
-Agent --> Client["anthropic_client.py"]
-Client --> Claude["Claude Messages API"]
-Claude --> Agent
-Agent --> Tools["Client Tool Dispatcher"]
-Client --> ToolSelect["Dynamic Tool Schema Selection"]
-Tools --> Docs["docs_index.py"]
+  Tools["Tool Dispatcher"] --> ToolSelect["agent_tools.py\nTool Catalog + Routing Hints"]
+  Tools --> Docs["docs_index.py"]
   Tools --> Runner["script_runner.py"]
   Tools --> Helpers["script_templates.py"]
   Tools --> Advanced["advanced_helpers.py"]
@@ -36,7 +30,7 @@ Tools --> Docs["docs_index.py"]
 
 Use a Blender extension as the source of truth for scene access, plus a local companion bridge surface. The extension can read and write `bpy` state directly, while a stdio MCP server can let external clients such as Codex, Claude Desktop, Claude Code, or other agents discover Blender resources and call Blender tools.
 
-The MVP calls Anthropic directly from the extension using stdlib HTTP. The interfaces are still provider-shaped so the transport can later move to a companion process or support additional providers.
+The add-on does not host an LLM provider. External clients own model/provider connections; Blender owns scene access, safety checks, preview rollback, script approval, local resources, and diagnostics.
 
 ## External Bridge Strategy
 
@@ -57,13 +51,13 @@ The add-on should be packaged as a Blender extension:
 The UI should use normal Blender classes:
 
 - `bpy.types.Panel` for the 3D View sidebar.
-- `bpy.types.Operator` for send, capture, approve, run, cancel, undo, and save checkpoint actions.
-- `bpy.types.AddonPreferences` for model, API key source, privacy, execution mode, and docs settings.
+- `bpy.types.Operator` for capture, approve, run, cancel, undo, bridge control, and checkpoint actions.
+- `bpy.types.AddonPreferences` for local paths, bridge settings, privacy, execution mode, and docs settings.
 - `bpy.props` for persistent settings and operator inputs.
 
-## Agent Loop
+## External Agent Loop
 
-Claude should receive a context bundle assembled for the current user request:
+External clients should receive or request a context bundle for the current user request:
 
 - A stable system prompt describing Blender tool boundaries.
 - The user's request.
@@ -73,11 +67,11 @@ Claude should receive a context bundle assembled for the current user request:
 - Optional image content for viewport screenshots.
 - Tool definitions for safe, narrow operations.
 
-Claude may respond directly or request a tool. For client tools, the add-on executes the tool locally and returns the result to Claude. Generated Python should be stored as a proposal first. Running a proposal is a separate user-approved action.
+External clients may respond directly or request a tool. For tool calls, the add-on executes the tool locally and returns the result through MCP/bridge. Generated Python should be stored as a proposal first. Running a proposal is a separate user-approved or trust-window action.
 
-Before generating non-trivial code, Claude should either already have enough scene/docs context or explicitly call tools to get it. The add-on should prompt toward this sequence: inspect, retrieve docs if needed, plan, draft, review, run.
+Before generating non-trivial code, external agents should either already have enough scene/docs context or explicitly call tools to get it. The bridge should steer clients toward this sequence: inspect, retrieve docs if needed, plan, draft, review, run.
 
-Tool schemas are selected dynamically per request. The full local tool catalog remains available inside Blender, but the Anthropic request receives a compact subset selected from prompt/memory keywords and capped by a schema character budget. This keeps the request closer to Codex-style local tool use: local code owns the toolbox, the model sees only the tools likely to matter for the current step, and omitted tools can be surfaced by a more specific follow-up.
+Tool schemas are selected dynamically per request. The full local tool catalog remains available inside Blender, while compact MCP mode exposes the bridge/control/animation/render tools that should be easy for clients to find. Provider-neutral routing hints in `agent_tools.py` keep the request closer to Codex-style local tool use: Blender owns the toolbox, and external clients decide what to show their models.
 
 ## Scene Context Strategy
 
@@ -102,7 +96,7 @@ Support two visual modes:
 - Viewport screenshot: fast, reflects what the user sees.
 - Preview render: slower, better for lighting/material critique.
 
-Current implementation captures a bounded PNG screenshot from Blender's UI when the user enables the `Viewport` toggle. The image is attached to the Anthropic request as an image block and stripped from transcript-visible context. If the PNG is too large, Blender's image API downscales and re-saves a smaller copy before upload. Saved `.blend` projects store captures in a project-local `.claude_blender/captures/<session_id>` folder by default, with a global user-cache fallback for unsaved or unwritable projects. The MCP bridge also exposes the latest capture and exact capture ids as image resources for external clients. If Blender is headless or the operator fails, the bundle records that visual context was requested but unavailable.
+Current implementation captures a bounded PNG screenshot from Blender's UI when the user enables the `Viewport` toggle. The image is prepared as external-client visual evidence and stripped from transcript-visible context. If the PNG is too large, Blender's image API downscales and re-saves a smaller copy before exposure. Saved `.blend` projects store captures in a project-local `.claude_blender/captures/<session_id>` folder by default, with a global user-cache fallback for unsaved or unwritable projects. The MCP bridge also exposes the latest capture and exact capture ids as image resources for external clients. If Blender is headless or the operator fails, the bundle records that visual context was requested but unavailable.
 
 Animation playblast capture uses the same storage boundary and writes sampled viewport PNG frame sequences under the active capture session. MCP clients can read playblast metadata and exact frame resources, which gives agents visible poses for reviewing timing, spacing, staging, arcs, contact, and prompt intent before later repair loops.
 
@@ -202,16 +196,12 @@ Default mode should be approval-required. Later, an autonomous mode can allow on
 
 Options:
 
-- Stdlib HTTP transport: fewer packaging issues, more code to maintain.
-- Bundled Anthropic SDK wheel: cleaner API usage, must handle extension wheel packaging.
-
-For the MVP, stdlib HTTP is attractive because Blender extension dependency packaging can be tricky. If streaming, Files API, or tool handling becomes painful, bundle the official SDK as a wheel.
+- Provider adapters should live in external clients, companion examples, or demo packages, not in the production add-on.
 
 ## User Decisions
 
 - First supported Blender target: 5.1.
-- API key source: `ANTHROPIC_API_KEY`.
-- LLM transport: direct Anthropic API for MVP, provider-shaped internally.
+- LLM/provider transport lives outside Blender.
 - Docs lookup: local cache first, official web docs second.
 - Screenshot context: controlled by a toggle.
 - UI: support sidebar first, design for optional floating surface.

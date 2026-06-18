@@ -1,4 +1,4 @@
-"""Blender background smoke test for animation workflow helper tools."""
+﻿"""Blender background smoke test for animation workflow helper tools."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(ROOT, "addon"))
 
 import claude_blender  # noqa: E402
-from claude_blender import agent_loop, anthropic_client, bridge_protocol, context_bundle, live_preview, script_runner, tool_dispatcher  # noqa: E402
+from claude_blender import animation_brief, agent_tools, bridge_protocol, context_bundle, live_preview, script_runner, tool_dispatcher  # noqa: E402
 
 
 ANIMATION_TOOLS = {
@@ -64,13 +64,6 @@ def _select_object(context, obj):
     context.view_layer.objects.active = obj
 
 
-def _direct_tool_executor(context):
-    def execute(_scene_name, tool_block):
-        return tool_dispatcher.execute_tool(context, tool_block["name"], tool_block.get("input") or {})
-
-    return execute
-
-
 def _snapshot(scene, cube, camera, light):
     return {
         "objects": set(bpy.data.objects.keys()),
@@ -98,7 +91,7 @@ def _action_keyframes(action):
 
 
 def _write_pattern_png(path):
-    image = bpy.data.images.new(f"Claude Smoke Frame {os.path.basename(path)}", width=8, height=8, alpha=True)
+    image = bpy.data.images.new(f"Agent Smoke Frame {os.path.basename(path)}", width=8, height=8, alpha=True)
     try:
         pixels = []
         for y in range(8):
@@ -127,7 +120,7 @@ def main():
     try:
         bundle = context_bundle.build_context_bundle(context)
         assert ANIMATION_TOOLS.issubset(set(bundle["available_tools"]))
-        tool_names = {tool["name"] for tool in anthropic_client.blender_tool_definitions()}
+        tool_names = {tool["name"] for tool in agent_tools.blender_tool_definitions()}
         assert ANIMATION_TOOLS.issubset(tool_names)
         contract_names = set(bridge_protocol.TOOL_CONTRACTS)
         assert ANIMATION_TOOLS.issubset(contract_names)
@@ -171,35 +164,19 @@ def main():
         rejected_gap_script = script_runner.reject_pending_script(context)
         assert rejected_gap_script["ok"], rejected_gap_script
 
-        preflight_context = {}
-        clarification = agent_loop._apply_animation_brief_preflight(
-            scene.name,
-            "Make the cube bounce twice and get smaller.",
-            preflight_context,
-            tool_executor=_direct_tool_executor(context),
+        preflight_brief = _execute(
+            context,
+            "create_animation_brief",
+            {"prompt": "Make the cube bounce twice and get smaller."},
         )
-        assert not clarification, clarification
-        assert preflight_context["animation_brief"]["timing"]["requested_count"] == 2, preflight_context
+        assert preflight_brief["brief"]["timing"]["requested_count"] == 2, preflight_brief
+        assert not preflight_brief["brief"].get("clarification_needed"), preflight_brief
+        assert not animation_brief.should_create_brief("Give me a brief summary of this scene.")
 
-        generic_context = {}
-        generic = agent_loop._apply_animation_brief_preflight(
-            scene.name,
-            "Give me a brief summary of this scene.",
-            generic_context,
-            tool_executor=_direct_tool_executor(context),
-        )
-        assert not generic, generic
-        assert "animation_brief" not in generic_context, generic_context
-
-        ambiguous_context = {}
-        question = agent_loop._apply_animation_brief_preflight(
-            scene.name,
-            "Animate the cube.",
-            ambiguous_context,
-            tool_executor=_direct_tool_executor(context),
-        )
+        ambiguous = _execute(context, "create_animation_brief", {"prompt": "Animate the cube."})
+        question = animation_brief.clarification_question(ambiguous["brief"])
         assert question.startswith("What action"), question
-        assert ambiguous_context["animation_brief"]["clarification_needed"] is True, ambiguous_context
+        assert ambiguous["brief"]["clarification_needed"] is True, ambiguous
 
         brief = _execute(
             context,

@@ -12,19 +12,18 @@ import urllib.parse
 import urllib.request
 
 try:
-    from . import audit_log, anthropic_client, bridge_protocol, build_info
+    from . import agent_tools, audit_log, bridge_protocol, build_info
 except ImportError:  # Allows direct execution as addon/claude_blender/mcp_server.py.
     package_parent = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     if package_parent not in sys.path:
         sys.path.insert(0, package_parent)
     try:
-        from claude_blender import audit_log, anthropic_client, bridge_protocol, build_info
+        from claude_blender import agent_tools, audit_log, bridge_protocol, build_info
     except ImportError:
+        import agent_tools
         import audit_log
         import build_info
         import bridge_protocol
-
-        anthropic_client = None
 
 
 PROTOCOL_VERSION = "2025-06-18"
@@ -641,29 +640,28 @@ def _compact_tool_definitions():
 def _static_tool_definitions():
     tools = []
     seen = set()
-    if anthropic_client is not None:
-        try:
-            for tool in anthropic_client.blender_tool_definitions():
-                name = str(tool.get("name") or "")
-                if not name:
-                    continue
-                contract = bridge_protocol.normalized_tool_contract(
-                    name,
-                    bridge_protocol.TOOL_CONTRACTS.get(name, {}),
-                )
-                tools.append(
-                    {
-                        "name": name,
-                        "title": contract.get("title") or name.replace("_", " ").title(),
-                        "description": tool.get("description", contract.get("description", "")),
-                        "inputSchema": tool.get("input_schema") or tool.get("inputSchema") or {"type": "object"},
-                        "outputSchema": contract.get("output_schema") or GENERIC_OUTPUT_SCHEMA,
-                        "annotations": bridge_protocol.mcp_annotations_for_tool(name),
-                    }
-                )
-                seen.add(name)
-        except Exception as exc:
-            _stderr(f"static tools warning: {exc}")
+    try:
+        for tool in agent_tools.blender_tool_definitions():
+            name = str(tool.get("name") or "")
+            if not name:
+                continue
+            contract = bridge_protocol.normalized_tool_contract(
+                name,
+                bridge_protocol.TOOL_CONTRACTS.get(name, {}),
+            )
+            tools.append(
+                {
+                    "name": name,
+                    "title": contract.get("title") or name.replace("_", " ").title(),
+                    "description": tool.get("description", contract.get("description", "")),
+                    "inputSchema": tool.get("input_schema") or tool.get("inputSchema") or {"type": "object"},
+                    "outputSchema": contract.get("output_schema") or GENERIC_OUTPUT_SCHEMA,
+                    "annotations": bridge_protocol.mcp_annotations_for_tool(name),
+                }
+            )
+            seen.add(name)
+    except Exception as exc:
+        _stderr(f"static tools warning: {exc}")
     for name, contract in bridge_protocol.TOOL_CONTRACTS.items():
         if name not in seen:
             tools.append(_contract_tool_definition(name, contract))

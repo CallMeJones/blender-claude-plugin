@@ -8,7 +8,7 @@ import textwrap
 
 import bpy
 
-TRANSCRIPT_NAME = "Claude for Blender Transcript"
+TRANSCRIPT_NAME = "Blender Agent Bridge Transcript"
 
 _MARKDOWN_PREFIX = re.compile(r"^\s{0,3}(#{1,6}\s+|[-*_]{3,}\s*$|>\s?)")
 
@@ -40,7 +40,7 @@ def record_user_prompt(prompt, context_summary=""):
 
 
 def record_assistant_message(message):
-    append_entry("Claude", message or "")
+    append_entry("Agent", message or "")
 
 
 def record_system_message(message):

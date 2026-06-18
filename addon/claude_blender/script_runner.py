@@ -18,9 +18,9 @@ from bpy.app.handlers import persistent
 
 from . import audit_log, script_analysis, transcript
 
-PENDING_SCRIPT_NAME = "Claude Pending Script"
-SCRIPT_LOG_NAME = "Claude Script Log"
-SCRIPT_FAILURE_PROMPT_NAME = "Claude Script Repair Context"
+PENDING_SCRIPT_NAME = "Agent Bridge Pending Script"
+SCRIPT_LOG_NAME = "Agent Bridge Script Log"
+SCRIPT_FAILURE_PROMPT_NAME = "Agent Bridge Script Repair Context"
 
 MAX_SCRIPT_CHARS = 80_000
 MAX_STATE_TEXT_CHARS = 1800
@@ -29,7 +29,7 @@ EXTERNAL_TRUST_TTL_SECONDS = 15 * 60
 NO_EXTERNAL_TRUST_STATUS = "No external script trust window"
 EXTERNAL_TRUST_EXPIRED_STATUS = "External script trust window expired"
 EXTERNAL_TRUST_SESSION_STATUS = "External script trust active for this Blender session"
-CHECKPOINT_FILENAME_RE = re.compile(r"-claude-\d{8}-\d{6}\.blend$", re.IGNORECASE)
+CHECKPOINT_FILENAME_RE = re.compile(r"-(?:agent|claude)-\d{8}-\d{6}\.blend$", re.IGNORECASE)
 
 _runtime_external_trust_expires_at = 0.0
 _runtime_external_trust_session = False
@@ -458,6 +458,7 @@ def checkpoint_metadata(context, path, *, ok=None, message=""):
         "message": str(message or ("Checkpoint available" if exists else "Checkpoint not found")),
         "exists": exists,
         "restorable": restorable,
+        "created_by_bridge": _is_checkpoint_path(path),
         "created_by_claude": _is_checkpoint_path(path),
         "size_bytes": int(size_bytes),
         "scene_name": scene.name if scene else "",
@@ -474,7 +475,7 @@ def create_checkpoint(context, checkpoint_dir=None):
     else:
         base = context.scene.name if context and context.scene else "unsaved"
     timestamp = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
-    path = os.path.join(directory, f"{_safe_filename(base)}-claude-{timestamp}.blend")
+    path = os.path.join(directory, f"{_safe_filename(base)}-agent-{timestamp}.blend")
     try:
         bpy.ops.wm.save_as_mainfile(filepath=path, check_existing=False, copy=True)
     except Exception as exc:
@@ -510,7 +511,7 @@ def restore_checkpoint(context, checkpoint_path=None):
     if not metadata["restorable"]:
         message = f"Checkpoint is not a .blend file: {metadata['path']}"
         if metadata["exists"] and metadata["path"].lower().endswith(".blend"):
-            message = f"Blend file was not created by Claude checkpointing: {metadata['path']}"
+            message = f"Blend file was not created by Agent Bridge checkpointing: {metadata['path']}"
         if state:
             state.last_checkpoint_restored_status = message
             state.status = message
@@ -546,7 +547,7 @@ def restore_checkpoint(context, checkpoint_path=None):
 
 def _metadata_text(*, intent, expected_changes, risk_level, target_objects, analysis):
     lines = [
-        "# Claude Pending Script",
+        "# Agent Bridge Pending Script",
         "",
         f"Intent: {intent or 'No intent provided'}",
         f"Declared risk: {risk_level or 'unspecified'}",
@@ -728,7 +729,7 @@ def run_pending_script(context, *, checkpoint_enabled=True, checkpoint_dir=None)
         "scene": context.scene,
     }
     try:
-        bpy.ops.ed.undo_push(message="Before Claude approved script")
+        bpy.ops.ed.undo_push(message="Before Agent Bridge approved script")
     except Exception:
         pass
 

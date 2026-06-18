@@ -1,4 +1,4 @@
-"""Blender background smoke test for animation control and preset helpers."""
+﻿"""Blender background smoke test for animation control and preset helpers."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(ROOT, "addon"))
 
 import claude_blender  # noqa: E402
-from claude_blender import anthropic_client, bridge_protocol, context_bundle, live_preview, tool_dispatcher  # noqa: E402
+from claude_blender import agent_tools, bridge_protocol, context_bundle, live_preview, tool_dispatcher  # noqa: E402
 
 
 MILESTONE_5_TOOLS = {
@@ -122,12 +122,12 @@ def main():
     try:
         bundle = context_bundle.build_context_bundle(context)
         assert MILESTONE_5_TOOLS.issubset(set(bundle["available_tools"]))
-        tool_names = {tool["name"] for tool in anthropic_client.blender_tool_definitions()}
+        tool_names = {tool["name"] for tool in agent_tools.blender_tool_definitions()}
         assert MILESTONE_5_TOOLS.issubset(tool_names)
         assert MILESTONE_5_TOOLS.issubset(set(bridge_protocol.TOOL_CONTRACTS))
         assert MILESTONE_5_TOOLS.issubset(set(tool_dispatcher.TOOL_FUNCTIONS))
 
-        selected, metadata = anthropic_client.select_blender_tool_definitions(
+        selected, metadata = agent_tools.select_blender_tool_definitions(
             "Create a looping turntable, retime the action, set easing, add cycles, then create pulse reveal and staggered animation.",
             bundle,
         )

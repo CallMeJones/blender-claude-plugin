@@ -1,12 +1,12 @@
-# Context And Docs Engine
+﻿# Context And Docs Engine
 
 ## Goal
 
-Claude should understand the active Blender environment well enough to make simple changes confidently and complex changes carefully. The add-on should give Claude a layered world model, version-aware documentation, and safe editing tools before asking it to write raw Blender Python.
+External agents should understand the active Blender environment well enough to make simple changes confidently and complex changes carefully. The add-on gives agents a layered world model, version-aware documentation, and safe editing tools before they write raw Blender Python.
 
-## Mental Model For Claude
+## Mental Model For Agents
 
-Claude should treat Blender as a live graph of data-blocks, not just a viewport image:
+Agents should treat Blender as a live graph of data-blocks, not just a viewport image:
 
 - Scenes contain collections, objects, cameras, lights, world settings, render settings, and timeline settings.
 - Objects have stable names during a session, object types, transforms, dimensions, data-blocks, modifiers, constraints, materials, custom properties, and animation data.
@@ -135,23 +135,23 @@ The search tool returns only top matching snippets and URLs. It never sends the 
 
 ## Context Budgeting
 
-`context_planner.py` first builds a prompt-aware request bundle. It includes the current scene, selection, active object, visual metadata, agent memory, and relevant material/animation summaries when the prompt needs them. It adds a `context_plan` field that tells Claude what was included or omitted, plus a rough `ceil(chars / 4)` token estimate shown in the sidebar.
+`context_planner.py` first builds a prompt-aware request bundle. It includes the current scene, selection, active object, visual metadata, agent memory, and relevant material/animation summaries when the prompt needs them. It adds a `context_plan` field that tells external clients what was included or omitted, plus a rough `ceil(chars / 4)` token estimate shown in the sidebar.
 
-`context_budget.py` then applies hard text-size guards before API calls:
+`context_budget.py` then applies hard text-size guards before context is exposed to clients:
 
-- context bundle JSON is compacted before `initial_messages()`;
-- `_attachments` are omitted from text context and sent only as image blocks;
+- context bundle JSON is compacted before use;
+- `_attachments` are omitted from text context and exposed only through explicit resources or client-selected image handling;
 - large strings/lists/deep structures are truncated;
 - docs search returns at most a small set of snippets;
-- tool results are capped before being sent back into the Claude tool loop.
+- tool results are capped before being returned through the bridge.
 
 This keeps the local docs cache, project memory, screenshots, and large Blender scenes from killing the LLM request with oversized context.
 
-`anthropic_client.select_blender_tool_definitions()` also applies a tool-schema budget. The full tool catalog remains available locally, but each request sends only a core inspection/docs set plus task-matched groups such as materials, animation, camera/render, geometry nodes, rigging, particles, curves/text, advanced creation, refinement, or vehicle tools. The agent loop writes a compact `tool_selection` block into the request context so Claude knows which tools were exposed and roughly how many schema tokens they cost.
+`agent_tools.select_blender_tool_definitions()` also applies a tool-schema budget. The full tool catalog remains available locally, but compact surfaces can expose a core inspection/docs set plus task-matched groups such as materials, animation, camera/render, geometry nodes, rigging, particles, curves/text, advanced creation, refinement, or vehicle tools.
 
 ### Docs-First Rule
 
-Claude should call `search_blender_docs` before drafting scripts when:
+Agents should call `search_blender_docs` before drafting scripts when:
 
 - The task uses unfamiliar Blender APIs.
 - The task involves animation data, drivers, geometry nodes, node trees, armatures, or modal/context-sensitive operators.
@@ -273,7 +273,7 @@ Claude should prefer immediate helper calls for low-risk visible changes and res
 
 ## Viewport Image Context
 
-When the `Viewport` toggle is enabled, `viewport_capture.py` tries to capture a PNG from the active Blender UI area and attach it to the Anthropic request as an image block. If the capture exceeds the configured byte budget, the add-on downscales and re-saves the PNG with Blender's image API before attaching it. The context bundle keeps only metadata such as capture method, local path, media type, dimensions, resize status, byte size, project/session ids, and MCP capture resource URIs in transcript-visible text.
+When the `Viewport` toggle is enabled, `viewport_capture.py` tries to capture a PNG from the active Blender UI area and expose it as bounded visual evidence for external clients. If the capture exceeds the configured byte budget, the add-on downscales and re-saves the PNG with Blender's image API before exposing it. The context bundle keeps only metadata such as capture method, local path, media type, dimensions, resize status, byte size, project/session ids, and MCP capture resource URIs in transcript-visible text.
 
 By default, saved `.blend` files store viewport captures beside the project in `.claude_blender/captures/<session_id>`. Unsaved or unwritable projects fall back to `~/.claude_blender/captures/<project_id>/<session_id>`, and a custom capture cache preference acts as a custom base directory with the same project/session partitioning. The MCP bridge exposes `blender://captures/latest`, `blender://captures/latest/metadata`, and exact `blender://captures/{capture_id}` resources. Treat project-local captures as generated runtime artifacts; ignore `.claude_blender/captures/` in source control unless a project intentionally keeps visual QA evidence.
 
@@ -297,7 +297,7 @@ The runner should:
 - Push an undo step and optionally save a checkpoint.
 - Execute in Blender's main thread.
 - Capture output and errors.
-- Return execution results to Claude so it can repair failures.
+- Return execution results to the external client so it can repair failures.
 
 ## What Makes Scripting Feel Easy
 
@@ -308,4 +308,4 @@ The user should be able to ask naturally:
 - "Create a camera orbit around this product."
 - "Add labels pointing to these parts."
 
-Claude should not need to ask the user for API details. It should inspect the scene, retrieve docs if needed, choose a helper or script, and present a clear change plan.
+Agents should inspect the scene, retrieve docs if needed, choose a helper or script, and present a clear change plan without Blender hosting a provider chat loop.

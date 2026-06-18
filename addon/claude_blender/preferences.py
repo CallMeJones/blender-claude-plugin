@@ -9,30 +9,6 @@ import bpy
 from . import build_info
 
 
-MODEL_ITEMS = (
-    (
-        "claude-sonnet-4-6",
-        "Claude Sonnet 4.6",
-        "Balanced speed and intelligence for everyday Blender work",
-    ),
-    (
-        "claude-opus-4-8",
-        "Claude Opus 4.8",
-        "More capable reasoning for complex scene, script, and animation tasks",
-    ),
-    (
-        "claude-haiku-4-5-20251001",
-        "Claude Haiku 4.5",
-        "Fastest option for quick iteration and lower-cost checks",
-    ),
-    (
-        "claude-fable-5",
-        "Claude Fable 5",
-        "Highest capability option for demanding long-horizon work",
-    ),
-)
-
-
 def _default_cache_dir():
     return os.path.join(os.path.expanduser("~"), ".claude_blender", "docs_cache")
 
@@ -48,39 +24,15 @@ def _default_checkpoint_dir():
 class CLAUDEBLENDER_AP_preferences(bpy.types.AddonPreferences):
     bl_idname = __package__
 
-    model: bpy.props.EnumProperty(
-        name="Model",
-        description="Anthropic model to use for Claude requests",
-        items=MODEL_ITEMS,
-        default="claude-sonnet-4-6",
-    )
-    api_key_source: bpy.props.EnumProperty(
-        name="API Key",
-        description="Where to read the Anthropic API key from",
-        items=(
-            ("ENV", "Environment", "Read ANTHROPIC_API_KEY from the environment"),
-        ),
-        default="ENV",
-    )
     execution_mode: bpy.props.EnumProperty(
         name="Execution",
         description="Default execution behavior",
         items=(
             ("LIVE_HELPERS", "Live Helpers", "Safe helper tools apply immediately with revert support"),
             ("APPROVAL_REQUIRED", "Approval Required", "Generated Python requires explicit approval"),
-            ("SUGGEST_ONLY", "Suggest Only", "Claude can advise and draft, but cannot mutate the scene"),
+            ("SUGGEST_ONLY", "Suggest Only", "External agents can advise and draft, but cannot mutate the scene"),
         ),
         default="LIVE_HELPERS",
-    )
-    assistant_surface: bpy.props.EnumProperty(
-        name="Assistant UI",
-        description="Where the assistant should appear",
-        items=(
-            ("SIDEBAR", "Sidebar", "Use the 3D View sidebar panel"),
-            ("FLOATING", "Floating", "Use a floating assistant window when implemented"),
-            ("BOTH", "Both", "Expose both sidebar and floating assistant surfaces"),
-        ),
-        default="SIDEBAR",
     )
     screenshot_default: bpy.props.BoolProperty(
         name="Screenshot Toggle Default",
@@ -141,10 +93,7 @@ class CLAUDEBLENDER_AP_preferences(bpy.types.AddonPreferences):
         layout.label(text=build_info.diagnostics_summary())
         layout.label(text=f"Add-on path: {build_info.addon_root()}")
         layout.separator()
-        layout.prop(self, "model")
-        layout.prop(self, "api_key_source")
         layout.prop(self, "execution_mode")
-        layout.prop(self, "assistant_surface")
         layout.prop(self, "screenshot_default")
         layout.prop(self, "local_docs_first")
         layout.prop(self, "docs_cache_dir")

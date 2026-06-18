@@ -6,11 +6,6 @@ import bpy
 
 
 class CLAUDEBLENDER_PG_scene_state(bpy.types.PropertyGroup):
-    prompt: bpy.props.StringProperty(
-        name="Prompt",
-        description="Instruction to send to Claude",
-        default="",
-    )
     include_screenshot: bpy.props.BoolProperty(
         name="Viewport",
         description="Include viewport screenshot context when available",
@@ -23,7 +18,7 @@ class CLAUDEBLENDER_PG_scene_state(bpy.types.PropertyGroup):
     )
     agent_memory_enabled: bpy.props.BoolProperty(
         name="Memory",
-        description="Send compact running agent memory with each prompt",
+        description="Expose compact running scene memory to external agents",
         default=True,
     )
     agent_memory_status: bpy.props.StringProperty(
@@ -32,26 +27,7 @@ class CLAUDEBLENDER_PG_scene_state(bpy.types.PropertyGroup):
     )
     agent_memory_text_name: bpy.props.StringProperty(
         name="Memory Text",
-        default="Claude Agent Memory",
-    )
-    chat_history_status: bpy.props.StringProperty(
-        name="Chat Status",
-        default="No chat history yet",
-    )
-    chat_history_text_name: bpy.props.StringProperty(
-        name="Chat Text",
-        default="Claude Chat History",
-    )
-    chat_history_turn_count: bpy.props.IntProperty(
-        name="Chat Messages",
-        default=0,
-    )
-    chat_history_limit: bpy.props.IntProperty(
-        name="Visible Messages",
-        description="Number of recent chat messages to show in the sidebar",
-        default=8,
-        min=2,
-        max=20,
+        default="Blender Agent Bridge Memory",
     )
     status: bpy.props.StringProperty(
         name="Status",

@@ -12,7 +12,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(ROOT, "addon"))
 
 import claude_blender  # noqa: E402
-from claude_blender import agent_loop, agent_memory, context_bundle  # noqa: E402
+from claude_blender import agent_memory, context_bundle  # noqa: E402
 
 
 def main():
@@ -30,11 +30,10 @@ def main():
     assert bundle["agent_memory"]["enabled"] is True
     assert "No prior agent memory" in bundle["agent_memory"]["memory"]
 
-    agent_loop._apply_result(
-        scene.name,
-        True,
-        "Created the pedestal base; blue accent lights remain.",
-        prompt="Build a sci-fi pedestal scene",
+    agent_memory.record_turn(
+        scene,
+        user_prompt="Build a sci-fi pedestal scene",
+        assistant_response="Created the pedestal base; blue accent lights remain.",
         context_summary="2 objects, 0 selected",
     )
     memory = agent_memory.get_memory(scene)

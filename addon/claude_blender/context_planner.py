@@ -1,4 +1,4 @@
-"""Token-aware context selection for Anthropic requests."""
+"""Token-aware context selection for external agent requests."""
 
 from __future__ import annotations
 

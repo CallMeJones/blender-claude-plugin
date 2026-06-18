@@ -1,6 +1,6 @@
 # Blender Agent Bridge
 
-Blender Agent Bridge is a Blender extension and local MCP bridge for scene-aware AI agents. It brings a Claude-powered assistant into the 3D View sidebar, and it exposes the running Blender scene to Codex, Claude Desktop, Claude Code, and other MCP-capable clients through a localhost bridge.
+Blender Agent Bridge is a Blender extension and local MCP bridge for scene-aware AI agents. It exposes the running Blender scene to Codex, Claude Desktop, Claude Code, Cursor, and other MCP-capable clients through a localhost bridge while keeping Blender responsible for safe tool execution, previews, approvals, checkpoints, and local resources.
 
 The project was originally named Claude for Blender. The internal add-on id, Python package, zip name, local paths, and MCP environment variables still use `claude_blender` for compatibility.
 
@@ -10,8 +10,8 @@ Recommended GitHub repository name: `blender-agent-bridge`.
 
 - Early `0.1.0` extension.
 - Targets Blender `5.1.0` or newer, matching `addon/claude_blender/blender_manifest.toml`.
-- Uses Anthropic's Messages API for the in-Blender Claude assistant.
-- Supports optional local MCP access through a `127.0.0.1` bridge.
+- Does not host an LLM provider inside Blender; external clients bring their own model/provider connection.
+- Supports local MCP access through a `127.0.0.1` bridge.
 - Supports the latest public `main` branch only while the project is still moving quickly.
 
 ## Capabilities
@@ -25,18 +25,18 @@ Recommended GitHub repository name: `blender-agent-bridge`.
 - Inspect workspace/window/area layout and use interactive helpers for workspace switching or viewport focus.
 - Let agents sample animation state, analyze f-curve spacing, motion arcs, pose clarity, contact sliding, bbox penetration, camera framing, and compare results against an animation brief before repair.
 - Search cached official Blender Python API and Manual documentation before version-sensitive scripting.
-- Let the in-Blender Claude assistant or external MCP agents call bounded live helper tools for common scene edits such as transforms, primitives, materials, cameras, lights, keyframes, constraints, geometry-node starters, shape keys, particles, text/curves, render settings, lighting presets, material palettes, product/vehicle/character kits, product turntables, and production scene organization.
+- Let external MCP agents call bounded live helper tools for common scene edits such as transforms, primitives, materials, cameras, lights, keyframes, constraints, geometry-node starters, shape keys, particles, text/curves, render settings, lighting presets, material palettes, product/vehicle/character kits, product turntables, and production scene organization.
 - Keep live helper edits inside preview transactions so the user can commit, revert, or use Blender undo.
-- Stage arbitrary Blender Python in the `Claude Pending Script` Text datablock and run it only after approval inside Blender.
+- Stage arbitrary Blender Python in the `Agent Bridge Pending Script` Text datablock and run it only after approval inside Blender.
 - Grant optional runtime-only external script trust from sidebar presets for iterative MCP/client sessions. During trust windows, `draft_script` auto-runs scripts that pass static checks; granting trust also runs an already pending script after checks pass. Blocked scripts remain refused.
-- Store local chat history, transcript state, pending scripts, script logs, repair context, and optional scene-agent memory in Blender Text datablocks.
+- Store transcript state, pending scripts, script logs, repair context, and optional scene-agent memory in Blender Text datablocks.
 - Write local audit events for bridge and MCP tool calls with redaction for code, tokens, keys, passwords, and credential-like fields.
 
 ## Safety and Privacy
 
-Connected agents do not get blanket access to Blender. The in-Blender Claude assistant sends compact context and selected tool schemas to Anthropic, while the extension executes local helper calls itself and requires approval for generated Python.
+Connected agents do not get blanket access to Blender. The bridge exposes bounded tools/resources, executes local helper calls itself, and requires approval or explicit session trust for generated Python.
 
-Viewport images are sent only when the user enables the `Viewport` toggle. The localhost bridge does not call a model provider by itself; external MCP clients decide what to send to their own providers after reading resources or tool results.
+Viewport images are captured only when requested. The localhost bridge does not call a model provider by itself; external MCP clients decide what to send to their own providers after reading resources or tool results.
 
 Saved `.blend` projects store generated viewport captures, playblast frame sequences, inspection renders, render thumbnails, and async render-job outputs under `.claude_blender/captures/<session_id>` by default, while unsaved or unwritable projects fall back to the user cache. Treat these captures as generated runtime artifacts unless you intentionally keep them as visual QA evidence.
 
@@ -46,8 +46,7 @@ See [SECURITY.md](SECURITY.md) and [PRIVACY.md](PRIVACY.md) for the detailed mod
 
 - Blender `5.1.0+`.
 - Python available on `PATH` for build scripts and the external MCP server.
-- `ANTHROPIC_API_KEY` set in the environment before launching Blender when using the in-Blender Claude chat.
-- Network permission for Anthropic requests, Blender docs downloads, and the optional localhost bridge.
+- Network permission for Blender docs downloads and the localhost bridge.
 - File permission for docs caches, viewport captures, playblast frame sequences, checkpoints, transcripts, and audit logs.
 
 ## Install from Source
@@ -65,7 +64,7 @@ dist/claude_blender-0.1.0.zip
 dist/claude_blender-0.1.0.zip.sha256
 ```
 
-Install the zip in Blender through the extension installation flow, enable `Blender Agent Bridge`, and open the 3D View sidebar. Configure the model and local paths in the add-on preferences.
+Install the zip in Blender through the extension installation flow, enable `Blender Agent Bridge`, and open the 3D View sidebar. Configure local paths and bridge settings in the add-on preferences.
 
 For day-to-day development on Windows, link the checkout into Blender's user extension repository:
 

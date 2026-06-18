@@ -13,7 +13,7 @@ import bpy
 
 from . import (
     audit_log,
-    anthropic_client,
+    agent_tools,
     bridge_protocol,
     build_info,
     context_bundle,
@@ -92,7 +92,7 @@ def _tool_definitions():
     contracts = bridge_protocol.TOOL_CONTRACTS
     result = []
     seen = set()
-    for tool in anthropic_client.blender_tool_definitions():
+    for tool in agent_tools.blender_tool_definitions():
         name = tool["name"]
         contract = bridge_protocol.normalized_tool_contract(name, contracts.get(name, {}))
         seen.add(name)

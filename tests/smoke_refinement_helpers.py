@@ -1,4 +1,4 @@
-"""Blender background smoke test for model refinement helpers."""
+﻿"""Blender background smoke test for model refinement helpers."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(ROOT, "addon"))
 
 import claude_blender  # noqa: E402
-from claude_blender import advanced_helpers, anthropic_client, bridge_protocol, context_bundle, tool_dispatcher  # noqa: E402
+from claude_blender import advanced_helpers, agent_tools, bridge_protocol, context_bundle, tool_dispatcher  # noqa: E402
 
 
 REFINEMENT_TOOLS = {
@@ -85,7 +85,7 @@ def main():
     try:
         bundle = context_bundle.build_context_bundle(context)
         assert REFINEMENT_TOOLS.issubset(set(bundle["available_tools"]))
-        full_names = {tool["name"] for tool in anthropic_client.blender_tool_definitions()}
+        full_names = {tool["name"] for tool in agent_tools.blender_tool_definitions()}
         assert REFINEMENT_TOOLS.issubset(full_names)
         assert REFINEMENT_TOOLS.issubset(set(bridge_protocol.TOOL_CONTRACTS))
 

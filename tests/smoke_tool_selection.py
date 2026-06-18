@@ -1,4 +1,4 @@
-"""Smoke tests for dynamic tool-schema selection."""
+﻿"""Smoke tests for dynamic tool-schema selection."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(ROOT, "addon"))
 
 import claude_blender  # noqa: E402
-from claude_blender import agent_loop, anthropic_client, context_bundle  # noqa: E402
+from claude_blender import agent_tools, context_bundle  # noqa: E402
 
 
 def _names(tools):
@@ -21,13 +21,12 @@ def _names(tools):
 
 def main():
     claude_blender.register()
-    original_create = anthropic_client.create_message_raw
     try:
         bundle = context_bundle.build_context_bundle(bpy.context)
-        full_tools = anthropic_client.blender_tool_definitions()
-        full_chars = anthropic_client.estimate_request_chars(messages=[], tools=full_tools)
+        full_tools = agent_tools.blender_tool_definitions()
+        full_chars = agent_tools.estimate_request_chars(messages=[], tools=full_tools)
 
-        simple_tools, simple_meta = anthropic_client.select_blender_tool_definitions(
+        simple_tools, simple_meta = agent_tools.select_blender_tool_definitions(
             "What objects are in my current scene?",
             bundle,
         )
@@ -38,15 +37,15 @@ def main():
         assert "apply_product_refinement_template" not in simple_names
         assert "apply_character_refinement_template" not in simple_names
         assert simple_meta["selected_tool_count"] < len(full_tools)
-        assert anthropic_client.estimate_request_chars(messages=[], tools=simple_tools) < full_chars
+        assert agent_tools.estimate_request_chars(messages=[], tools=simple_tools) < full_chars
 
-        brief_summary_tools, brief_summary_meta = anthropic_client.select_blender_tool_definitions(
+        brief_summary_tools, brief_summary_meta = agent_tools.select_blender_tool_definitions(
             "Give me a brief summary of the current scene.",
             bundle,
         )
         assert "create_animation_brief" not in _names(brief_summary_tools), brief_summary_meta
 
-        vehicle_tools, vehicle_meta = anthropic_client.select_blender_tool_definitions(
+        vehicle_tools, vehicle_meta = agent_tools.select_blender_tool_definitions(
             "Improve this car into a high-poly vehicle with wheels, windows, panel seams, headlights, and smoother bevels.",
             bundle,
         )
@@ -61,15 +60,15 @@ def main():
         }:
             assert expected in vehicle_names, (expected, vehicle_meta)
         assert "draft_script" not in vehicle_names, vehicle_meta
-        assert vehicle_meta["schema_chars"] <= anthropic_client.TOOL_SCHEMA_CHAR_BUDGET
+        assert vehicle_meta["schema_chars"] <= agent_tools.TOOL_SCHEMA_CHAR_BUDGET
 
-        script_tools, script_meta = anthropic_client.select_blender_tool_definitions(
+        script_tools, script_meta = agent_tools.select_blender_tool_definitions(
             "Draft a Python script to build a custom procedural rig helper.",
             bundle,
         )
         assert "draft_script" in _names(script_tools), script_meta
 
-        product_tools, product_meta = anthropic_client.select_blender_tool_definitions(
+        product_tools, product_meta = agent_tools.select_blender_tool_definitions(
             "Polish this product into a premium catalog studio shot with dimensions and a turntable.",
             bundle,
         )
@@ -82,7 +81,7 @@ def main():
         }:
             assert expected in product_names, (expected, product_meta)
 
-        character_tools, character_meta = anthropic_client.select_blender_tool_definitions(
+        character_tools, character_meta = agent_tools.select_blender_tool_definitions(
             "Turn this body mesh into a toon character blockout with a head, eyes, and guide lines.",
             bundle,
         )
@@ -94,7 +93,7 @@ def main():
         }:
             assert expected in character_names, (expected, character_meta)
 
-        animation_tools, animation_meta = anthropic_client.select_blender_tool_definitions(
+        animation_tools, animation_meta = agent_tools.select_blender_tool_definitions(
             "Create an animation brief and prompt contract before making the cube bounce three times.",
             bundle,
         )
@@ -108,7 +107,7 @@ def main():
         assert "create_progressive_bounce_animation" in animation_names, animation_meta
         assert "draft_script" not in animation_names, animation_meta
 
-        blocking_tools, blocking_meta = anthropic_client.select_blender_tool_definitions(
+        blocking_tools, blocking_meta = agent_tools.select_blender_tool_definitions(
             "Create a timing chart and block key poses for a jump animation.",
             bundle,
         )
@@ -119,7 +118,7 @@ def main():
         assert "set_pose_hold" in blocking_names, blocking_meta
         assert "create_motion_arc" in blocking_names, blocking_meta
 
-        principles_tools, principles_meta = anthropic_client.select_blender_tool_definitions(
+        principles_tools, principles_meta = agent_tools.select_blender_tool_definitions(
             "Analyze this jump animation for anticipation, spacing, motion arcs, pose clarity, and settle.",
             bundle,
         )
@@ -145,7 +144,7 @@ def main():
         assert "run_animation_repair_loop" in principles_names, principles_meta
         assert "create_progressive_bounce_animation" in principles_names, principles_meta
 
-        rig_repair_tools, rig_repair_meta = anthropic_client.select_blender_tool_definitions(
+        rig_repair_tools, rig_repair_meta = agent_tools.select_blender_tool_definitions(
             "Review the character rig pose clarity, inspect controls, and hold a keyed armature control pose.",
             bundle,
         )
@@ -154,34 +153,24 @@ def main():
         assert "get_rigging_details" in rig_repair_names, rig_repair_meta
         assert "set_rig_pose_hold" in rig_repair_names, rig_repair_meta
 
-        inspection_render_tools, inspection_render_meta = anthropic_client.select_blender_tool_definitions(
+        inspection_render_tools, inspection_render_meta = agent_tools.select_blender_tool_definitions(
             "Render close-up underside views to inspect landing gear and open bays before repair.",
             bundle,
         )
         inspection_render_names = _names(inspection_render_tools)
         assert "capture_object_inspection_renders" in inspection_render_names, inspection_render_meta
 
-        captured_tool_names = []
-
-        def fake_create_message_raw(*, messages, model, tools=None, max_tokens=1024):
-            captured_tool_names.extend(tool["name"] for tool in tools or [])
-            return {"content": [{"type": "text", "text": "done"}]}
-
-        anthropic_client.create_message_raw = fake_create_message_raw
-        text = agent_loop._run_tool_loop(
-            scene_name=bpy.context.scene.name,
-            prompt="What objects are in my current scene?",
-            context_bundle=bundle,
-            model="fake-model",
+        request_tools = agent_tools.blender_tool_definitions_for_request(
+            "What objects are in my current scene?",
+            bundle,
         )
-        assert text == "done", text
-        assert "apply_vehicle_refinement_template" not in captured_tool_names
-        assert "apply_product_refinement_template" not in captured_tool_names
-        assert "apply_character_refinement_template" not in captured_tool_names
-        assert len(captured_tool_names) < len(full_tools)
+        request_tool_names = _names(request_tools)
+        assert "apply_vehicle_refinement_template" not in request_tool_names
+        assert "apply_product_refinement_template" not in request_tool_names
+        assert "apply_character_refinement_template" not in request_tool_names
+        assert len(request_tool_names) < len(full_tools)
         print("smoke_tool_selection: ok")
     finally:
-        anthropic_client.create_message_raw = original_create
         claude_blender.unregister()
 
 
