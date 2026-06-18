@@ -21,6 +21,7 @@ Recommended GitHub repository name: `blender-agent-bridge`.
 - Attach a bounded viewport screenshot when the `Viewport` toggle is enabled, with project/session-scoped local storage and MCP image resources for external clients.
 - Capture sampled animation playblast frames as project/session-scoped MCP image resources so agents can review timing, spacing, staging, arcs, and contact poses.
 - Render camera thumbnails as project/session-scoped MCP image resources for client-readable still evidence.
+- Start long-running render jobs in background Blender processes so MCP clients can poll progress instead of timing out during high-resolution frame/video renders.
 - Inspect workspace/window/area layout and use interactive helpers for workspace switching or viewport focus.
 - Let agents sample animation state, analyze f-curve spacing, motion arcs, pose clarity, contact sliding, bbox penetration, camera framing, and compare results against an animation brief before repair.
 - Search cached official Blender Python API and Manual documentation before version-sensitive scripting.
@@ -37,7 +38,7 @@ Connected agents do not get blanket access to Blender. The in-Blender Claude ass
 
 Viewport images are sent only when the user enables the `Viewport` toggle. The localhost bridge does not call a model provider by itself; external MCP clients decide what to send to their own providers after reading resources or tool results.
 
-Saved `.blend` projects store generated viewport captures, playblast frame sequences, inspection renders, and render thumbnails under `.claude_blender/captures/<session_id>` by default, while unsaved or unwritable projects fall back to the user cache. Treat these captures as generated runtime artifacts unless you intentionally keep them as visual QA evidence.
+Saved `.blend` projects store generated viewport captures, playblast frame sequences, inspection renders, render thumbnails, and async render-job outputs under `.claude_blender/captures/<session_id>` by default, while unsaved or unwritable projects fall back to the user cache. Treat these captures as generated runtime artifacts unless you intentionally keep them as visual QA evidence.
 
 See [SECURITY.md](SECURITY.md) and [PRIVACY.md](PRIVACY.md) for the detailed model.
 

@@ -21,6 +21,7 @@ from . import (
     lab_parity,
     playblast_capture,
     preferences,
+    render_jobs,
     script_runner,
     tool_dispatcher,
     transcript,
@@ -201,6 +202,13 @@ def _resources():
             "description": "Metadata and local path for the latest rendered thumbnail",
             "mimeType": "application/json",
         },
+        {
+            "uri": render_jobs.LATEST_RENDER_JOB_METADATA_URI,
+            "name": "latest-render-job-metadata",
+            "title": "Latest Async Render Job Metadata",
+            "description": "Status, progress, output paths, and resource URIs for the latest async render job",
+            "mimeType": "application/json",
+        },
     ]
 
 
@@ -351,6 +359,51 @@ def _read_resource(uri):
         if thumbnail_kind == "image":
             return lab_parity.render_thumbnail_resource(
                 thumbnail_id,
+                context=bpy.context,
+                preferred_dir=_capture_cache_dir(),
+            )
+    job_id, job_kind, job_token = render_jobs.parse_render_job_resource_uri(uri)
+    if job_id:
+        if job_id == "latest" and job_kind == "metadata":
+            return {
+                "mimeType": "application/json",
+                "text": json.dumps(
+                    render_jobs.latest_render_job_metadata(
+                        context=bpy.context,
+                        preferred_dir=_capture_cache_dir(),
+                    ),
+                    indent=2,
+                    sort_keys=True,
+                ),
+            }
+        if job_kind == "metadata":
+            metadata = render_jobs.render_job_status(
+                job_id,
+                context=bpy.context,
+                preferred_dir=_capture_cache_dir(),
+            )
+            if not metadata.get("available"):
+                return None
+            return {
+                "mimeType": "application/json",
+                "text": json.dumps(metadata, indent=2, sort_keys=True),
+            }
+        if job_kind == "frame":
+            return render_jobs.render_job_frame_resource(
+                job_id,
+                job_token,
+                context=bpy.context,
+                preferred_dir=_capture_cache_dir(),
+            )
+        if job_kind == "log":
+            return render_jobs.render_job_log_resource(
+                job_id,
+                context=bpy.context,
+                preferred_dir=_capture_cache_dir(),
+            )
+        if job_kind == "video":
+            return render_jobs.render_job_video_resource(
+                job_id,
                 context=bpy.context,
                 preferred_dir=_capture_cache_dir(),
             )

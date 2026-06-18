@@ -159,6 +159,11 @@ Current resources:
 - `blender://render-thumbnails/latest/metadata`
 - `blender://render-thumbnails/{thumbnail_id}`
 - `blender://render-thumbnails/{thumbnail_id}/metadata`
+- `blender://render-jobs/latest/metadata`
+- `blender://render-jobs/{job_id}/metadata`
+- `blender://render-jobs/{job_id}/frames/{frame}`
+- `blender://render-jobs/{job_id}/log`
+- `blender://render-jobs/{job_id}/video`
 
 `blender://captures/latest` is scoped to the currently connected Blender bridge and its active project/session. Capture metadata includes the exact `capture_id` resource URIs for repeat reads. By default, saved `.blend` files store captures in a hidden project-local `.claude_blender/captures/<session_id>` folder so separate projects do not overwrite each other. Unsaved or unwritable projects fall back to `~/.claude_blender/captures/<project_id>/<session_id>`. A custom capture cache preference remains a custom base directory and still gets project/session subfolders.
 
@@ -167,6 +172,8 @@ Current resources:
 `capture_object_inspection_renders` renders bounded diagnostic close-ups of named objects from views such as `front_below`, `underside`, and `side`. It is meant for evidence gathering when the client needs to inspect object details before repair, for example open bays, landing gear, underside geometry, occluded parts, or small model defects. The tool writes PNG artifacts into the project/session capture cache, restores render settings and removes its temporary camera, then returns metadata and image resource URIs under `blender://inspection-renders/{render_id}/...`. `review_inspection_renders_against_brief` can then turn those PNG manifests into visual-detail findings, visual-subject interpretation, and recapture repair operations when required views or readable image evidence are missing.
 
 `render_scene_thumbnail` renders a small PNG from the active scene camera or a named camera, stores metadata in the same project/session capture cache, restores render settings, and exposes the still through `blender://render-thumbnails/{thumbnail_id}` plus metadata resources. Use it when an MCP client needs a client-readable render output or thumbnail without falling back to custom Python.
+
+`start_render_job` is the long-render path for high-resolution animation renders, frame sequences, MP4 quality checks, and anything likely to exceed the MCP request timeout. It saves a temporary copy of the current `.blend`, starts a background Blender process, and returns a `job_id` immediately. Poll `get_render_job_status` until the job reaches `completed`, `failed`, or `cancelled`. For PNG sequence jobs, status includes `frame_count`, `progress`, newest frame path, and newest frame resource URI. Logs are available at `blender://render-jobs/{job_id}/log`; exact frames are available at `blender://render-jobs/{job_id}/frames/{frame}`. Use `cancel_render_job` when a tracked job should stop. `draft_script` warns clients to use this path first when a generated script appears to be a long render or playblast job.
 
 Official Blender Lab parity helpers are exposed as direct tools:
 

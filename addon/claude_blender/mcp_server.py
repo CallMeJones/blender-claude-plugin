@@ -40,6 +40,9 @@ COMPACT_DIRECT_TOOL_NAMES = (
     "plan_animation_workflow",
     "run_animation_workflow",
     "run_animation_task",
+    "start_render_job",
+    "get_render_job_status",
+    "cancel_render_job",
 )
 CATALOG_TOOL_NAME = "blender_tool_catalog"
 WRAPPER_TOOL_NAMES = {
@@ -246,6 +249,34 @@ RESOURCE_TEMPLATES = [
         "title": "Blender Render Thumbnail Metadata Resource",
         "description": "Scene thumbnail metadata for a rendered still from the running Blender bridge.",
         "mimeType": "application/json",
+    },
+    {
+        "uriTemplate": "blender://render-jobs/{job_id}/metadata",
+        "name": "render-job-metadata-resource",
+        "title": "Blender Render Job Metadata Resource",
+        "description": "Async render job status, output paths, progress, and resource URIs.",
+        "mimeType": "application/json",
+    },
+    {
+        "uriTemplate": "blender://render-jobs/{job_id}/frames/{frame}",
+        "name": "render-job-frame-resource",
+        "title": "Blender Render Job Frame Resource",
+        "description": "Exact PNG frame output from an async render job.",
+        "mimeType": "image/png",
+    },
+    {
+        "uriTemplate": "blender://render-jobs/{job_id}/log",
+        "name": "render-job-log-resource",
+        "title": "Blender Render Job Log Resource",
+        "description": "Background Blender render process log for an async render job.",
+        "mimeType": "text/plain",
+    },
+    {
+        "uriTemplate": "blender://render-jobs/{job_id}/video",
+        "name": "render-job-video-resource",
+        "title": "Blender Render Job Video Resource",
+        "description": "MP4 output from an async video render job when small enough to return through MCP.",
+        "mimeType": "video/mp4",
     },
 ]
 
@@ -692,6 +723,8 @@ def _tool_category(tool):
         return "preview"
     if name in {"get_workspace_layout", "jump_to_workspace", "focus_object_in_viewport"}:
         return "navigation"
+    if name in {"start_render_job", "get_render_job_status", "cancel_render_job"}:
+        return "camera_render"
     if name.startswith("get_") or name.startswith("list_") or name in {
         "inspect_scene",
         "search_blender_docs",

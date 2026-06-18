@@ -156,6 +156,12 @@ class FakeBridgeHandler(BaseHTTPRequestHandler):
                             "title": "Latest Render Thumbnail Metadata",
                             "mimeType": "application/json",
                         },
+                        {
+                            "uri": "blender://render-jobs/latest/metadata",
+                            "name": "latest-render-job-metadata",
+                            "title": "Latest Async Render Job Metadata",
+                            "mimeType": "application/json",
+                        },
                     ],
                 }
             )
@@ -369,6 +375,63 @@ class FakeBridgeHandler(BaseHTTPRequestHandler):
                         ),
                     }
                 )
+            elif uri == "blender://render-jobs/latest/metadata":
+                self._send(
+                    {
+                        "ok": True,
+                        "uri": "blender://render-jobs/latest/metadata",
+                        "mimeType": "application/json",
+                        "text": json.dumps(
+                            {
+                                "ok": True,
+                                "available": True,
+                                "job_id": "test-render-job",
+                                "status": "completed",
+                                "metadata_uri": "blender://render-jobs/test-render-job/metadata",
+                                "latest_metadata_uri": "blender://render-jobs/latest/metadata",
+                                "log_resource_uri": "blender://render-jobs/test-render-job/log",
+                                "newest_frame_resource_uri": "blender://render-jobs/test-render-job/frames/1",
+                                "frame_count": 1,
+                                "total_frames": 1,
+                            }
+                        ),
+                    }
+                )
+            elif uri == "blender://render-jobs/test-render-job/metadata":
+                self._send(
+                    {
+                        "ok": True,
+                        "uri": "blender://render-jobs/test-render-job/metadata",
+                        "mimeType": "application/json",
+                        "text": json.dumps(
+                            {
+                                "ok": True,
+                                "available": True,
+                                "job_id": "test-render-job",
+                                "status": "completed",
+                                "metadata_uri": "blender://render-jobs/test-render-job/metadata",
+                            }
+                        ),
+                    }
+                )
+            elif uri == "blender://render-jobs/test-render-job/frames/1":
+                self._send(
+                    {
+                        "ok": True,
+                        "uri": "blender://render-jobs/test-render-job/frames/1",
+                        "mimeType": "image/png",
+                        "blob": "iVBORw0KGgo=",
+                    }
+                )
+            elif uri == "blender://render-jobs/test-render-job/log":
+                self._send(
+                    {
+                        "ok": True,
+                        "uri": "blender://render-jobs/test-render-job/log",
+                        "mimeType": "text/plain",
+                        "text": "render log",
+                    }
+                )
             else:
                 self._send(
                     {
@@ -420,6 +483,9 @@ def _assert_compact_tools_visible(proc):
         "plan_animation_workflow",
         "run_animation_workflow",
         "run_animation_task",
+        "start_render_job",
+        "get_render_job_status",
+        "cancel_render_job",
     }.issubset(names), listed
     assert "draft_script" not in names, listed
     assert "run_approved_script" not in names, listed
@@ -442,6 +508,9 @@ def _assert_compact_tools_visible(proc):
     task_tool = next(tool for tool in listed["result"]["tools"] if tool["name"] == "run_animation_task")
     assert set(task_tool["inputSchema"]["properties"]) == {"prompt"}, task_tool
     assert task_tool["inputSchema"]["required"] == ["prompt"], task_tool
+    render_tool = next(tool for tool in listed["result"]["tools"] if tool["name"] == "start_render_job")
+    assert "output_kind" in render_tool["inputSchema"]["properties"], render_tool
+    assert render_tool["annotations"]["riskLevel"] == "read", render_tool
     invoke_tool = next(tool for tool in listed["result"]["tools"] if tool["name"] == "invoke_blender_tool")
     assert invoke_tool["annotations"]["readOnlyHint"] is False, invoke_tool
     assert "run_approved_script" in bridge_protocol.list_tool_contracts()["tools"]
@@ -941,6 +1010,7 @@ def main():
         assert "blender://inspection-renders/latest/metadata" in uris
         assert "blender://render-thumbnails/latest" in uris
         assert "blender://render-thumbnails/latest/metadata" in uris
+        assert "blender://render-jobs/latest/metadata" in uris
 
         templates = _send(proc, {"jsonrpc": "2.0", "id": 40, "method": "resources/templates/list"})
         template_names = {item["name"] for item in templates["result"]["resourceTemplates"]}
@@ -953,6 +1023,10 @@ def main():
         assert "inspection-render-image-resource" in template_names, templates
         assert "render-thumbnail-resource" in template_names, templates
         assert "render-thumbnail-metadata-resource" in template_names, templates
+        assert "render-job-metadata-resource" in template_names, templates
+        assert "render-job-frame-resource" in template_names, templates
+        assert "render-job-log-resource" in template_names, templates
+        assert "render-job-video-resource" in template_names, templates
 
         prompts = _send(proc, {"jsonrpc": "2.0", "id": 41, "method": "prompts/list"})
         prompt_names = {item["name"] for item in prompts["result"]["prompts"]}
@@ -1143,6 +1217,47 @@ def main():
             },
         )
         assert json.loads(thumbnail_exact_metadata["result"]["contents"][0]["text"])["thumbnail_id"] == "test-thumbnail", thumbnail_exact_metadata
+        render_job_metadata_resource = _send(
+            proc,
+            {
+                "jsonrpc": "2.0",
+                "id": 57,
+                "method": "resources/read",
+                "params": {"uri": "blender://render-jobs/latest/metadata"},
+            },
+        )
+        render_job_metadata = json.loads(render_job_metadata_resource["result"]["contents"][0]["text"])
+        assert render_job_metadata["metadata_uri"] == "blender://render-jobs/test-render-job/metadata", render_job_metadata_resource
+        render_job_exact = _send(
+            proc,
+            {
+                "jsonrpc": "2.0",
+                "id": 58,
+                "method": "resources/read",
+                "params": {"uri": render_job_metadata["metadata_uri"]},
+            },
+        )
+        assert json.loads(render_job_exact["result"]["contents"][0]["text"])["job_id"] == "test-render-job", render_job_exact
+        render_job_frame = _send(
+            proc,
+            {
+                "jsonrpc": "2.0",
+                "id": 59,
+                "method": "resources/read",
+                "params": {"uri": render_job_metadata["newest_frame_resource_uri"]},
+            },
+        )
+        assert render_job_frame["result"]["contents"][0]["mimeType"] == "image/png", render_job_frame
+        render_job_log = _send(
+            proc,
+            {
+                "jsonrpc": "2.0",
+                "id": 60,
+                "method": "resources/read",
+                "params": {"uri": render_job_metadata["log_resource_uri"]},
+            },
+        )
+        assert render_job_log["result"]["contents"][0]["text"] == "render log", render_job_log
         print("smoke_mcp_server: ok")
     finally:
         proc.kill()

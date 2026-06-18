@@ -35,6 +35,7 @@ _MODULE_NAMES = (
     "playblast_capture",
     "inspection_render",
     "lab_parity",
+    "render_jobs",
     "bridge_protocol",
     "bridge_server",
     "docs_index",

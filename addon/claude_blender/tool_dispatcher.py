@@ -8,7 +8,7 @@ import time
 
 import bpy
 
-from . import animation_analysis, animation_brief, animation_workflow, advanced_helpers, context_bundle, docs_index, inspection_render, lab_parity, live_preview, playblast_capture, preferences, script_runner, viewport_capture, world_model
+from . import animation_analysis, animation_brief, animation_workflow, advanced_helpers, context_bundle, docs_index, inspection_render, lab_parity, live_preview, playblast_capture, preferences, render_jobs, script_runner, viewport_capture, world_model
 
 
 def _float_list(values, length, default):
@@ -73,6 +73,20 @@ _ANIMATION_HELPER_GAP_TERMS = {
     "fallback allowed",
     "requires custom blender python",
     "requires custom python",
+}
+_RENDER_JOB_INTENT_TERMS = {
+    "render animation",
+    "full render",
+    "quality render",
+    "playblast",
+    "1080p",
+    "4k",
+    "frames",
+    "frame sequence",
+    "samples",
+    "bpy.ops.render.render",
+    "animation=true",
+    "write_still=false",
 }
 
 
@@ -172,6 +186,13 @@ def _looks_like_animation_intent(text):
 def _has_explicit_animation_helper_gap(text):
     normalized = str(text or "").lower()
     return any(term in normalized for term in _ANIMATION_HELPER_GAP_TERMS)
+
+
+def _looks_like_render_job_intent(text):
+    normalized = str(text or "").lower()
+    if "render" not in normalized and "playblast" not in normalized and "bpy.ops.render.render" not in normalized:
+        return False
+    return any(term in normalized for term in _RENDER_JOB_INTENT_TERMS)
 
 
 def _resolve_objects(context, args, *, default_to_scene=False):
@@ -2411,6 +2432,49 @@ def render_scene_thumbnail(context, args):
     )
 
 
+def start_render_job(context, args):
+    prefs = preferences.get_preferences(context)
+    return render_jobs.start_render_job(
+        context,
+        frame_start=args.get("frame_start"),
+        frame_end=args.get("frame_end"),
+        resolution_x=_bounded_int(args.get("resolution_x"), 1920, minimum=16, maximum=8192),
+        resolution_y=_bounded_int(args.get("resolution_y"), 1080, minimum=16, maximum=8192),
+        resolution_percentage=_bounded_int(args.get("resolution_percentage"), 100, minimum=1, maximum=100),
+        samples=_bounded_int(args.get("samples"), 64, minimum=1, maximum=4096),
+        fps=args.get("fps"),
+        camera_name=str(args.get("camera_name") or ""),
+        output_kind=str(args.get("output_kind") or "frames"),
+        job_name=str(args.get("job_name") or ""),
+        note=str(args.get("note") or ""),
+        capture_dir=getattr(prefs, "capture_cache_dir", None),
+    )
+
+
+def get_render_job_status(context, args):
+    prefs = preferences.get_preferences(context)
+    job_id = str(args.get("job_id") or "")
+    job = render_jobs.render_job_status(
+        job_id,
+        context=context,
+        preferred_dir=getattr(prefs, "capture_cache_dir", None),
+    )
+    return {
+        "ok": bool(job.get("available", False)),
+        "message": "Render job status collected" if job.get("available") else job.get("message", "Render job was not found"),
+        "render_job": job,
+    }
+
+
+def cancel_render_job(context, args):
+    prefs = preferences.get_preferences(context)
+    return render_jobs.cancel_render_job(
+        str(args.get("job_id") or ""),
+        context=context,
+        preferred_dir=getattr(prefs, "capture_cache_dir", None),
+    )
+
+
 def search_blender_docs(context, args):
     prefs = preferences.get_preferences(context)
     return docs_index.search_blender_docs(
@@ -2427,6 +2491,17 @@ def draft_script(context, args):
         for key in ("intent", "expected_changes", "brief", "prompt")
     )
     guard_text = "\n".join([intent_text, script_text[:4000]])
+    if _looks_like_render_job_intent(guard_text) and not _has_explicit_animation_helper_gap(guard_text):
+        return {
+            "ok": False,
+            "blocked": True,
+            "message": (
+                "This looks like a long render or playblast job. Use start_render_job first, then poll "
+                "get_render_job_status, unless the render job helper cannot express the request."
+            ),
+            "recommended_tool": "start_render_job",
+            "requires_user_approval": False,
+        }
     if (
         _looks_like_animation_intent(guard_text)
         and not _animation_script_fallback_recently_allowed(context)
@@ -2743,6 +2818,9 @@ TOOL_FUNCTIONS = {
     "jump_to_workspace": jump_to_workspace,
     "focus_object_in_viewport": focus_object_in_viewport,
     "render_scene_thumbnail": render_scene_thumbnail,
+    "start_render_job": start_render_job,
+    "get_render_job_status": get_render_job_status,
+    "cancel_render_job": cancel_render_job,
     "search_blender_docs": search_blender_docs,
     "draft_script": draft_script,
     "run_approved_script": run_approved_script,

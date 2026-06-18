@@ -37,6 +37,9 @@ def main():
         assert "get_blend_file_diagnostics" in bundle["available_tools"]
         assert "get_workspace_layout" in bundle["available_tools"]
         assert "render_scene_thumbnail" in bundle["available_tools"]
+        assert "start_render_job" in bundle["available_tools"]
+        assert "get_render_job_status" in bundle["available_tools"]
+        assert "cancel_render_job" in bundle["available_tools"]
         assert "jump_to_workspace" in bundle["available_tools"]
         assert "focus_object_in_viewport" in bundle["available_tools"]
         assert "capture_viewport" in {tool["name"] for tool in anthropic_client.blender_tool_definitions()}
@@ -45,6 +48,9 @@ def main():
         assert "get_blend_file_diagnostics" in {tool["name"] for tool in anthropic_client.blender_tool_definitions()}
         assert "get_workspace_layout" in {tool["name"] for tool in anthropic_client.blender_tool_definitions()}
         assert "render_scene_thumbnail" in {tool["name"] for tool in anthropic_client.blender_tool_definitions()}
+        assert "start_render_job" in {tool["name"] for tool in anthropic_client.blender_tool_definitions()}
+        assert "get_render_job_status" in {tool["name"] for tool in anthropic_client.blender_tool_definitions()}
+        assert "cancel_render_job" in {tool["name"] for tool in anthropic_client.blender_tool_definitions()}
         assert "jump_to_workspace" in {tool["name"] for tool in anthropic_client.blender_tool_definitions()}
         assert "focus_object_in_viewport" in {tool["name"] for tool in anthropic_client.blender_tool_definitions()}
         assert "capture_viewport" in bridge_protocol.TOOL_CONTRACTS
@@ -53,6 +59,9 @@ def main():
         assert "get_blend_file_diagnostics" in bridge_protocol.TOOL_CONTRACTS
         assert "get_workspace_layout" in bridge_protocol.TOOL_CONTRACTS
         assert "render_scene_thumbnail" in bridge_protocol.TOOL_CONTRACTS
+        assert "start_render_job" in bridge_protocol.TOOL_CONTRACTS
+        assert "get_render_job_status" in bridge_protocol.TOOL_CONTRACTS
+        assert "cancel_render_job" in bridge_protocol.TOOL_CONTRACTS
         assert "jump_to_workspace" in bridge_protocol.TOOL_CONTRACTS
         assert "focus_object_in_viewport" in bridge_protocol.TOOL_CONTRACTS
 

@@ -304,7 +304,7 @@ Acceptance:
 - Live-helper tool calls route through the same preview/revert system.
 - The bridge is off by default, binds only to `127.0.0.1`, and can require a bearer token.
 
-Status: External bridge is implemented. Blender exposes a localhost JSON bridge, and `mcp_server.py` implements MCP lifecycle, compact catalog search/schema/invoke, tool wrappers, resources, prompts, pagination, JSON Schema validation, trust status, and diagnostics over stdio. Official Blender Lab parity is partially covered with blend-file diagnostics, workspace/layout inspection, workspace and viewport navigation helpers, and render-thumbnail PNG resources. The sidebar can start/stop the bridge and copy versioned client config. Real-client smoke is still required after install/reload or tool-surface changes.
+Status: External bridge is implemented. Blender exposes a localhost JSON bridge, and `mcp_server.py` implements MCP lifecycle, compact catalog search/schema/invoke, tool wrappers, resources, prompts, pagination, JSON Schema validation, trust status, and diagnostics over stdio. Official Blender Lab parity is partially covered with blend-file diagnostics, workspace/layout inspection, workspace and viewport navigation helpers, render-thumbnail PNG resources, and async render jobs that run long renders in a background Blender process with pollable metadata/frame/log resources. The sidebar can start/stop the bridge and copy versioned client config. Real-client smoke is still required after install/reload or tool-surface changes.
 
 ### Milestone 6: Packaging And QA
 

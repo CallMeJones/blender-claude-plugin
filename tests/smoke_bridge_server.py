@@ -87,6 +87,9 @@ def main():
         assert "get_blend_file_diagnostics" in names, names
         assert "get_workspace_layout" in names, names
         assert "render_scene_thumbnail" in names, names
+        assert "start_render_job" in names, names
+        assert "get_render_job_status" in names, names
+        assert "cancel_render_job" in names, names
         assert "jump_to_workspace" in names, names
         assert "focus_object_in_viewport" in names, names
 
@@ -110,6 +113,7 @@ def main():
         assert "blender://inspection-renders/latest/metadata" in uris, resources
         assert "blender://render-thumbnails/latest" in uris, resources
         assert "blender://render-thumbnails/latest/metadata" in uris, resources
+        assert "blender://render-jobs/latest/metadata" in uris, resources
         resource_url = base + "/resource?" + urllib.parse.urlencode({"uri": "blender://scene/status"})
         resource = _request_with_pump(lambda: _get(resource_url))
         assert resource["ok"], resource

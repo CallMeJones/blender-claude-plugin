@@ -323,6 +323,58 @@ TOOL_CONTRACTS = {
             "additionalProperties": False,
         },
     },
+    "start_render_job": {
+        "description": "Start a long-running background Blender render job and return immediately with a job id for status polling",
+        "mutates_scene": False,
+        "has_side_effects": True,
+        "permissions": ["scene:read", "files:write", "process:start"],
+        "supports_headless": True,
+        "timeout_seconds": 30,
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "frame_start": {"type": "integer"},
+                "frame_end": {"type": "integer"},
+                "resolution_x": {"type": "integer"},
+                "resolution_y": {"type": "integer"},
+                "resolution_percentage": {"type": "integer"},
+                "samples": {"type": "integer"},
+                "fps": {"type": "integer"},
+                "camera_name": {"type": "string"},
+                "output_kind": {"type": "string", "enum": ["frames", "video", "mp4"]},
+                "job_name": {"type": "string"},
+                "note": {"type": "string"},
+            },
+            "additionalProperties": False,
+        },
+    },
+    "get_render_job_status": {
+        "description": "Poll an async render job for progress, output paths, frame resources, logs, and completion state",
+        "mutates_scene": False,
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "job_id": {"type": "string"},
+            },
+            "required": ["job_id"],
+            "additionalProperties": False,
+        },
+    },
+    "cancel_render_job": {
+        "description": "Cancel a tracked async render job started by this Blender bridge session",
+        "mutates_scene": False,
+        "has_side_effects": True,
+        "permissions": ["process:terminate"],
+        "supports_headless": True,
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "job_id": {"type": "string"},
+            },
+            "required": ["job_id"],
+            "additionalProperties": False,
+        },
+    },
     "set_selected_location_delta": {
         "description": "Move selected Blender objects by a delta with rollback state",
         "mutates_scene": True,
