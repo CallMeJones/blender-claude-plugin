@@ -795,6 +795,15 @@ class CLAUDEBLENDER_OT_approve_external_script_trust(bpy.types.Operator):
         )
         message = result.get("message", "External script trust window finished")
         if result.get("ok"):
+            pending_auto_run = None
+            if getattr(state, "pending_script", False):
+                prefs = _prefs(context)
+                pending_auto_run = script_runner.run_externally_approved_script(
+                    context,
+                    "",
+                    checkpoint_enabled=bool(getattr(prefs, "checkpoints_enabled", True)),
+                    checkpoint_dir=getattr(prefs, "checkpoint_dir", None),
+                )
             if result.get("session"):
                 state.last_response = (
                     "External script trust approved for this Blender session.\n"
@@ -806,6 +815,22 @@ class CLAUDEBLENDER_OT_approve_external_script_trust(bpy.types.Operator):
                     "External clients can run staged scripts without a per-script token while this window is active.\n"
                     f"Expires in {result.get('ttl_seconds', script_runner.EXTERNAL_TRUST_TTL_SECONDS)} second(s)."
                 )
+            if pending_auto_run is not None:
+                if pending_auto_run.get("ok"):
+                    state.last_response += (
+                        "\n\nPending script ran automatically under the active trust grant.\n"
+                        f"Log: {pending_auto_run.get('log_datablock', script_runner.SCRIPT_LOG_NAME)}\n"
+                        f"Checkpoint: {state.last_checkpoint_path or state.last_checkpoint_status}"
+                    )
+                    self.report({"INFO"}, "Trust approved; pending script ran")
+                    return {"FINISHED"}
+                else:
+                    state.last_response += (
+                        "\n\nPending script did not auto-run.\n"
+                        f"{pending_auto_run.get('message', 'Unknown script error')}"
+                    )
+                    self.report({"WARNING"}, "Trust approved; pending script did not run")
+                    return {"FINISHED"}
             self.report({"INFO"}, "External script trust window approved")
             return {"FINISHED"}
         state.last_response = f"External script trust window was not approved.\n{message}"

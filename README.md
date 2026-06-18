@@ -24,7 +24,7 @@ Recommended GitHub repository name: `blender-agent-bridge`.
 - Let the in-Blender Claude assistant or external MCP agents call bounded live helper tools for common scene edits such as transforms, primitives, materials, cameras, lights, keyframes, constraints, geometry-node starters, shape keys, particles, text/curves, render settings, lighting presets, material palettes, product/vehicle/character kits, product turntables, and production scene organization.
 - Keep live helper edits inside preview transactions so the user can commit, revert, or use Blender undo.
 - Stage arbitrary Blender Python in the `Claude Pending Script` Text datablock and run it only after approval inside Blender.
-- Grant optional runtime-only external script trust from sidebar presets for iterative MCP/client sessions. During trust windows, `draft_script` auto-runs scripts that pass static checks; blocked scripts remain refused.
+- Grant optional runtime-only external script trust from sidebar presets for iterative MCP/client sessions. During trust windows, `draft_script` auto-runs scripts that pass static checks; granting trust also runs an already pending script after checks pass. Blocked scripts remain refused.
 - Store local chat history, transcript state, pending scripts, script logs, repair context, and optional scene-agent memory in Blender Text datablocks.
 - Write local audit events for bridge and MCP tool calls with redaction for code, tokens, keys, passwords, and credential-like fields.
 

@@ -51,6 +51,11 @@ def main():
     try:
         context = bpy.context
         state = context.scene.claude_blender
+        smoke_preferences = type(
+            "_SmokePreferences",
+            (),
+            {"checkpoint_dir": checkpoint_dir, "checkpoints_enabled": True},
+        )()
         _cleanup()
 
         copied = bpy.ops.claude_blender.copy_mcp_config()
@@ -273,6 +278,38 @@ print("created", obj.name)
         assert session_revoked["ok"], session_revoked
         assert not script_runner.external_script_trust_active(context, state=state)
 
+        pending_before_trust = script_runner.stage_script(
+            context,
+            intent="Run automatically when session trust is approved after staging",
+            expected_changes="A scene custom property is set without pressing Run or Approve External",
+            risk_level="medium",
+            target_objects=[],
+            code="scene['claude_session_trust_button_smoke'] = 'ok'\nprint(scene['claude_session_trust_button_smoke'])",
+        )
+        assert pending_before_trust["ok"], pending_before_trust
+        assert state.pending_script
+        original_get_preferences = preferences.get_preferences
+        try:
+            preferences.get_preferences = lambda _context: smoke_preferences
+            trust_button = bpy.ops.claude_blender.approve_external_script_trust(
+                ttl_seconds=900,
+                session_trust=True,
+            )
+        finally:
+            preferences.get_preferences = original_get_preferences
+        assert "FINISHED" in trust_button, trust_button
+        assert context.scene["claude_session_trust_button_smoke"] == "ok"
+        assert not state.pending_script
+        assert script_runner.external_script_trust_active(context, state=state)
+        assert "ran automatically" in state.last_response, state.last_response
+        trust_button_checkpoint = os.path.abspath(state.last_checkpoint_path)
+        assert os.path.commonpath([os.path.abspath(checkpoint_dir), trust_button_checkpoint]) == os.path.abspath(
+            checkpoint_dir
+        ), state.last_checkpoint_path
+        session_revoked = script_runner.revoke_external_script_trust_window(context)
+        assert session_revoked["ok"], session_revoked
+        assert not script_runner.external_script_trust_active(context, state=state)
+
         staged = script_runner.stage_script(
             context,
             intent="Create a harmless object during the timed trust window",
@@ -302,12 +339,6 @@ print("created", obj.name)
         assert not state.pending_script
         assert script_runner.external_script_trust_active(context, state=state)
         _cleanup()
-
-        smoke_preferences = type(
-            "_SmokePreferences",
-            (),
-            {"checkpoint_dir": checkpoint_dir, "checkpoints_enabled": True},
-        )()
 
         original_get_preferences = preferences.get_preferences
         try:
