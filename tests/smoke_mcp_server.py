@@ -786,6 +786,7 @@ def main():
         )
         animation_prompt_text = animation_prompt["result"]["messages"][0]["content"]["text"]
         assert "plan_animation_workflow" in animation_prompt_text, animation_prompt
+        assert "run_animation_workflow" in animation_prompt_text, animation_prompt
         assert "draft_script only" in animation_prompt_text, animation_prompt
 
         resource = _send(

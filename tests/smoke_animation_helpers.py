@@ -22,6 +22,7 @@ ANIMATION_TOOLS = {
     "create_animation_brief",
     "create_timing_chart",
     "plan_animation_workflow",
+    "run_animation_workflow",
     "block_key_poses",
     "add_breakdown_pose",
     "set_pose_hold",
@@ -203,6 +204,33 @@ def main():
         assert plan["script_fallback_policy"]["allowed"] is True, plan
         assert any("scale" in item for item in plan["generation_blockers"]), plan
         assert not scene.claude_blender.pending_preview
+
+        workflow_run = _execute(
+            context,
+            "run_animation_workflow",
+            {
+                "prompt": "Make the cube bounce twice over 72 frames, getting smaller each bounce. Check it against the brief and leave it as a preview.",
+                "subject_names": ["Cube"],
+                "frame_start": 1,
+                "frame_end": 72,
+                "mode": "full",
+                "capture_playblast": False,
+                "apply_repairs": False,
+            },
+        )
+        assert workflow_run["result_type"] == "live_preview_helper_workflow", workflow_run
+        assert workflow_run["status"] == "generated_needs_repair", workflow_run
+        assert workflow_run["pending_preview"] is True, workflow_run
+        assert any(item["tool"] == "animate_object_bounce" and item["ok"] for item in workflow_run["executed"]), workflow_run
+        assert any("scale" in item for item in workflow_run["generation_blockers"]), workflow_run
+        assert workflow_run["review"]["principles"]["ok"] is True, workflow_run
+        assert workflow_run["review"]["comparison"]["ok"] is True, workflow_run
+        assert workflow_run["review"]["repair_plan"]["repair_operations"], workflow_run
+        assert any(item.get("principle") == "secondary_action" for item in workflow_run["review"]["findings"]), workflow_run
+        reverted_workflow = _execute(context, "revert_preview", {})
+        assert not reverted_workflow.get("rollback_warnings"), reverted_workflow
+        assert not scene.claude_blender.pending_preview
+        _select_object(context, cube)
 
         ambiguous_workflow = _execute(
             context,

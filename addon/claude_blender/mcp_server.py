@@ -207,8 +207,10 @@ PROMPTS = {
         ],
         "template": (
             "Handle this Blender animation task through the Milestone 7 workflow: {goal}\n\n"
-            "Call plan_animation_workflow first. Follow its next_tool_calls in order for brief, "
-            "scene routing, timing, helper generation, validation, playblast review, and repair. "
+            "Call plan_animation_workflow first. For common helper-backed generation, call "
+            "run_animation_workflow to execute the plan, review the result, and leave changes as a preview. "
+            "For manual control, follow next_tool_calls in order for brief, scene routing, timing, "
+            "helper generation, validation, playblast review, and repair. "
             "Use draft_script only when the workflow's script_fallback_policy says helpers cannot express the edit."
         ),
     },

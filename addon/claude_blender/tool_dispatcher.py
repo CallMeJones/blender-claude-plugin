@@ -485,6 +485,245 @@ def plan_animation_workflow(context, args):
     )
 
 
+_WORKFLOW_GENERATION_TOOLS = {
+    "select_objects",
+    "set_scene_frame_range",
+    "set_animation_preview_range",
+    "animate_object_bounce",
+    "create_turntable_animation",
+    "create_reveal_animation",
+    "create_pulse_animation",
+}
+
+
+def _workflow_tool_parts(tool_call):
+    tool_call = tool_call if isinstance(tool_call, dict) else {}
+    tool = str(tool_call.get("name") or "")
+    tool_args = tool_call.get("input") if isinstance(tool_call.get("input"), dict) else {}
+    return tool, dict(tool_args or {})
+
+
+def _execute_workflow_tool(context, tool, tool_args):
+    fn = TOOL_FUNCTIONS.get(tool)
+    if fn is None:
+        return {"ok": False, "message": f"Unknown Blender tool: {tool}"}
+    try:
+        result = fn(context, tool_args)
+    except Exception as exc:
+        return {"ok": False, "message": f"{type(exc).__name__}: {exc}"}
+    if isinstance(result, str):
+        try:
+            result = json.loads(result)
+        except json.JSONDecodeError:
+            result = {"ok": False, "message": result}
+    if not isinstance(result, dict):
+        result = {"ok": False, "message": "Tool returned an unexpected result"}
+    return _attach_preview_change_report(result)
+
+
+def _workflow_findings(*results):
+    findings = []
+    for result in results:
+        if isinstance(result, dict):
+            findings.extend(item for item in (result.get("findings") or []) if isinstance(item, dict))
+    return findings
+
+
+def _workflow_review(context, *, prompt, brief, timing_chart, frame_start, frame_end, capture_playblast, playblast=None):
+    subject_names = _name_list((brief or {}).get("subject_names"))
+    if not subject_names and isinstance(brief, dict):
+        subject_names = [
+            str(item.get("name"))
+            for item in (brief.get("subjects") or [])
+            if isinstance(item, dict) and item.get("name")
+        ]
+    principles = animation_analysis.analyze_animation_principles(
+        context,
+        object_names=subject_names,
+        prompt=prompt,
+        brief=brief,
+        timing_chart=timing_chart,
+        frame_start=frame_start,
+        frame_end=frame_end,
+    )
+    comparison = animation_analysis.compare_animation_to_brief(
+        context,
+        brief=brief,
+        prompt=prompt,
+        subject_names=subject_names,
+        frame_start=frame_start,
+        frame_end=frame_end,
+    )
+    playblast_result = {}
+    review_playblast = playblast if isinstance(playblast, dict) else None
+    if capture_playblast:
+        playblast_result = capture_animation_playblast(
+            context,
+            {
+                "frame_start": frame_start,
+                "frame_end": frame_end,
+                "max_frames": 12,
+                "brief": (brief or {}).get("user_visible_interpretation") or prompt,
+            },
+        )
+        if isinstance(playblast_result.get("playblast"), dict):
+            review_playblast = playblast_result["playblast"]
+    if review_playblast is None:
+        review_playblast = {
+            "available": False,
+            "playblast_id": "workflow-no-playblast",
+            "frames": [],
+            "sampled_frames": [],
+        }
+    visual_review = animation_analysis.review_playblast_against_brief(
+        context,
+        playblast=review_playblast,
+        brief=brief,
+        prompt=prompt,
+    )
+    findings = _workflow_findings(principles, comparison, visual_review)
+    repair_plan = animation_analysis.repair_animation_from_findings(context, findings=findings, brief=brief)
+    return {
+        "principles": principles,
+        "comparison": comparison,
+        "playblast_capture": playblast_result,
+        "visual_review": visual_review,
+        "findings": findings,
+        "finding_count": len(findings),
+        "repair_plan": repair_plan,
+    }
+
+
+def run_animation_workflow(context, args):
+    prompt = str(args.get("prompt") or "")
+    mode = str(args.get("mode") or "full").strip().lower()
+    max_generation_steps = _bounded_int(args.get("max_generation_steps"), 8, minimum=1, maximum=20)
+    apply_generation = bool(args.get("apply_generation", True))
+    run_review = bool(args.get("run_review", True))
+    capture_playblast = bool(args.get("capture_playblast", False))
+    apply_repairs = bool(args.get("apply_repairs", False))
+
+    plan_result = plan_animation_workflow(
+        context,
+        {
+            "prompt": prompt,
+            "subject_names": _name_list(args.get("subject_names")),
+            "frame_start": args.get("frame_start"),
+            "frame_end": args.get("frame_end"),
+            "mode": mode,
+            "selected_only": bool(args.get("selected_only", False)),
+            "max_objects": _bounded_int(args.get("max_objects"), 20, minimum=1, maximum=80),
+            "brief": args.get("brief") if isinstance(args.get("brief"), dict) else None,
+            "timing_chart": args.get("timing_chart") if isinstance(args.get("timing_chart"), dict) else None,
+            "playblast": args.get("playblast") if isinstance(args.get("playblast"), dict) else None,
+            "findings": args.get("findings") if isinstance(args.get("findings"), list) else None,
+        },
+    )
+    if not plan_result.get("ok"):
+        return plan_result
+    workflow = plan_result.get("workflow") if isinstance(plan_result.get("workflow"), dict) else {}
+    if workflow.get("status") == "needs_clarification":
+        return {
+            "ok": True,
+            "message": "Animation workflow needs clarification before mutating the scene",
+            "status": "needs_clarification",
+            "workflow": workflow,
+            "executed": [],
+            "skipped": [],
+            "review": {},
+            "repair_loop": {},
+            "pending_preview": bool(getattr(context.scene.claude_blender, "pending_preview", False)) if hasattr(context.scene, "claude_blender") else False,
+            "result_type": "live_preview_helper_workflow",
+        }
+
+    executed = []
+    skipped = []
+    generation_count = 0
+    if apply_generation and mode in {"generate", "full", "repair", "review"}:
+        for index, tool_call in enumerate(workflow.get("next_tool_calls") or []):
+            tool, tool_args = _workflow_tool_parts(tool_call)
+            if tool not in _WORKFLOW_GENERATION_TOOLS:
+                if tool:
+                    skipped.append({"index": index, "tool": tool, "reason": "tool is handled by review/repair or outside workflow generation allowlist"})
+                continue
+            if generation_count >= max_generation_steps:
+                skipped.append({"index": index, "tool": tool, "reason": "max_generation_steps reached"})
+                continue
+            result = _execute_workflow_tool(context, tool, tool_args)
+            executed.append(
+                {
+                    "index": index,
+                    "tool": tool,
+                    "arguments": tool_args,
+                    "ok": bool(result.get("ok")),
+                    "message": str(result.get("message") or ""),
+                    "result": result,
+                }
+            )
+            generation_count += 1
+    elif not apply_generation:
+        for index, tool_call in enumerate(workflow.get("next_tool_calls") or []):
+            tool, _tool_args = _workflow_tool_parts(tool_call)
+            if tool in _WORKFLOW_GENERATION_TOOLS:
+                skipped.append({"index": index, "tool": tool, "reason": "apply_generation is false"})
+
+    brief = workflow.get("brief") if isinstance(workflow.get("brief"), dict) else {}
+    timing_chart = workflow.get("timing_chart") if isinstance(workflow.get("timing_chart"), dict) else {}
+    frame_start, frame_end = animation_workflow._frame_range(context, brief)
+    review = {}
+    repair_loop = {}
+    if run_review:
+        review = _workflow_review(
+            context,
+            prompt=prompt,
+            brief=brief,
+            timing_chart=timing_chart,
+            frame_start=frame_start,
+            frame_end=frame_end,
+            capture_playblast=capture_playblast,
+            playblast=args.get("playblast") if isinstance(args.get("playblast"), dict) else None,
+        )
+        repair_operations = (review.get("repair_plan") or {}).get("repair_operations") or []
+        if apply_repairs and repair_operations:
+            repair_loop = run_animation_repair_loop(
+                context,
+                {
+                    "brief": brief,
+                    "prompt": prompt,
+                    "findings": review.get("findings") or [],
+                    "repair_operations": repair_operations,
+                    "max_iterations": _bounded_int(args.get("max_repair_iterations"), 1, minimum=1, maximum=4),
+                    "max_operations": _bounded_int(args.get("max_repair_operations"), 3, minimum=1, maximum=12),
+                    "apply_mutating_repairs": True,
+                    "recapture_after_mutation": bool(args.get("recapture_after_repair", False)),
+                },
+            )
+    failed = [item for item in executed if not item.get("ok")]
+    if failed:
+        status = "generation_failed"
+    elif repair_loop:
+        status = repair_loop.get("status") or "repairs_applied_needs_review"
+    elif run_review and (review.get("finding_count") or 0) > 0:
+        status = "generated_needs_repair"
+    elif executed:
+        status = "generated_reviewed"
+    else:
+        status = "planned"
+    return {
+        "ok": True,
+        "message": f"Animation workflow finished with status: {status}",
+        "status": status,
+        "workflow": workflow,
+        "executed": executed,
+        "skipped": skipped,
+        "review": review,
+        "repair_loop": repair_loop,
+        "generation_blockers": workflow.get("generation_blockers") or [],
+        "pending_preview": bool(getattr(context.scene.claude_blender, "pending_preview", False)) if hasattr(context.scene, "claude_blender") else False,
+        "result_type": "live_preview_helper_workflow",
+    }
+
+
 def analyze_motion_arcs(context, args):
     return animation_analysis.analyze_motion_arcs(
         context,
@@ -2096,6 +2335,7 @@ TOOL_FUNCTIONS = {
     "create_animation_brief": create_animation_brief,
     "create_timing_chart": create_timing_chart,
     "plan_animation_workflow": plan_animation_workflow,
+    "run_animation_workflow": run_animation_workflow,
     "analyze_motion_arcs": analyze_motion_arcs,
     "analyze_fcurve_spacing": analyze_fcurve_spacing,
     "analyze_pose_clarity": analyze_pose_clarity,

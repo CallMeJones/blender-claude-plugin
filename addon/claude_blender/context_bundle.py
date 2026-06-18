@@ -216,6 +216,7 @@ def build_context_bundle(context, *, include_visual=False, capture_dir=None, max
             "create_animation_brief",
             "create_timing_chart",
             "plan_animation_workflow",
+            "run_animation_workflow",
             "analyze_motion_arcs",
             "analyze_fcurve_spacing",
             "analyze_pose_clarity",

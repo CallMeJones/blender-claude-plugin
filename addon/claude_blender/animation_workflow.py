@@ -96,7 +96,7 @@ def _generation_tool_calls(brief, chart, *, frame_start, frame_end):
         calls.append(
             _tool_call(
                 "select_objects",
-                {"object_names": subject_names, "active_object": primary, "replace": True},
+                {"object_names": subject_names, "active_object_name": primary, "replace": True},
                 reason="Select the resolved animation subject before applying selected-object helpers.",
                 mutates_scene=True,
             )
@@ -480,4 +480,3 @@ def plan_animation_workflow(
         "brief_result": brief_result or {"ok": True, "message": "Using caller-provided brief", "brief": brief_data},
         "timing_result": timing_result,
     }
-
