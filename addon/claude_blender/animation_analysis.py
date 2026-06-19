@@ -76,6 +76,16 @@ RIG_REGION_TEXT_TERMS = {
     "head": {"head", "neck", "look", "gaze"},
 }
 RIG_SUPPORT_TEXT_TERMS = {"contact", "slide", "sliding", "support", "weight", "ground", "balance", "center_of_mass"}
+RIG_SWITCH_PROPERTY_TERMS = {
+    "ik",
+    "fk",
+    "switch",
+    "blend",
+    "space",
+    "parent",
+    "follow",
+    "pin",
+}
 
 
 def _name_list(value):
@@ -2485,6 +2495,184 @@ def _rig_control_bone_names(armature, *, maximum=6):
     return _rig_control_bone_selection(armature, maximum=maximum).get("bone_names", [])
 
 
+def _custom_property_keys(data_block):
+    try:
+        return [str(key) for key in data_block.keys() if str(key) != "_RNA_UI"]
+    except Exception:
+        return []
+
+
+def _custom_property_value_preview(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float, str)):
+        return value
+    if hasattr(value, "__iter__") and not isinstance(value, (bytes, bytearray, str, dict)):
+        try:
+            items = list(value)
+        except Exception:
+            return str(type(value).__name__)
+        if len(items) <= 6 and all(isinstance(item, (int, float, bool, str)) for item in items):
+            return items
+    return str(value)
+
+
+def _rig_identifier_tokens(name):
+    normalized = str(name or "").lower().replace("-", "_").replace(" ", "_")
+    tokens = set(re.findall(r"[a-z0-9_]+", normalized))
+    for token in list(tokens):
+        tokens.update(part for part in token.split("_") if part)
+    return normalized, tokens
+
+
+def _switch_property_roles(name):
+    normalized, tokens = _rig_identifier_tokens(name)
+    roles = []
+    if "ik" in tokens or "ik" in normalized:
+        roles.append("ik")
+    if "fk" in tokens or "fk" in normalized:
+        roles.append("fk")
+    if "switch" in tokens or "blend" in tokens:
+        roles.append("switch")
+    if "space" in tokens or "parent" in tokens or "follow" in tokens:
+        roles.append("space")
+    if "pin" in tokens:
+        roles.append("pin")
+    return roles
+
+
+def _is_rig_switch_property(name):
+    normalized, tokens = _rig_identifier_tokens(name)
+    if "ik" in normalized and "fk" in normalized:
+        return True
+    if {"switch", "blend"} & tokens and ({"ik", "fk"} & tokens or "ik" in normalized or "fk" in normalized):
+        return True
+    if {"space", "parent", "follow", "pin"} & tokens:
+        if {"switch", "blend", "control", "ctrl", "target", "ik", "fk"} & tokens:
+            return True
+        return bool(_rig_name_regions(name))
+    return False
+
+
+def _rig_switch_property_candidates(armature, bone_names=None, *, text="", maximum=10):
+    selected = {str(name) for name in (bone_names or [])}
+    owners = [("object", armature.name, armature)]
+    if getattr(armature, "data", None):
+        owners.append(("armature_data", armature.data.name, armature.data))
+    pose_bones = list(getattr(getattr(armature, "pose", None), "bones", []) or [])
+    pose_bones.sort(key=lambda bone: (0 if bone.name in selected else 1, bone.name))
+    for pose_bone in pose_bones:
+        owners.append(("pose_bone", pose_bone.name, pose_bone))
+    wanted_roles = _rig_text_roles(text)
+    wanted_regions = _rig_text_regions(text)
+    result = []
+    seen = set()
+    for owner_type, owner_name, owner in owners:
+        for key in _custom_property_keys(owner):
+            if not _is_rig_switch_property(key):
+                continue
+            roles = _switch_property_roles(key)
+            regions = sorted(_rig_name_regions(owner_name) | _rig_name_regions(key))
+            score = 10
+            if owner_name in selected:
+                score += 14
+            if "ik" in roles and "fk" in roles:
+                score += 18
+            if "switch" in roles:
+                score += 8
+            if "space" in roles:
+                score += 6
+            score += 10 * len(set(roles) & wanted_roles)
+            score += 8 * len(set(regions) & wanted_regions)
+            value = owner.get(key)
+            item_key = (owner_type, owner_name, key)
+            if item_key in seen:
+                continue
+            seen.add(item_key)
+            result.append(
+                {
+                    "owner_type": owner_type,
+                    "owner_name": owner_name,
+                    "property_name": key,
+                    "value": _custom_property_value_preview(value),
+                    "value_type": type(value).__name__,
+                    "roles": roles,
+                    "regions": regions,
+                    "score": int(score),
+                    "reasons": ["custom_property", "switch_or_space_name"],
+                }
+            )
+    result.sort(key=lambda item: (-int(item.get("score", 0)), item.get("owner_type", ""), item.get("owner_name", ""), item.get("property_name", "")))
+    return result[: max(1, int(maximum or 1))]
+
+
+def _pose_library_keyframe_range(action):
+    frames = sorted(
+        {
+            int(round(point.co.x))
+            for fcurve in _iter_fcurves(action)
+            for point in getattr(fcurve, "keyframe_points", [])
+        }
+    )
+    return [frames[0], frames[-1]] if frames else []
+
+
+def _rig_pose_library_candidates(armature, *, text="", maximum=6):
+    normalized = str(text or "").lower()
+    text_tokens = set(re.findall(r"[a-z0-9_]+", normalized))
+    result = []
+    for action in bpy.data.actions:
+        fcurves = _iter_fcurves(action)
+        has_pose_curves = any(str(getattr(fcurve, "data_path", "")).startswith("pose.bones") for fcurve in fcurves)
+        pose_markers = list(getattr(action, "pose_markers", []) or [])
+        if not has_pose_curves and not pose_markers:
+            continue
+        action_name = str(getattr(action, "name", "") or "")
+        action_lower = action_name.lower()
+        reasons = []
+        score = 8 if has_pose_curves else 0
+        if pose_markers:
+            reasons.append("pose_markers")
+            score += min(12, len(pose_markers) * 3)
+        if getattr(action, "asset_data", None):
+            reasons.append("asset_action")
+            score += 5
+        if "pose" in action_lower or armature.name.lower() in action_lower:
+            reasons.append("name_hint")
+            score += 8
+        marker_matches = []
+        for marker in pose_markers:
+            marker_name = str(getattr(marker, "name", "") or "")
+            marker_tokens = set(re.findall(r"[a-z0-9_]+", marker_name.lower()))
+            if text_tokens & marker_tokens or any(term in marker_name.lower() for term in ("contact", "support", "hand", "foot", "settle")):
+                marker_matches.append(marker_name)
+        if marker_matches:
+            reasons.append("marker_text_match")
+            score += min(18, len(marker_matches) * 9)
+        if text_tokens and text_tokens & set(re.findall(r"[a-z0-9_]+", action_lower)):
+            reasons.append("action_text_match")
+            score += 10
+        if not reasons:
+            reasons.append("pose_bone_fcurves")
+        result.append(
+            {
+                "name": action_name,
+                "score": int(score),
+                "fcurve_count": len(fcurves),
+                "pose_marker_count": len(pose_markers),
+                "pose_markers": [
+                    {"name": marker.name, "frame": int(marker.frame)}
+                    for marker in pose_markers[:12]
+                ],
+                "matched_pose_markers": marker_matches[:8],
+                "keyframe_range": _pose_library_keyframe_range(action),
+                "reasons": reasons,
+            }
+        )
+    result.sort(key=lambda item: (-int(item.get("score", 0)), item.get("name", "")))
+    return result[: max(1, int(maximum or 1))]
+
+
 def _rig_repair_target(context, object_names, *, text=""):
     seen = set()
     armatures = []
@@ -2510,11 +2698,25 @@ def _rig_repair_target(context, object_names, *, text=""):
         selection = _rig_control_bone_selection(armature, text=text)
         bone_names = selection.get("bone_names", [])
         if bone_names:
+            switch_candidates = _rig_switch_property_candidates(armature, bone_names, text=text)
+            pose_library_candidates = _rig_pose_library_candidates(armature, text=text)
+            planning_notes = []
+            if switch_candidates:
+                planning_notes.append(
+                    "Detected IK/FK or space-switch custom properties; inspect values before applying production-rig pose repair."
+                )
+            if pose_library_candidates:
+                planning_notes.append(
+                    "Detected pose-library/action candidates; consider applying a matching pose asset before direct control holds."
+                )
             return {
                 "armature_name": armature.name,
                 "bone_names": bone_names,
                 "source_object_names": list(object_names or []),
                 "selection": selection,
+                "switch_property_candidates": switch_candidates,
+                "pose_library_candidates": pose_library_candidates,
+                "planning_notes": planning_notes,
             }
     return {}
 
@@ -2577,6 +2779,11 @@ def repair_animation_from_findings(context, *, findings=None, brief=None):
                     "selection_strategy": rig_target.get("selection", {}).get("selection_strategy", ""),
                     "candidate_count": rig_target.get("selection", {}).get("candidate_count", 0),
                     "selected_controls": rig_target.get("selection", {}).get("selected_controls", []),
+                    "switch_property_candidates": rig_target.get("switch_property_candidates", []),
+                    "pose_library_candidates": rig_target.get("pose_library_candidates", []),
+                    "planning_notes": rig_target.get("planning_notes", []),
+                    "ik_fk_switch_review_required": bool(rig_target.get("switch_property_candidates")),
+                    "pose_library_review_required": bool(rig_target.get("pose_library_candidates")),
                 }
             }
             operations.append(

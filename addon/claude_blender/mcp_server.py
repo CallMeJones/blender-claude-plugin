@@ -148,6 +148,17 @@ STATUS_OUTPUT_SCHEMA = {
         "addon_name": {"type": "string"},
         "addon_version": {"type": "string"},
         "addon_path": {"type": "string"},
+        "addon_source_hash": {"type": "string"},
+        "expected_addon_source_hash": {"type": "string"},
+        "addon_source_hash_match": {"type": ["boolean", "null"]},
+        "addon_source_hash_status": {"type": "string"},
+        "addon_source_hash_message": {"type": "string"},
+        "mcp_server_source_hash": {"type": "string"},
+        "addon_mcp_source_hash_match": {"type": ["boolean", "null"]},
+        "mcp_config_source_hash": {"type": "string"},
+        "mcp_config_source_hash_match": {"type": ["boolean", "null"]},
+        "source_hash_status": {"type": "string"},
+        "source_hash_message": {"type": "string"},
         "mcp_server_version": {"type": "string"},
         "mcp_server_path": {"type": "string"},
         "mcp_config_version": {"type": "string"},
@@ -1264,12 +1275,45 @@ class BlenderMCPServer:
         text = json.dumps(structured, indent=2, sort_keys=True, default=str)
         return _tool_result(text, structured, is_error=not ok)
 
+    def _augment_bridge_status(self, status):
+        status = dict(status or {})
+        mcp_source_hash = build_info.source_tree_hash()
+        addon_source_hash = str(status.get("addon_source_hash") or "").strip()
+        config_source_hash = build_info.expected_source_hash_from_env()
+        status["mcp_server_source_hash"] = mcp_source_hash
+        status["addon_mcp_source_hash_match"] = (
+            None if not addon_source_hash else addon_source_hash == mcp_source_hash
+        )
+        status["mcp_config_source_hash"] = config_source_hash
+        status["mcp_config_source_hash_match"] = (
+            None if not config_source_hash else config_source_hash == mcp_source_hash
+        )
+        if addon_source_hash and addon_source_hash != mcp_source_hash:
+            status["source_hash_status"] = "mismatch"
+            status["source_hash_message"] = (
+                "Running Blender add-on source hash differs from this MCP server source hash; "
+                "install or reload the latest add-on zip, copy fresh MCP config, and restart the MCP client."
+            )
+        elif config_source_hash and config_source_hash != mcp_source_hash:
+            status["source_hash_status"] = "mcp_config_mismatch"
+            status["source_hash_message"] = (
+                "MCP config source hash differs from this MCP server source hash; "
+                "copy fresh MCP config and restart the MCP client."
+            )
+        elif addon_source_hash:
+            status["source_hash_status"] = "match"
+            status["source_hash_message"] = "Blender add-on and MCP server source hashes match."
+        else:
+            status["source_hash_status"] = str(status.get("addon_source_hash_status") or "unknown")
+            status["source_hash_message"] = str(status.get("addon_source_hash_message") or "")
+        return status
+
     def _bridge_status(self):
         try:
-            return self.bridge.get("/health")
+            return self._augment_bridge_status(self.bridge.get("/health"))
         except Exception as exc:
             diagnostics = build_info.diagnostics_dict(bridge_url=self.bridge.base_url)
-            return {"ok": False, "message": str(exc), **diagnostics}
+            return self._augment_bridge_status({"ok": False, "message": str(exc), **diagnostics})
 
     def resources_list(self, params=None):
         resources = [

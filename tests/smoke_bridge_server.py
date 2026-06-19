@@ -19,7 +19,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(ROOT, "addon"))
 
 import claude_blender  # noqa: E402
-from claude_blender import bridge_server, inspection_render, lab_parity, playblast_capture, viewport_capture  # noqa: E402
+from claude_blender import build_info, bridge_server, inspection_render, lab_parity, playblast_capture, viewport_capture  # noqa: E402
 
 
 def _request_with_pump(fn, timeout=10):
@@ -98,6 +98,8 @@ def main():
         health = _request_with_pump(lambda: _get(base + "/health"))
         assert health["ok"], health
         assert health["scene"] == bpy.context.scene.name
+        assert health["addon_source_hash"] == build_info.source_tree_hash(), health
+        assert "Source " in health["build_diagnostics"], health
 
         objects = _request_with_pump(
             lambda: _post(base + "/tool", {"name": "list_scene_objects", "arguments": {"max_objects": 5}})
@@ -119,7 +121,9 @@ def main():
         resource_url = base + "/resource?" + urllib.parse.urlencode({"uri": "blender://scene/status"})
         resource = _request_with_pump(lambda: _get(resource_url))
         assert resource["ok"], resource
-        assert json.loads(resource["text"])["scene"] == bpy.context.scene.name
+        status_resource = json.loads(resource["text"])
+        assert status_resource["scene"] == bpy.context.scene.name
+        assert status_resource["addon_source_hash"] == build_info.source_tree_hash(), status_resource
 
         capture_dir = tempfile.mkdtemp(prefix="claude-blender-captures-")
         capture_path = os.path.join(capture_dir, "viewport-test.png")

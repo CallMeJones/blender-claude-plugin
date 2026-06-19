@@ -84,6 +84,8 @@ def main():
         with open(result["sha256_path"], "r", encoding="utf-8") as handle:
             digest_line = handle.read().strip()
         assert result["sha256"] in digest_line, digest_line
+        config_env = build_info.mcp_config_env()
+        assert config_env["CLAUDE_BLENDER_ADDON_SOURCE_HASH"] == build_info.source_tree_hash(), config_env
 
         blender = _find_blender()
         if blender:

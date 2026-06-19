@@ -36,12 +36,18 @@ class FakeBridgeHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path == "/health":
+            diagnostics = build_info.diagnostics_dict()
             self._send(
                 {
                     "ok": True,
                     "scene": "Fake Scene",
                     "bridge_version": bridge_protocol.BRIDGE_VERSION,
                     "addon_version": build_info.ADDON_VERSION,
+                    "addon_source_hash": diagnostics["addon_source_hash"],
+                    "expected_addon_source_hash": diagnostics["expected_addon_source_hash"],
+                    "addon_source_hash_match": diagnostics["addon_source_hash_match"],
+                    "addon_source_hash_status": diagnostics["addon_source_hash_status"],
+                    "addon_source_hash_message": diagnostics["addon_source_hash_message"],
                     "mcp_server_version": build_info.MCP_SERVER_VERSION,
                     "mcp_config_version": build_info.MCP_CONFIG_VERSION,
                     "build_diagnostics": build_info.diagnostics_summary(),
@@ -500,6 +506,10 @@ def _assert_compact_tools_visible(proc):
     assert "mcp_server_version" in status_properties, status_tool
     assert "mcp_config_version" in status_properties, status_tool
     assert "build_diagnostics" in status_properties, status_tool
+    assert "addon_source_hash" in status_properties, status_tool
+    assert "mcp_server_source_hash" in status_properties, status_tool
+    assert "addon_mcp_source_hash_match" in status_properties, status_tool
+    assert "source_hash_status" in status_properties, status_tool
     scene_tool = next(tool for tool in listed["result"]["tools"] if tool["name"] == "list_scene_objects")
     assert scene_tool["outputSchema"]["type"] == "object", scene_tool
     catalog_tool = next(tool for tool in listed["result"]["tools"] if tool["name"] == "blender_tool_catalog")
@@ -542,6 +552,16 @@ def _assert_full_tools_visible(proc):
     assert run_tool["annotations"]["hasSideEffects"] is True, run_tool
     assert run_tool["annotations"]["readOnlyHint"] is False, run_tool
     return listed
+
+
+def _assert_legacy_status_hashes_are_unknown():
+    class LegacyBridge:
+        base_url = "http://127.0.0.1:8765"
+
+    status = mcp_server.BlenderMCPServer(LegacyBridge())._augment_bridge_status({"ok": True})
+    assert status["mcp_server_source_hash"] == build_info.source_tree_hash(), status
+    assert status["addon_mcp_source_hash_match"] is None, status
+    assert status["source_hash_status"] == "unknown", status
 
 
 def _start_mcp(bridge_url, audit_path, *, timeout="30", extra_env=None):
@@ -593,6 +613,7 @@ def _assert_animation_search_routes_first(response, *, query):
 
 
 def main():
+    _assert_legacy_status_hashes_are_unknown()
     assert not mcp_server._contains_any_phrase(
         "Create an architectural arch from cubes",
         mcp_server.ANIMATION_ROUTE_TERMS,
@@ -628,6 +649,9 @@ def main():
         assert offline_status_content["bridge_url"] == "http://127.0.0.1:1", offline_status
         assert offline_status_content["addon_version"] == build_info.ADDON_VERSION, offline_status
         assert offline_status_content["mcp_config_version"] == build_info.MCP_CONFIG_VERSION, offline_status
+        assert offline_status_content["addon_source_hash"] == build_info.source_tree_hash(), offline_status
+        assert offline_status_content["mcp_server_source_hash"] == build_info.source_tree_hash(), offline_status
+        assert offline_status_content["addon_mcp_source_hash_match"] is True, offline_status
         offline_search = _send(
             offline_proc,
             {
@@ -759,6 +783,10 @@ def main():
         assert status_content["mcp_server_version"] == build_info.MCP_SERVER_VERSION, status_call
         assert status_content["mcp_config_version"] == build_info.MCP_CONFIG_VERSION, status_call
         assert build_info.ADDON_NAME in status_content["build_diagnostics"], status_call
+        assert status_content["addon_source_hash"] == build_info.source_tree_hash(), status_call
+        assert status_content["mcp_server_source_hash"] == build_info.source_tree_hash(), status_call
+        assert status_content["addon_mcp_source_hash_match"] is True, status_call
+        assert status_content["source_hash_status"] == "match", status_call
 
         full_audit_fd, full_audit_path = tempfile.mkstemp(
             prefix="claude-blender-mcp-full-audit-",

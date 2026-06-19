@@ -969,6 +969,21 @@ def main():
             if pose_bone:
                 pose_bone.rotation_mode = "QUATERNION"
                 pose_bone.location.x = offset
+                if name == "CTRL_IK_Hand":
+                    pose_bone["IK_FK_local"] = 1.0
+        ikfk_rig["IK_FK_Arm_L"] = 1.0
+        ikfk_rig.data["left_arm_space_switch"] = 0
+        ikfk_rig.data["parent"] = 1
+        pose_action = bpy.data.actions.new("Agent Bridge IKFK Repair Pose Library")
+        live_preview._record_created_id("action", pose_action.name)
+        pose_marker = pose_action.pose_markers.new("Left Hand Contact Repair")
+        pose_marker.frame = 10
+        ikfk_rig.animation_data_create().action = pose_action
+        ik_pose = ikfk_rig.pose.bones.get("CTRL_IK_Hand")
+        ik_pose.location.x = 0.0
+        ik_pose.keyframe_insert(data_path="location", frame=1)
+        ik_pose.location.x = 0.25
+        ik_pose.keyframe_insert(data_path="location", frame=10)
         bpy.ops.object.mode_set(mode="OBJECT")
         bpy.ops.mesh.primitive_cube_add(size=0.45, location=(5.0, 0.0, 0.0))
         ikfk_subject = context.object
@@ -1013,6 +1028,22 @@ def main():
         assert {"CTRL_IK_Hand", "CTRL_Pole_Elbow"}.issubset(selected_controls), ikfk_plan
         assert "ik" in selected_controls["CTRL_IK_Hand"]["roles"], ikfk_plan
         assert "pole" in selected_controls["CTRL_Pole_Elbow"]["roles"], ikfk_plan
+        rig_targeting = ikfk_hold["metadata"]["rig_targeting"]
+        switch_properties = rig_targeting["switch_property_candidates"]
+        assert any(item["property_name"] == "IK_FK_Arm_L" for item in switch_properties), ikfk_plan
+        assert any(item["property_name"] == "IK_FK_local" for item in switch_properties), ikfk_plan
+        assert any(item["property_name"] == "left_arm_space_switch" for item in switch_properties), ikfk_plan
+        assert not any(item["property_name"] == "parent" for item in switch_properties), ikfk_plan
+        assert rig_targeting["ik_fk_switch_review_required"] is True, ikfk_plan
+        pose_libraries = rig_targeting["pose_library_candidates"]
+        assert any(item["name"] == pose_action.name for item in pose_libraries), ikfk_plan
+        assert any(
+            marker["name"] == "Left Hand Contact Repair"
+            for item in pose_libraries
+            for marker in item["pose_markers"]
+        ), ikfk_plan
+        assert rig_targeting["pose_library_review_required"] is True, ikfk_plan
+        assert rig_targeting["planning_notes"], ikfk_plan
         ikfk_loop = _execute(
             context,
             "run_animation_repair_loop",
