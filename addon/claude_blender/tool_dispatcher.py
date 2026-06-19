@@ -1064,6 +1064,7 @@ _REPAIR_LOOP_DEFAULT_TOOLS = {
     "set_action_interpolation",
     "set_pose_hold",
     "set_rig_pose_hold",
+    "set_rig_custom_property_keyframes",
     "add_breakdown_pose",
     "block_key_poses",
     "create_camera_orbit",
@@ -1121,6 +1122,11 @@ def _repair_operation_blocker(tool, tool_args):
         return f"{tool} requires object_names"
     if tool == "set_rig_pose_hold" and not tool_args.get("armature_name"):
         return "set_rig_pose_hold requires armature_name"
+    if tool == "set_rig_custom_property_keyframes":
+        if not tool_args.get("armature_name"):
+            return "set_rig_custom_property_keyframes requires armature_name"
+        if not tool_args.get("property_targets"):
+            return "set_rig_custom_property_keyframes requires property_targets"
     if tool == "capture_object_inspection_renders" and not tool_args.get("object_names"):
         return "capture_object_inspection_renders requires object_names"
     if tool in {"animate_object_bounce", "create_progressive_bounce_animation"} and not tool_args.get("object_name"):
@@ -2042,6 +2048,18 @@ def set_rig_pose_hold(context, args):
         paths=_name_list(args.get("paths")),
         interpolation=str(args.get("interpolation") or "CONSTANT"),
         label=args.get("label", "Set rig pose hold"),
+    )
+
+
+def set_rig_custom_property_keyframes(context, args):
+    return advanced_helpers.set_rig_custom_property_keyframes(
+        context,
+        armature_name=str(args.get("armature_name") or ""),
+        property_targets=args.get("property_targets") if isinstance(args.get("property_targets"), list) else [],
+        frame=args.get("frame"),
+        hold_frames=_bounded_int(args.get("hold_frames"), 4, minimum=1, maximum=60),
+        interpolation=str(args.get("interpolation") or "CONSTANT"),
+        label=args.get("label", "Set rig custom property keyframes"),
     )
 
 
@@ -2970,6 +2988,7 @@ TOOL_FUNCTIONS = {
     "add_breakdown_pose": add_breakdown_pose,
     "set_pose_hold": set_pose_hold,
     "set_rig_pose_hold": set_rig_pose_hold,
+    "set_rig_custom_property_keyframes": set_rig_custom_property_keyframes,
     "create_motion_arc": create_motion_arc,
     "create_text_object": create_text_object,
     "create_curve_path": create_curve_path,

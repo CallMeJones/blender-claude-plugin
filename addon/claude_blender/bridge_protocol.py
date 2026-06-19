@@ -591,6 +591,11 @@ TOOL_CONTRACTS = {
         "mutates_scene": True,
         "requires_live_preview": True,
     },
+    "set_rig_custom_property_keyframes": {
+        "description": "Key existing scalar rig custom properties such as IK/FK or space switches with preview rollback",
+        "mutates_scene": True,
+        "requires_live_preview": True,
+    },
     "create_motion_arc": {
         "description": "Create preview curve objects that visualize sampled object motion arcs",
         "mutates_scene": True,

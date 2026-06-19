@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import math
 import time
 import uuid
@@ -22,6 +23,18 @@ def _serialize_matrix(value):
 
 def _serialize_quaternion(value):
     return tuple(float(component) for component in value)
+
+
+def _snapshot_id_property_value(value):
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    try:
+        return copy.deepcopy(value)
+    except Exception:
+        try:
+            return list(value)
+        except Exception:
+            return value
 
 
 def _set_sequence(target, value):
@@ -358,6 +371,35 @@ def _record_pose_bone_transform(armature, pose_bone):
             "scale": _serialize_vector(pose_bone.scale),
         }
         transaction["changed_data_blocks"].append(f"{armature.name}:{pose_bone.name}")
+
+
+def _record_id_property(owner_kind, owner_name, property_name, *, armature_name=""):
+    transaction = begin()
+    key = f"id_property:{owner_kind}:{armature_name}:{owner_name}:{property_name}"
+    if key in transaction["before_state"]:
+        return
+    owner = None
+    if owner_kind == "object":
+        owner = bpy.data.objects.get(owner_name)
+    elif owner_kind == "armature_data":
+        owner = bpy.data.armatures.get(owner_name)
+    elif owner_kind == "pose_bone":
+        armature = bpy.data.objects.get(armature_name)
+        owner = armature.pose.bones.get(owner_name) if armature and armature.pose else None
+    if owner is None:
+        return
+    exists = property_name in owner
+    transaction["before_state"][key] = {
+        "kind": "id_property",
+        "owner_kind": owner_kind,
+        "owner_name": owner_name,
+        "armature_name": armature_name,
+        "property_name": property_name,
+        "exists": bool(exists),
+        "value": _snapshot_id_property_value(owner.get(property_name)) if exists else None,
+    }
+    label = f"{armature_name}:{owner_name}" if armature_name else owner_name
+    transaction["changed_data_blocks"].append(label)
 
 
 def _record_object_visibility(obj):
@@ -1356,6 +1398,26 @@ def revert(context):
             _set_sequence(pose_bone.rotation_quaternion, before.get("rotation_quaternion") or ())
             _set_sequence(pose_bone.rotation_axis_angle, before.get("rotation_axis_angle") or ())
             _set_vector(pose_bone.scale, before["scale"])
+        elif before.get("kind") == "id_property":
+            owner_kind = before.get("owner_kind")
+            owner = None
+            if owner_kind == "object":
+                owner = bpy.data.objects.get(before["owner_name"])
+            elif owner_kind == "armature_data":
+                owner = bpy.data.armatures.get(before["owner_name"])
+            elif owner_kind == "pose_bone":
+                armature = bpy.data.objects.get(before.get("armature_name", ""))
+                owner = armature.pose.bones.get(before["owner_name"]) if armature and armature.pose else None
+            if owner is None:
+                rollback_warnings.append(
+                    f"Missing data-block for custom property restore: {owner_kind}:{before.get('owner_name')}"
+                )
+                continue
+            property_name = before.get("property_name")
+            if before.get("exists"):
+                owner[property_name] = before.get("value")
+            elif property_name in owner:
+                del owner[property_name]
         elif before.get("kind") == "object_modifier":
             obj = bpy.data.objects.get(before["object_name"])
             if obj:

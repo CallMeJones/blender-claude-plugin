@@ -293,6 +293,7 @@ def build_context_bundle(context, *, include_visual=False, capture_dir=None, max
             "add_breakdown_pose",
             "set_pose_hold",
             "set_rig_pose_hold",
+            "set_rig_custom_property_keyframes",
             "create_motion_arc",
             "create_text_object",
             "create_curve_path",

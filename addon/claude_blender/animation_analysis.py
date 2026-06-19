@@ -2673,6 +2673,25 @@ def _rig_pose_library_candidates(armature, *, text="", maximum=6):
     return result[: max(1, int(maximum or 1))]
 
 
+def _rig_switch_property_targets(candidates, *, maximum=4):
+    targets = []
+    for candidate in candidates or []:
+        value = candidate.get("value")
+        if not isinstance(value, (bool, int, float)):
+            continue
+        targets.append(
+            {
+                "owner_type": candidate.get("owner_type", ""),
+                "owner_name": candidate.get("owner_name", ""),
+                "property_name": candidate.get("property_name", ""),
+                "value": value,
+            }
+        )
+        if len(targets) >= maximum:
+            break
+    return targets
+
+
 def _rig_repair_target(context, object_names, *, text=""):
     seen = set()
     armatures = []
@@ -2799,6 +2818,29 @@ def repair_animation_from_findings(context, *, findings=None, brief=None):
                     metadata=rig_metadata,
                 )
             )
+            switch_property_targets = _rig_switch_property_targets(
+                rig_target.get("switch_property_candidates", [])
+            )
+            if switch_property_targets:
+                operations.append(
+                    _operation(
+                        "set_rig_custom_property_keyframes",
+                        "Hold detected scalar rig switch properties at the problem frame before applying pose repair.",
+                        arguments={
+                            "armature_name": rig_target["armature_name"],
+                            "property_targets": switch_property_targets,
+                            "frame": hold_frame,
+                            "hold_frames": 4,
+                            "interpolation": "CONSTANT",
+                        },
+                        source_index=index,
+                        finding=finding,
+                        confidence="medium",
+                        target_frames=target_frames,
+                        target_frame_range=target_frame_range,
+                        metadata=rig_metadata,
+                    )
+                )
             operations.append(
                 _operation(
                     "set_rig_pose_hold",

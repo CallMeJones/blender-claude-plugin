@@ -28,6 +28,7 @@ ANIMATION_TOOLS = {
     "add_breakdown_pose",
     "set_pose_hold",
     "set_rig_pose_hold",
+    "set_rig_custom_property_keyframes",
     "create_motion_arc",
     "analyze_motion_arcs",
     "analyze_fcurve_spacing",
@@ -1018,9 +1019,20 @@ def main():
             },
         )
         ikfk_operations = ikfk_plan["repair_operations"]
-        assert [item["tool"] for item in ikfk_operations[:2]] == ["get_rigging_details", "set_rig_pose_hold"], ikfk_plan
+        assert [item["tool"] for item in ikfk_operations[:3]] == [
+            "get_rigging_details",
+            "set_rig_custom_property_keyframes",
+            "set_rig_pose_hold",
+        ], ikfk_plan
         assert "set_pose_hold" not in [item["tool"] for item in ikfk_operations], ikfk_plan
-        ikfk_hold = ikfk_operations[1]
+        ikfk_switch = ikfk_operations[1]
+        assert ikfk_switch["arguments"]["armature_name"] == ikfk_rig.name, ikfk_plan
+        assert {item["property_name"] for item in ikfk_switch["arguments"]["property_targets"]} >= {
+            "IK_FK_Arm_L",
+            "IK_FK_local",
+            "left_arm_space_switch",
+        }, ikfk_plan
+        ikfk_hold = ikfk_operations[2]
         assert ikfk_hold["arguments"]["armature_name"] == ikfk_rig.name, ikfk_plan
         assert ikfk_hold["arguments"]["bone_names"] == ["CTRL_IK_Hand", "CTRL_Pole_Elbow"], ikfk_plan
         assert ikfk_hold["metadata"]["rig_targeting"]["selection_strategy"] == "role_scored", ikfk_plan
@@ -1050,16 +1062,24 @@ def main():
             {
                 "brief": ikfk_brief,
                 "repair_operations": ikfk_operations,
-                "allowed_tools": ["get_rigging_details", "set_rig_pose_hold"],
+                "allowed_tools": ["get_rigging_details", "set_rig_custom_property_keyframes", "set_rig_pose_hold"],
                 "max_iterations": 1,
-                "max_operations": 2,
+                "max_operations": 3,
                 "recapture_after_mutation": False,
             },
         )
-        assert [item["tool"] for item in ikfk_loop["executed_operations"]] == ["get_rigging_details", "set_rig_pose_hold"], ikfk_loop
+        assert [item["tool"] for item in ikfk_loop["executed_operations"]] == [
+            "get_rigging_details",
+            "set_rig_custom_property_keyframes",
+            "set_rig_pose_hold",
+        ], ikfk_loop
         ikfk_fcurve_paths = {fcurve.data_path for fcurve in live_preview._iter_action_fcurves(ikfk_rig.animation_data.action)}
+        assert '["IK_FK_Arm_L"]' in ikfk_fcurve_paths, ikfk_loop
+        assert 'pose.bones["CTRL_IK_Hand"]["IK_FK_local"]' in ikfk_fcurve_paths, ikfk_loop
         assert 'pose.bones["CTRL_IK_Hand"].location' in ikfk_fcurve_paths, ikfk_loop
         assert 'pose.bones["CTRL_Pole_Elbow"].location' in ikfk_fcurve_paths, ikfk_loop
+        ikfk_data_fcurve_paths = {fcurve.data_path for fcurve in live_preview._iter_action_fcurves(ikfk_rig.data.animation_data.action)}
+        assert '["left_arm_space_switch"]' in ikfk_data_fcurve_paths, ikfk_loop
         _select_object(context, cube)
 
         retime_disabled_loop = _execute(

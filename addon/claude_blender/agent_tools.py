@@ -18,7 +18,7 @@ AGENT_GUIDANCE = (
     "For model refinement and production presentation, prefer shade_smooth_selected, add_bevel_and_subsurf, create_wheel_assembly, add_panel_seams, add_window_materials, apply_vehicle_refinement_template, apply_product_refinement_template, apply_character_refinement_template, create_studio_product_stage, add_dimension_callouts, apply_lighting_preset, create_material_palette, create_product_turntable_setup, and organize_scene_for_production when they fit the task. "
     "For shape-key animation, prefer create_shape_key and animate_shape_key before drafting Python. "
     "For long-running or high-resolution renders, playblasts, frame sequences, or MP4 quality checks, use start_render_job and poll get_render_job_status instead of draft_script; use assemble_render_job_video for PNG sequences and validate_render_job_output before reporting success; use cancel_render_job if the user wants to stop it. "
-    "For animation generation, review, or repair, call run_animation_task for simple prompt-in/task-out use, or call plan_animation_workflow first when you need manual control of the generated workflow. plan_animation_workflow returns the brief, scene routing, timing chart, ordered helper calls, evaluator calls, repair calls, and script fallback rules. For common helper-backed generation, call run_animation_workflow to execute the plan, review the result, optionally capture playblast evidence, and leave changes in preview. Use any animation_brief in context as the prompt contract; otherwise call create_animation_brief first when the prompt needs an explicit contract, success criteria, or later validation. Call get_animation_scene_context before advanced animation in scenes with rigs, constraints, drivers, shape keys, physics, or unclear edit targets so you know whether to animate object transforms, rig controls, shape keys, materials, physics, or camera settings. Use create_timing_chart, block_key_poses, add_breakdown_pose, set_pose_hold, set_rig_pose_hold, and create_motion_arc for animator-style blocking before spline/f-curve polish; use set_rig_pose_hold only after identifying armature control bones. Then use analyze_animation_principles plus focused analyzers to check timing, spacing, arcs, pose clarity, anticipation, squash/stretch, contact, center-of-mass support, speed/acceleration plausibility, simulation cache readiness, and settle before repair; use inspect_simulation_bake before persistent bake decisions, and use stage_persistent_simulation_bake when the user intentionally wants a persistent point-cache bake. Use capture_animation_playblast and review_playblast_against_brief when visual frame evidence matters; use capture_object_inspection_renders and review_inspection_renders_against_brief when close-up object detail evidence matters; if review or repair tools return repair_operations, prefer run_animation_repair_loop for bounded helper repair and review-again behavior, or execute relevant tool_call name/input entries deliberately when manual control is needed. Then prefer set_scene_frame_range, set_animation_preview_range, animate_selected_transform, animate_object_bounce, create_progressive_bounce_animation, animate_material_property, animate_light_property, create_follow_path_animation, create_turntable_animation, create_pulse_animation, create_reveal_animation, create_staggered_motion, set_action_interpolation, retime_actions, add_action_cycles, clear_animation, and create_camera_orbit. "
+    "For animation generation, review, or repair, call run_animation_task for simple prompt-in/task-out use, or call plan_animation_workflow first when you need manual control of the generated workflow. plan_animation_workflow returns the brief, scene routing, timing chart, ordered helper calls, evaluator calls, repair calls, and script fallback rules. For common helper-backed generation, call run_animation_workflow to execute the plan, review the result, optionally capture playblast evidence, and leave changes in preview. Use any animation_brief in context as the prompt contract; otherwise call create_animation_brief first when the prompt needs an explicit contract, success criteria, or later validation. Call get_animation_scene_context before advanced animation in scenes with rigs, constraints, drivers, shape keys, physics, or unclear edit targets so you know whether to animate object transforms, rig controls, shape keys, materials, physics, or camera settings. Use create_timing_chart, block_key_poses, add_breakdown_pose, set_pose_hold, set_rig_pose_hold, set_rig_custom_property_keyframes, and create_motion_arc for animator-style blocking before spline/f-curve polish; use set_rig_pose_hold only after identifying armature control bones, and use set_rig_custom_property_keyframes only for existing scalar rig custom properties surfaced by rig inspection or repair metadata. Then use analyze_animation_principles plus focused analyzers to check timing, spacing, arcs, pose clarity, anticipation, squash/stretch, contact, center-of-mass support, speed/acceleration plausibility, simulation cache readiness, and settle before repair; use inspect_simulation_bake before persistent bake decisions, and use stage_persistent_simulation_bake when the user intentionally wants a persistent point-cache bake. Use capture_animation_playblast and review_playblast_against_brief when visual frame evidence matters; use capture_object_inspection_renders and review_inspection_renders_against_brief when close-up object detail evidence matters; if review or repair tools return repair_operations, prefer run_animation_repair_loop for bounded helper repair and review-again behavior, or execute relevant tool_call name/input entries deliberately when manual control is needed. Then prefer set_scene_frame_range, set_animation_preview_range, animate_selected_transform, animate_object_bounce, create_progressive_bounce_animation, animate_material_property, animate_light_property, create_follow_path_animation, create_turntable_animation, create_pulse_animation, create_reveal_animation, create_staggered_motion, set_action_interpolation, retime_actions, add_action_cycles, clear_animation, and create_camera_orbit. "
     "For complex scene builds that need many objects or more than about eight helper calls, stage one cohesive Blender Python script with draft_script instead of making a long chain of helper calls. "
     "When helper tools cannot express the requested edit, use draft_script to stage Blender Python for user approval; if the user has granted external script trust, draft_script may auto-run after static checks. "
     "When calling draft_script, put the complete Python source in the code field. Do not put script code in final chat text for the user to paste manually. "
@@ -1665,6 +1665,56 @@ def blender_tool_definitions():
             },
         },
         {
+            "name": "set_rig_custom_property_keyframes",
+            "description": "Key existing scalar rig custom properties, such as IK/FK or space switches, over a short hold window. Use only for properties found by rig inspection or repair metadata. Applies immediately with preview revert support.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "armature_name": {"type": "string"},
+                    "property_targets": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "owner_type": {
+                                    "type": "string",
+                                    "enum": ["object", "armature_data", "pose_bone"],
+                                },
+                                "owner_name": {"type": "string"},
+                                "property_name": {"type": "string"},
+                                "value": {"type": ["number", "boolean"]},
+                            },
+                            "required": ["owner_type", "property_name"],
+                            "additionalProperties": False,
+                        },
+                    },
+                    "frame": {"type": "integer"},
+                    "hold_frames": {"type": "integer"},
+                    "interpolation": {
+                        "type": "string",
+                        "enum": [
+                            "CONSTANT",
+                            "LINEAR",
+                            "BEZIER",
+                            "SINE",
+                            "QUAD",
+                            "CUBIC",
+                            "QUART",
+                            "QUINT",
+                            "EXPO",
+                            "CIRC",
+                            "BACK",
+                            "BOUNCE",
+                            "ELASTIC",
+                        ],
+                    },
+                    "label": {"type": "string"},
+                },
+                "required": ["armature_name", "property_targets", "frame"],
+                "additionalProperties": False,
+            },
+        },
+        {
             "name": "create_motion_arc",
             "description": "Create preview curve objects from sampled object locations so motion arcs are visible in the scene. Applies immediately with preview revert support.",
             "input_schema": {
@@ -2441,6 +2491,7 @@ _TOOL_GROUPS = {
         "add_breakdown_pose",
         "set_pose_hold",
         "set_rig_pose_hold",
+        "set_rig_custom_property_keyframes",
         "create_motion_arc",
         "create_camera_orbit",
         "capture_animation_playblast",
@@ -2539,6 +2590,7 @@ _TOOL_GROUPS = {
         "add_breakdown_pose",
         "set_pose_hold",
         "set_rig_pose_hold",
+        "set_rig_custom_property_keyframes",
         "create_motion_arc",
         "create_text_object",
         "create_curve_path",
@@ -2619,6 +2671,7 @@ _TOOL_GROUPS = {
     "rigging": {
         "get_rigging_details",
         "set_rig_pose_hold",
+        "set_rig_custom_property_keyframes",
         "create_basic_armature",
         "add_track_to_constraint",
         "add_copy_transform_constraint",
@@ -2743,6 +2796,7 @@ def select_blender_tool_definitions(prompt="", context_bundle=None, *, max_schem
                 "add_breakdown_pose",
                 "set_pose_hold",
                 "set_rig_pose_hold",
+                "set_rig_custom_property_keyframes",
                 "create_motion_arc",
                 "analyze_motion_arcs",
                 "analyze_fcurve_spacing",
@@ -2837,6 +2891,7 @@ TOOL_FUNCTIONS_FOR_MUTATION_COMPAT = {
     "add_breakdown_pose",
     "set_pose_hold",
     "set_rig_pose_hold",
+    "set_rig_custom_property_keyframes",
     "create_motion_arc",
     "duplicate_selected_objects",
     "parent_selected_to_empty",

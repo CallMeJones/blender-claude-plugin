@@ -2009,6 +2009,21 @@ def _prepare_transform_action_for_edit(obj):
     return live_preview._assign_preview_action(obj), True
 
 
+def _prepare_id_action_for_edit(data_block, collection_name):
+    live_preview._record_id_animation(data_block, collection_name)
+    action = data_block.animation_data.action if data_block.animation_data and data_block.animation_data.action else None
+    if action:
+        transaction = live_preview.current_transaction()
+        if not (transaction and f"created:action:{action.name}" in transaction.get("before_state", {})):
+            live_preview._record_action_edit(action)
+        return action, False
+    animation_data = data_block.animation_data_create()
+    action = bpy.data.actions.new(f"{data_block.name} Agent Bridge Property Preview Action")
+    animation_data.action = action
+    live_preview._record_created_id("action", action.name)
+    return action, True
+
+
 def _set_transform_path(obj, path, values):
     if path == "location":
         obj.location = values
@@ -2346,6 +2361,174 @@ def set_rig_pose_hold(
         "armature": armature.name,
         "bones": keyed,
         "missing_bone_names": missing_bones,
+        "transaction_id": transaction["id"],
+    }
+
+
+def _custom_property_data_path(property_name):
+    escaped = str(property_name).replace("\\", "\\\\").replace('"', '\\"')
+    return f'["{escaped}"]'
+
+
+def _coerce_scalar_custom_property(current, value):
+    if value is None:
+        value = current
+    if isinstance(current, bool):
+        return bool(value), None
+    if isinstance(current, int) and not isinstance(current, bool):
+        try:
+            return int(value), None
+        except (TypeError, ValueError):
+            return None, f"Value {value!r} cannot be coerced to int"
+    if isinstance(current, float):
+        try:
+            return float(value), None
+        except (TypeError, ValueError):
+            return None, f"Value {value!r} cannot be coerced to float"
+    return None, f"Only existing bool, int, and float rig custom properties can be keyed; got {type(current).__name__}"
+
+
+def _resolve_rig_property_owner(armature, target):
+    owner_type = str((target or {}).get("owner_type") or "").strip()
+    owner_name = str((target or {}).get("owner_name") or "").strip()
+    property_name = str((target or {}).get("property_name") or "").strip()
+    if not owner_type or not property_name:
+        return None, owner_type, owner_name, property_name, "owner_type and property_name are required"
+    if owner_type == "object":
+        if owner_name and owner_name != armature.name:
+            return None, owner_type, owner_name, property_name, f"Object owner must be the target armature: {armature.name}"
+        return armature, owner_type, armature.name, property_name, ""
+    if owner_type == "armature_data":
+        data = armature.data
+        if owner_name and data and owner_name != data.name:
+            return None, owner_type, owner_name, property_name, f"Armature-data owner must be {data.name}"
+        return data, owner_type, data.name if data else owner_name, property_name, ""
+    if owner_type == "pose_bone":
+        pose_bone = armature.pose.bones.get(owner_name) if armature.pose else None
+        if not pose_bone:
+            return None, owner_type, owner_name, property_name, f"Pose bone not found: {owner_name}"
+        return pose_bone, owner_type, owner_name, property_name, ""
+    return None, owner_type, owner_name, property_name, f"Unsupported rig property owner_type: {owner_type}"
+
+
+def set_rig_custom_property_keyframes(
+    context,
+    *,
+    armature_name="",
+    property_targets=None,
+    frame=None,
+    hold_frames=4,
+    interpolation="CONSTANT",
+    label="Set rig custom property keyframes",
+):
+    armature = _resolve_armature_for_pose_hold(context, armature_name)
+    if armature is None:
+        return {"ok": False, "message": "An armature object is required for rig custom property keyframes"}
+    targets = [target for target in (property_targets or []) if isinstance(target, dict)]
+    if not targets:
+        return {"ok": False, "message": "property_targets must contain at least one custom property target"}
+    frame = int(frame if frame is not None else context.scene.frame_current)
+    hold_frames = max(1, int(hold_frames or 1))
+    hold_frame = frame + hold_frames
+    interpolation = str(interpolation or "CONSTANT").upper()
+    prepared = []
+    missing = []
+    for target in targets:
+        owner, owner_type, owner_name, property_name, error = _resolve_rig_property_owner(armature, target)
+        if error:
+            missing.append({"owner_type": owner_type, "owner_name": owner_name, "property_name": property_name, "error": error})
+            continue
+        if property_name not in owner:
+            missing.append(
+                {
+                    "owner_type": owner_type,
+                    "owner_name": owner_name,
+                    "property_name": property_name,
+                    "error": "custom property not found",
+                }
+            )
+            continue
+        value, value_error = _coerce_scalar_custom_property(owner.get(property_name), target.get("value"))
+        if value_error:
+            missing.append(
+                {
+                    "owner_type": owner_type,
+                    "owner_name": owner_name,
+                    "property_name": property_name,
+                    "error": value_error,
+                }
+            )
+            continue
+        prepared.append((owner, owner_type, owner_name, property_name, value))
+    if not prepared:
+        return {
+            "ok": False,
+            "message": "No rig custom properties were keyed",
+            "armature": armature.name,
+            "missing_property_targets": missing,
+        }
+    transaction = live_preview.begin(label, context)
+    keyed = []
+    actions = set()
+    scene = context.scene
+    live_preview._record_scene_timeline(scene)
+    scene.frame_start = min(scene.frame_start, frame)
+    scene.frame_end = max(scene.frame_end, hold_frame)
+    scene.frame_set(frame)
+
+    for owner, owner_type, owner_name, property_name, value in prepared:
+        live_preview._record_id_property(
+            owner_type,
+            owner_name,
+            property_name,
+            armature_name=armature.name if owner_type == "pose_bone" else "",
+        )
+        if owner_type == "armature_data":
+            action, created_action = _prepare_id_action_for_edit(owner, "armatures")
+        else:
+            action, created_action = _prepare_transform_action_for_edit(armature)
+        actions.add(action)
+        data_path = _custom_property_data_path(property_name)
+        for key_frame in (frame, hold_frame):
+            owner[property_name] = value
+            owner.keyframe_insert(data_path=data_path, frame=key_frame)
+        keyed.append(
+            {
+                "armature": armature.name,
+                "owner_type": owner_type,
+                "owner_name": owner_name,
+                "property_name": property_name,
+                "value": value,
+                "value_type": type(value).__name__,
+                "frame": frame,
+                "hold_frame": hold_frame,
+                "hold_frames": hold_frames,
+                "action": action.name if action else "",
+                "created_action": bool(created_action),
+                "data_path": data_path,
+            }
+        )
+    for action in actions:
+        _set_action_interpolation(action, interpolation)
+    scene.frame_set(frame)
+    transaction["applied_steps"].append(
+        {
+            "type": "set_rig_custom_property_keyframes",
+            "label": label,
+            "armature": armature.name,
+            "keyed_count": len(keyed),
+            "frame": frame,
+            "hold_frame": hold_frame,
+        }
+    )
+    live_preview.redraw(context)
+    live_preview._mark_pending(context, label)
+    return {
+        "ok": True,
+        "message": f"Keyed {len(keyed)} rig custom propert{'y' if len(keyed) == 1 else 'ies'}",
+        "armature": armature.name,
+        "keyed_properties": keyed,
+        "missing_property_targets": missing,
         "transaction_id": transaction["id"],
     }
 
