@@ -78,13 +78,13 @@ jobs:
             dist/*.sha256
 
       - name: Upload GitHub Pages artifact
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         uses: actions/upload-pages-artifact@v3
         with:
           path: public
 
   deploy-pages:
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: mcp-smoke
     runs-on: ubuntu-latest
     environment:

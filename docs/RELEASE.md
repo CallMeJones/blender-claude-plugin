@@ -28,7 +28,7 @@ https://docs.blender.org/manual/en/latest/advanced/extensions/getting_started.ht
 
 The `MCP smoke` workflow builds the extension ZIP on pushes, pull requests, manual dispatches, and `v*` tags. Every successful run uploads `dist/*.zip` and `dist/*.sha256` as workflow artifacts. When the ref is a tag such as `v0.1.0`, the workflow also attaches those files to the GitHub Release.
 
-The workflow also builds a static extension repository in `public/` and deploys it to GitHub Pages on non-PR runs. Users can add this remote repository URL in Blender:
+The workflow also builds a static extension repository in `public/` and deploys it to GitHub Pages from `main` on non-PR runs. Tag runs publish release assets but do not redeploy Pages. Users can add this remote repository URL in Blender:
 
 ```text
 https://callmejones.github.io/blender-agent-bridge/index.json
