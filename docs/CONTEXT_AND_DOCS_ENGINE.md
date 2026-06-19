@@ -90,7 +90,7 @@ This lets external agents ask for more when needed without dumping the whole fil
 - armatures, bones, pose constraints, object constraints, and drivers;
 - mesh shape keys;
 - curve and text object data;
-- particle/simulation modifiers;
+- rigid-body, particle, point-cache, and simulation bake state;
 - collection hierarchy and view layers;
 - render, camera, world, and compositor settings.
 

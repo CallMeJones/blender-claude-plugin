@@ -82,6 +82,14 @@ def main():
             bpy.ops.object.particle_system_add()
         except Exception:
             pass
+        _select(context, cube)
+        bpy.ops.rigidbody.object_add(type="ACTIVE")
+        if cube.rigid_body:
+            cube.rigid_body.mass = 2.5
+            cube.rigid_body.collision_shape = "BOX"
+        if scene.rigidbody_world and scene.rigidbody_world.point_cache:
+            scene.rigidbody_world.point_cache.frame_start = int(scene.frame_start)
+            scene.rigidbody_world.point_cache.frame_end = int(scene.frame_end)
 
         bpy.ops.object.armature_add(location=(2.0, 0.0, 0.0))
         armature = context.object
@@ -201,6 +209,14 @@ def main():
 
         simulations = _execute(context, "get_simulation_details", {"object_names": ["Cube"]})
         assert "objects" in simulations, simulations
+        assert simulations["scene"]["rigid_body_world"], simulations
+        assert simulations["summary"]["rigid_body_object_count"] >= 1, simulations
+        assert simulations["summary"]["particle_system_count"] >= 1, simulations
+        assert simulations["summary"]["unbaked_cache_count"] >= 1, simulations
+        cube_simulation = next(item for item in simulations["objects"] if item["name"] == "Cube")
+        assert cube_simulation["rigid_body"]["mass"] == 2.5, simulations
+        assert cube_simulation["particle_systems"][0]["point_cache"], simulations
+        assert "compare_animation_to_brief" in simulations["recommended_next_tools"], simulations
 
         collections = _execute(context, "get_collection_layer_details", {"max_depth": 3})
         assert collections["scene_collection"], collections

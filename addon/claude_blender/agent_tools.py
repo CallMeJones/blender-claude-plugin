@@ -836,7 +836,7 @@ def blender_tool_definitions():
         },
         {
             "name": "get_simulation_details",
-            "description": "Fetch read-only particle system and simulation modifier summaries for cloth, fluid, soft body, dynamic paint, and particles.",
+            "description": "Fetch read-only rigid-body, particle, point-cache, and simulation bake summaries for cloth, fluid, soft body, dynamic paint, and particles.",
             "input_schema": {
                 "type": "object",
                 "properties": {

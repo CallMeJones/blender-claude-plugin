@@ -81,10 +81,23 @@ After building a release zip, install `dist/claude_blender-<version>.zip` in a c
 - The sidebar shows add-on, bridge, MCP, and config versions.
 - `Start` enables the bridge without console errors.
 - `Copy MCP Config` includes the current config metadata.
-- The MCP client sees `blender_bridge_status`, `list_scene_objects`, `draft_script`, and `run_approved_script`, or can reach them through the compact catalog surface.
+- The MCP client sees `blender_bridge_status`, `list_scene_objects`, `run_animation_task`, `draft_script`, and `run_approved_script`, or can reach them through the compact catalog surface.
 - `blender_bridge_status` reports matching add-on/bridge/MCP versions.
 - `resources/list` includes capture, playblast, inspection-render, render-thumbnail, and async render-job resources, and `resources/read` can read `blender://captures/latest/metadata` after a capture, `blender://playblasts/latest/metadata` after a playblast capture, `blender://inspection-renders/latest/metadata` after diagnostic object renders, `blender://render-thumbnails/latest/metadata` after thumbnail renders, plus `blender://render-jobs/latest/metadata` after background render jobs.
 - External script trust presets can be granted and revoked, and trust clears after bridge restart or add-on reload.
+- The GitHub Pages extension repository can be added, synced, installed, enabled, and listed from a temporary Blender profile:
+
+```powershell
+$env:BLENDER_USER_CONFIG = "$env:TEMP\bab-profile\config"
+$env:BLENDER_USER_SCRIPTS = "$env:TEMP\bab-profile\scripts"
+$env:BLENDER_USER_CACHE = "$env:TEMP\bab-profile\cache"
+$env:BLENDER_USER_EXTENSIONS = "$env:TEMP\bab-profile\extensions"
+New-Item -ItemType Directory -Force -Path $env:BLENDER_USER_CONFIG,$env:BLENDER_USER_SCRIPTS,$env:BLENDER_USER_CACHE,$env:BLENDER_USER_EXTENSIONS
+blender --online-mode --command extension repo-add blender_agent_bridge --name "Blender Agent Bridge" --directory "$env:BLENDER_USER_EXTENSIONS" --url "https://callmejones.github.io/blender-agent-bridge/index.json" --clear-all
+blender --online-mode --command extension sync
+blender --online-mode --command extension install -s -e claude_blender
+blender --online-mode --command extension list -s
+```
 
 ## Release Checklist
 
@@ -92,6 +105,7 @@ After building a release zip, install `dist/claude_blender-<version>.zip` in a c
 - Build the zip and SHA-256 sidecar.
 - Confirm the generated zip includes `LICENSE` at the package root.
 - Install the zip into a clean Blender profile.
+- Verify the GitHub Pages extension repository install path from a clean temporary Blender profile.
 - Start the External Bridge and run an MCP smoke against the installed extension.
 - Capture one viewport screenshot and one sampled animation playblast, then confirm project-local or fallback capture storage behaves as documented.
 - Review `SECURITY.md`, `PRIVACY.md`, and declared manifest permissions.

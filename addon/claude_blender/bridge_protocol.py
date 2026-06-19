@@ -210,7 +210,7 @@ TOOL_CONTRACTS = {
         "mutates_scene": False,
     },
     "get_simulation_details": {
-        "description": "Return particle system and simulation modifier summaries",
+        "description": "Return rigid-body, particle, point-cache, and simulation bake summaries",
         "mutates_scene": False,
     },
     "get_collection_layer_details": {

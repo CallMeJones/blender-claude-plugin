@@ -389,6 +389,134 @@ def _physics_summary(obj):
     }
 
 
+def _point_cache_summary(point_cache):
+    if point_cache is None:
+        return None
+    return {
+        "name": getattr(point_cache, "name", ""),
+        "index": int(getattr(point_cache, "index", 0)),
+        "frame_start": int(getattr(point_cache, "frame_start", 0)),
+        "frame_end": int(getattr(point_cache, "frame_end", 0)),
+        "frame_step": int(getattr(point_cache, "frame_step", 1)),
+        "is_baked": bool(getattr(point_cache, "is_baked", False)),
+        "use_disk_cache": bool(getattr(point_cache, "use_disk_cache", False)),
+        "use_external": bool(getattr(point_cache, "use_external", False)),
+        "filepath": getattr(point_cache, "filepath", ""),
+        "info": str(getattr(point_cache, "info", "") or "")[:240],
+    }
+
+
+def _rigid_body_world_summary(scene):
+    world = getattr(scene, "rigidbody_world", None)
+    if world is None:
+        return None
+    return {
+        "enabled": bool(getattr(world, "enabled", True)),
+        "collection": _safe_name(getattr(world, "collection", None)),
+        "constraints": _safe_name(getattr(world, "constraints", None)),
+        "time_scale": round(float(getattr(world, "time_scale", 1.0)), 5),
+        "substeps_per_frame": int(getattr(world, "substeps_per_frame", 0)),
+        "solver_iterations": int(getattr(world, "solver_iterations", 0)),
+        "point_cache": _point_cache_summary(getattr(world, "point_cache", None)),
+    }
+
+
+def _rigid_body_detail(obj):
+    rigid_body = getattr(obj, "rigid_body", None)
+    if rigid_body is None:
+        return None
+    return {
+        "type": getattr(rigid_body, "type", None),
+        "enabled": bool(getattr(rigid_body, "enabled", True)),
+        "kinematic": bool(getattr(rigid_body, "kinematic", False)),
+        "mass": round(float(getattr(rigid_body, "mass", 0.0)), 5),
+        "collision_shape": getattr(rigid_body, "collision_shape", None),
+        "mesh_source": getattr(rigid_body, "mesh_source", None),
+        "friction": round(float(getattr(rigid_body, "friction", 0.0)), 5),
+        "restitution": round(float(getattr(rigid_body, "restitution", 0.0)), 5),
+        "linear_damping": round(float(getattr(rigid_body, "linear_damping", 0.0)), 5),
+        "angular_damping": round(float(getattr(rigid_body, "angular_damping", 0.0)), 5),
+        "use_margin": bool(getattr(rigid_body, "use_margin", False)),
+        "collision_margin": round(float(getattr(rigid_body, "collision_margin", 0.0)), 5),
+    }
+
+
+def _rigid_body_constraint_detail(obj):
+    constraint = getattr(obj, "rigid_body_constraint", None)
+    if constraint is None:
+        return None
+    return {
+        "type": getattr(constraint, "type", None),
+        "enabled": bool(getattr(constraint, "enabled", True)),
+        "disable_collisions": bool(getattr(constraint, "disable_collisions", False)),
+        "object1": _safe_name(getattr(constraint, "object1", None)),
+        "object2": _safe_name(getattr(constraint, "object2", None)),
+        "breaking_threshold": round(float(getattr(constraint, "breaking_threshold", 0.0)), 5),
+        "use_breaking": bool(getattr(constraint, "use_breaking", False)),
+    }
+
+
+def _simulation_modifier_detail(modifier):
+    item = _modifier_summary(modifier)
+    point_cache = getattr(modifier, "point_cache", None)
+    if point_cache is not None:
+        item["point_cache"] = _point_cache_summary(point_cache)
+    if modifier.type == "FLUID":
+        domain = getattr(modifier, "domain_settings", None)
+        flow = getattr(modifier, "flow_settings", None)
+        effector = getattr(modifier, "effector_settings", None)
+        if domain:
+            item["fluid_domain"] = {
+                "domain_type": getattr(domain, "domain_type", None),
+                "resolution_max": int(getattr(domain, "resolution_max", 0)),
+                "cache_type": getattr(domain, "cache_type", None),
+                "cache_frame_start": int(getattr(domain, "cache_frame_start", 0)),
+                "cache_frame_end": int(getattr(domain, "cache_frame_end", 0)),
+                "cache_directory": getattr(domain, "cache_directory", ""),
+                "has_cache_baked_data": bool(getattr(domain, "has_cache_baked_data", False)),
+                "has_cache_baked_mesh": bool(getattr(domain, "has_cache_baked_mesh", False)),
+            }
+        if flow:
+            item["fluid_flow"] = {
+                "flow_type": getattr(flow, "flow_type", None),
+                "flow_behavior": getattr(flow, "flow_behavior", None),
+                "surface_distance": round(float(getattr(flow, "surface_distance", 0.0)), 5),
+            }
+        if effector:
+            item["fluid_effector"] = {
+                "effector_type": getattr(effector, "effector_type", None),
+                "surface_distance": round(float(getattr(effector, "surface_distance", 0.0)), 5),
+            }
+    elif modifier.type == "CLOTH":
+        settings = getattr(modifier, "settings", None)
+        collision = getattr(modifier, "collision_settings", None)
+        if settings:
+            item["cloth_settings"] = {
+                "quality": int(getattr(settings, "quality", 0)),
+                "mass": round(float(getattr(settings, "mass", 0.0)), 5),
+                "tension_stiffness": round(float(getattr(settings, "tension_stiffness", 0.0)), 5),
+                "compression_stiffness": round(float(getattr(settings, "compression_stiffness", 0.0)), 5),
+                "shear_stiffness": round(float(getattr(settings, "shear_stiffness", 0.0)), 5),
+            }
+        if collision:
+            item["cloth_collision"] = {
+                "use_collision": bool(getattr(collision, "use_collision", False)),
+                "use_self_collision": bool(getattr(collision, "use_self_collision", False)),
+                "distance_min": round(float(getattr(collision, "distance_min", 0.0)), 5),
+            }
+    elif modifier.type == "SOFT_BODY":
+        settings = getattr(modifier, "settings", None)
+        if settings:
+            item["soft_body_settings"] = {
+                "mass": round(float(getattr(settings, "mass", 0.0)), 5),
+                "friction": round(float(getattr(settings, "friction", 0.0)), 5),
+                "speed": round(float(getattr(settings, "speed", 0.0)), 5),
+                "use_goal": bool(getattr(settings, "use_goal", False)),
+                "use_edges": bool(getattr(settings, "use_edges", False)),
+            }
+    return item
+
+
 def _material_animation_summaries(obj):
     result = []
     for slot in obj.material_slots:
@@ -597,6 +725,8 @@ def world_model_summary(context):
     drivers = 0
     shape_key_meshes = 0
     simulation_modifiers = 0
+    rigid_body_objects = 0
+    particle_systems = 0
     curve_objects = 0
     text_objects = 0
     armatures = 0
@@ -613,6 +743,9 @@ def world_model_summary(context):
                 geometry_nodes += 1
             if modifier.type in {"PARTICLE_SYSTEM", "FLUID", "CLOTH", "SOFT_BODY", "DYNAMIC_PAINT"}:
                 simulation_modifiers += 1
+        if getattr(obj, "rigid_body", None) or getattr(obj, "rigid_body_constraint", None):
+            rigid_body_objects += 1
+        particle_systems += len(getattr(obj, "particle_systems", []) or [])
         for constraint in obj.constraints:
             constraint_counts[constraint.type] += 1
         animation_data = getattr(obj, "animation_data", None)
@@ -638,6 +771,8 @@ def world_model_summary(context):
         "curve_object_count": curve_objects,
         "text_object_count": text_objects,
         "simulation_modifier_count": simulation_modifiers,
+        "rigid_body_object_count": rigid_body_objects,
+        "particle_system_count": particle_systems,
         "collection_count": len(bpy.data.collections),
         "view_layer_count": len(scene.view_layers),
         "compositor_node_count": compositor_nodes,
@@ -831,11 +966,24 @@ def simulation_details(context, *, object_names=None, max_objects=20):
     names = set(object_names or [])
     result = []
     simulation_types = {"PARTICLE_SYSTEM", "FLUID", "CLOTH", "SOFT_BODY", "DYNAMIC_PAINT"}
+    scene = context.scene
+    scene_frame_range = [int(scene.frame_start), int(scene.frame_end)]
+    rigid_body_world = _rigid_body_world_summary(scene)
+    summary = {
+        "rigid_body_object_count": 0,
+        "rigid_body_constraint_count": 0,
+        "simulation_modifier_count": 0,
+        "particle_system_count": 0,
+        "baked_cache_count": 0,
+        "unbaked_cache_count": 0,
+    }
+    recommended_next_tools = set()
+    cautions = []
     for obj in context.scene.objects:
         if names and obj.name not in names:
             continue
         modifiers = [
-            _modifier_summary(modifier)
+            _simulation_modifier_detail(modifier)
             for modifier in obj.modifiers
             if modifier.type in simulation_types
         ]
@@ -846,14 +994,88 @@ def simulation_details(context, *, object_names=None, max_objects=20):
                 "count": int(getattr(psys.settings, "count", 0)) if psys.settings else 0,
                 "frame_start": round(float(getattr(psys.settings, "frame_start", 0)), 4) if psys.settings else 0,
                 "frame_end": round(float(getattr(psys.settings, "frame_end", 0)), 4) if psys.settings else 0,
+                "physics_type": getattr(psys.settings, "physics_type", None) if psys.settings else None,
+                "emit_from": getattr(psys.settings, "emit_from", None) if psys.settings else None,
+                "render_type": getattr(psys.settings, "render_type", None) if psys.settings else None,
+                "point_cache": _point_cache_summary(getattr(psys, "point_cache", None)),
             }
             for psys in list(getattr(obj, "particle_systems", []))[:12]
         ]
-        if modifiers or particle_systems:
-            result.append({"name": obj.name, "type": obj.type, "modifiers": modifiers, "particle_systems": particle_systems})
+        rigid_body = _rigid_body_detail(obj)
+        rigid_body_constraint = _rigid_body_constraint_detail(obj)
+        if not (rigid_body or rigid_body_constraint or modifiers or particle_systems):
+            continue
+        object_cautions = []
+        if rigid_body and rigid_body_world is None:
+            object_cautions.append("Rigid body object exists but the scene has no rigid-body world.")
+        if rigid_body and rigid_body.get("type") == "ACTIVE" and rigid_body.get("mass", 0.0) <= 0:
+            object_cautions.append("Active rigid body has non-positive mass.")
+        for modifier in modifiers:
+            cache = modifier.get("point_cache")
+            if cache:
+                if cache.get("is_baked"):
+                    summary["baked_cache_count"] += 1
+                else:
+                    summary["unbaked_cache_count"] += 1
+                    object_cautions.append(f"{modifier['name']} cache is not baked.")
+                if cache.get("frame_start") and cache.get("frame_end"):
+                    if cache["frame_start"] > scene_frame_range[0] or cache["frame_end"] < scene_frame_range[1]:
+                        object_cautions.append(f"{modifier['name']} cache range does not cover the scene frame range.")
+        for psys in particle_systems:
+            cache = psys.get("point_cache")
+            if cache:
+                if cache.get("is_baked"):
+                    summary["baked_cache_count"] += 1
+                else:
+                    summary["unbaked_cache_count"] += 1
+                    object_cautions.append(f"{psys['name']} particle cache is not baked.")
+        if modifiers or particle_systems or rigid_body:
+            recommended_next_tools.update({"sample_animation_state", "compare_animation_to_brief"})
+        if object_cautions:
+            cautions.extend({"object": obj.name, "message": message} for message in object_cautions[:6])
+        summary["rigid_body_object_count"] += 1 if rigid_body else 0
+        summary["rigid_body_constraint_count"] += 1 if rigid_body_constraint else 0
+        summary["simulation_modifier_count"] += len(modifiers)
+        summary["particle_system_count"] += len(particle_systems)
+        result.append(
+            {
+                "name": obj.name,
+                "type": obj.type,
+                "rigid_body": rigid_body,
+                "rigid_body_constraint": rigid_body_constraint,
+                "modifiers": modifiers,
+                "particle_systems": particle_systems,
+                "cautions": object_cautions[:8],
+            }
+        )
         if len(result) >= int(max_objects):
             break
-    return {"ok": True, "objects": result}
+    world_cache = rigid_body_world.get("point_cache") if rigid_body_world else None
+    if world_cache:
+        if world_cache.get("is_baked"):
+            summary["baked_cache_count"] += 1
+        else:
+            summary["unbaked_cache_count"] += 1
+            cautions.append({"object": "", "message": "Rigid body world cache is not baked."})
+        if world_cache.get("frame_start") and world_cache.get("frame_end"):
+            if world_cache["frame_start"] > scene_frame_range[0] or world_cache["frame_end"] < scene_frame_range[1]:
+                cautions.append({"object": "", "message": "Rigid body world cache range does not cover the scene frame range."})
+    if summary["unbaked_cache_count"]:
+        recommended_next_tools.add("compare_animation_to_brief")
+    return {
+        "ok": True,
+        "message": f"Found simulation state on {len(result)} object(s)",
+        "scene": {
+            "frame_current": int(scene.frame_current),
+            "frame_range": scene_frame_range,
+            "rigid_body_world": rigid_body_world,
+        },
+        "summary": summary,
+        "objects": result,
+        "recommended_next_tools": sorted(recommended_next_tools),
+        "cautions": cautions[:24],
+        "note": "Read-only simulation inspection; bake or run simulation intentionally before treating physics-heavy validation as final.",
+    }
 
 
 def _collection_tree(collection, *, depth=0, max_depth=4):
