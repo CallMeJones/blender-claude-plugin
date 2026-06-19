@@ -747,9 +747,10 @@ def analyze_center_of_mass(
             center = _world_center(obj)
             contact_like = bool(support_top_z is not None and abs(float(mins[2]) - float(support_top_z)) <= float(contact_tolerance))
             if len(support_polygon) >= 3:
+                margin = float(support_margin or 0.0)
                 polygon_distance = _point_polygon_distance_outside_xy((center[0], center[1]), support_polygon)
-                supported = bool(polygon_distance <= float(support_margin or 0.0))
-                outside_distance = polygon_distance
+                supported = bool(polygon_distance <= margin)
+                outside_distance = max(0.0, polygon_distance - margin)
             else:
                 supported = bool(support_union and _bbox_xy_contains(support_union, (center[0], center[1]), margin=support_margin))
                 outside_distance = _bbox_xy_distance_outside(support_union, (center[0], center[1]), margin=support_margin) if support_union else 0.0

@@ -236,6 +236,22 @@ def main():
         assert simulation_bake["simulation_details"]["summary"]["rigid_body_object_count"] >= 1, simulation_bake
         assert scene.frame_current == frame_before_simulation_inspect, simulation_bake
 
+        bpy.ops.mesh.primitive_cube_add(size=0.25, location=(3.0, 3.0, 0.0))
+        plain_object = context.object
+        plain_object.name = "Agent Bridge Plain Simulation Inspect"
+        try:
+            plain_simulation_bake = _execute(
+                context,
+                "inspect_simulation_bake",
+                {"object_names": ["Agent Bridge Plain Simulation Inspect"], "frame_start": 1, "frame_end": 3, "sample_count": 2},
+            )
+            assert plain_simulation_bake["object_count"] == 0, plain_simulation_bake
+            assert plain_simulation_bake["object_names"] == [], plain_simulation_bake
+            assert plain_simulation_bake["non_simulation_object_names"] == ["Agent Bridge Plain Simulation Inspect"], plain_simulation_bake
+            assert plain_simulation_bake["simulation_details"]["objects"] == [], plain_simulation_bake
+        finally:
+            bpy.data.objects.remove(plain_object, do_unlink=True)
+
         collections = _execute(context, "get_collection_layer_details", {"max_depth": 3})
         assert collections["scene_collection"], collections
         assert any(item["name"] == "Agent Bridge World Collection" for item in collections["collections"]), collections

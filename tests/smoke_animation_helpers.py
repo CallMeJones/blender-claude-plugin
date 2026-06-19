@@ -522,6 +522,22 @@ def main():
             assert polygon_sample["support_available"] is True, polygon_center
             assert polygon_sample["contact_like"] is True, polygon_center
             assert polygon_sample["center_within_support"] is False, polygon_center
+            margin_center = _execute(
+                context,
+                "analyze_center_of_mass",
+                {
+                    "object_names": ["Agent Bridge Balance Subject"],
+                    "support_object_names": ["Agent Bridge Rotated Support"],
+                    "frame_start": 1,
+                    "frame_end": 1,
+                    "sample_step": 1,
+                    "support_margin": 1.0,
+                    "contact_tolerance": 0.05,
+                },
+            )
+            margin_sample = next(item for item in margin_center["samples"] if item["object"] == "Agent Bridge Balance Subject")
+            assert margin_sample["center_within_support"] is True, margin_center
+            assert margin_sample["outside_support_distance"] == 0.0, margin_center
             assert any(
                 item.get("requirement") == "center_of_mass"
                 and item.get("evidence", {}).get("support_footprint_method") == "convex_hull_world_bounds"

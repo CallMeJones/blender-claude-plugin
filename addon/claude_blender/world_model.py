@@ -1127,10 +1127,13 @@ def inspect_simulation_bake(context, *, object_names=None, frame_start=None, fra
     names = set(object_names or [])
     scene = context.scene
     candidates = []
+    requested_existing = set()
     simulation_types = {"PARTICLE_SYSTEM", "FLUID", "CLOTH", "SOFT_BODY", "DYNAMIC_PAINT"}
     for obj in scene.objects:
         if names and obj.name not in names:
             continue
+        if names:
+            requested_existing.add(obj.name)
         if (
             getattr(obj, "rigid_body", None)
             or getattr(obj, "rigid_body_constraint", None)
@@ -1187,7 +1190,10 @@ def inspect_simulation_bake(context, *, object_names=None, frame_start=None, fra
         item["z_range"] = [round(float(item["z_range"][0]), 6), round(float(item["z_range"][1]), 6)]
         summaries.append(item)
 
-    details = simulation_details(context, object_names=[obj.name for obj in candidates], max_objects=max_objects)
+    detail_names = [obj.name for obj in candidates]
+    if names and not detail_names:
+        detail_names = sorted(names)
+    details = simulation_details(context, object_names=detail_names, max_objects=max_objects)
     world_cache = ((details.get("scene") or {}).get("rigid_body_world") or {}).get("point_cache")
     unbaked_count = int((details.get("summary") or {}).get("unbaked_cache_count", 0) or 0)
     recommendations = ["Use these evaluated samples before deciding whether a simulation needs a persistent bake or helper repair."]
@@ -1211,6 +1217,7 @@ def inspect_simulation_bake(context, *, object_names=None, frame_start=None, fra
         "object_count": len(candidates),
         "object_names": [obj.name for obj in candidates],
         "missing_object_names": missing,
+        "non_simulation_object_names": sorted(requested_existing - {obj.name for obj in candidates}),
         "object_summaries": summaries,
         "frame_samples": frame_samples,
         "simulation_details": details,
