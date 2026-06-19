@@ -217,6 +217,12 @@ TOOL_CONTRACTS = {
         "description": "Sample evaluated simulation state across frames and report cache/bake readiness without mutating persistent caches",
         "mutates_scene": False,
     },
+    "stage_persistent_simulation_bake": {
+        "description": "Stage a fixed-template scene-wide persistent simulation point-cache bake script for explicit approval or active script trust",
+        "mutates_scene": True,
+        "has_side_effects": True,
+        "requires_approval": True,
+    },
     "get_collection_layer_details": {
         "description": "Return collection tree, membership, visibility, and view-layer summaries",
         "mutates_scene": False,

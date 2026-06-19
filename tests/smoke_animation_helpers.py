@@ -42,6 +42,7 @@ ANIMATION_TOOLS = {
     "compare_animation_to_brief",
     "review_playblast_against_brief",
     "review_inspection_renders_against_brief",
+    "stage_persistent_simulation_bake",
     "repair_animation_from_findings",
     "run_animation_repair_loop",
     "animate_object_bounce",
@@ -545,6 +546,59 @@ def main():
             ), polygon_center
         finally:
             for obj in (balance_subject, rotated_support):
+                if obj.name in bpy.data.objects:
+                    bpy.data.objects.remove(obj, do_unlink=True)
+
+        bpy.ops.object.armature_add(location=(0.0, 3.0, 0.0))
+        weighted_rig = context.object
+        weighted_rig.name = "Agent Bridge Weighted Character Rig"
+        bpy.ops.mesh.primitive_cube_add(size=1.0, location=(0.0, 3.0, -0.42))
+        weighted_foot = context.object
+        weighted_foot.name = "Agent Bridge Weighted Foot"
+        weighted_foot.scale = (0.25, 0.18, 0.1)
+        weighted_foot.parent = weighted_rig
+        bpy.ops.mesh.primitive_cube_add(size=1.0, location=(1.2, 3.0, 0.05))
+        weighted_torso = context.object
+        weighted_torso.name = "Agent Bridge Weighted Torso"
+        weighted_torso.scale = (0.55, 0.3, 0.8)
+        weighted_torso.parent = weighted_rig
+        bpy.ops.mesh.primitive_cube_add(size=1.0, location=(1.55, 3.0, 0.7))
+        weighted_head = context.object
+        weighted_head.name = "Agent Bridge Weighted Head"
+        weighted_head.scale = (0.35, 0.28, 0.35)
+        weighted_head.parent = weighted_rig
+        bpy.ops.mesh.primitive_cube_add(size=1.0, location=(0.0, 3.0, -0.55))
+        weighted_support = context.object
+        weighted_support.name = "Agent Bridge Weighted Support"
+        weighted_support.scale = (0.55, 0.5, 0.05)
+        context.view_layer.update()
+        try:
+            weighted_center = _execute(
+                context,
+                "analyze_center_of_mass",
+                {
+                    "object_names": [weighted_rig.name],
+                    "support_object_names": [weighted_support.name],
+                    "frame_start": 1,
+                    "frame_end": 1,
+                    "sample_step": 1,
+                    "support_margin": 0.0,
+                    "contact_tolerance": 0.08,
+                },
+            )
+            weighted_sample = next(item for item in weighted_center["samples"] if item["object"] == weighted_rig.name)
+            assert weighted_sample["center_method"] == "weighted_child_mesh_bounds", weighted_center
+            assert weighted_sample["center_source_count"] == 3, weighted_center
+            assert weighted_sample["contact_like"] is True, weighted_center
+            assert weighted_sample["center_within_support"] is False, weighted_center
+            assert "Agent Bridge Weighted Torso" in weighted_sample["center_source_objects"], weighted_center
+            assert any(
+                item.get("requirement") == "center_of_mass"
+                and item.get("evidence", {}).get("center_method") == "weighted_child_mesh_bounds"
+                for item in weighted_center["findings"]
+            ), weighted_center
+        finally:
+            for obj in (weighted_foot, weighted_torso, weighted_head, weighted_support, weighted_rig):
                 if obj.name in bpy.data.objects:
                     bpy.data.objects.remove(obj, do_unlink=True)
 

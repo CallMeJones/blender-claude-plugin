@@ -645,12 +645,13 @@ def main():
                 "jsonrpc": "2.0",
                 "id": 93,
                 "method": "tools/call",
-                "params": {"name": "search_blender_tools", "arguments": {"query": "inspect simulation cache bake", "limit": 6}},
+                "params": {"name": "search_blender_tools", "arguments": {"query": "inspect simulation cache bake", "limit": 8}},
             },
         )
         offline_simulation_found = {tool["name"] for tool in offline_simulation_search["result"]["structuredContent"]["tools"]}
         assert "inspect_simulation_bake" in offline_simulation_found, offline_simulation_search
         assert "get_simulation_details" in offline_simulation_found, offline_simulation_search
+        assert "stage_persistent_simulation_bake" in offline_simulation_found, offline_simulation_search
         offline_catalog_search = _send(
             offline_proc,
             {

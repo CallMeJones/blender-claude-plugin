@@ -232,6 +232,83 @@ def _support_footprint_polygon(supports):
     return _convex_hull_xy(points)
 
 
+def _has_armature_modifier(obj, armature):
+    for modifier in getattr(obj, "modifiers", []) or []:
+        if modifier.type == "ARMATURE" and getattr(modifier, "object", None) == armature:
+            return True
+    return False
+
+
+def _character_com_components(context, obj, *, exclude_names=None):
+    components = []
+    seen = set()
+    excluded = set(exclude_names or [])
+
+    def add(candidate):
+        if not candidate or candidate.name in seen or candidate.name in excluded or candidate.type != "MESH":
+            return
+        seen.add(candidate.name)
+        components.append(candidate)
+
+    if obj.type == "ARMATURE":
+        for candidate in context.scene.objects:
+            if candidate.parent == obj or _has_armature_modifier(candidate, obj):
+                add(candidate)
+    elif obj.type == "MESH":
+        add(obj)
+        armatures = []
+        if getattr(obj.parent, "type", None) == "ARMATURE":
+            armatures.append(obj.parent)
+        for modifier in getattr(obj, "modifiers", []) or []:
+            target = getattr(modifier, "object", None)
+            if modifier.type == "ARMATURE" and target and target not in armatures:
+                armatures.append(target)
+        for armature in armatures:
+            for candidate in context.scene.objects:
+                if candidate.parent == armature or _has_armature_modifier(candidate, armature):
+                    add(candidate)
+    return components
+
+
+def _center_of_mass_proxy(context, obj, *, exclude_names=None):
+    components = _character_com_components(context, obj, exclude_names=exclude_names)
+    if not components:
+        mins, maxs = _bbox_world(obj)
+        center = _world_center(obj)
+        return {
+            "mins": mins,
+            "maxs": maxs,
+            "center": center,
+            "method": "object_world_bounds",
+            "source_objects": [obj.name],
+            "component_count": 1,
+            "weight_total": 1.0,
+        }
+    weighted = [0.0, 0.0, 0.0]
+    total_weight = 0.0
+    boxes = []
+    for component in components:
+        mins, maxs = _bbox_world(component)
+        boxes.append((mins, maxs))
+        center = [(float(mins[index]) + float(maxs[index])) / 2.0 for index in range(3)]
+        dimensions = [max(float(maxs[index]) - float(mins[index]), 0.0) for index in range(3)]
+        weight = max(dimensions[0] * dimensions[1] * dimensions[2], 1e-6)
+        total_weight += weight
+        for index in range(3):
+            weighted[index] += center[index] * weight
+    union = _bbox_union(boxes)
+    center = [weighted[index] / total_weight for index in range(3)]
+    return {
+        "mins": union[0],
+        "maxs": union[1],
+        "center": center,
+        "method": "weighted_child_mesh_bounds",
+        "source_objects": [component.name for component in components[:24]],
+        "component_count": len(components),
+        "weight_total": round(float(total_weight), 6),
+    }
+
+
 def _bbox_union(boxes):
     boxes = list(boxes or [])
     if not boxes:
@@ -742,9 +819,12 @@ def analyze_center_of_mass(
             "support_top_z": round(float(support_top_z), 6) if support_top_z is not None else None,
         }
         support_samples.append(support_item)
+        support_names = {support.name for support, _box in support_boxes}
         for obj in objects:
-            mins, maxs = _bbox_world(obj)
-            center = _world_center(obj)
+            com_proxy = _center_of_mass_proxy(context, obj, exclude_names=support_names)
+            mins = com_proxy["mins"]
+            maxs = com_proxy["maxs"]
+            center = com_proxy["center"]
             contact_like = bool(support_top_z is not None and abs(float(mins[2]) - float(support_top_z)) <= float(contact_tolerance))
             if len(support_polygon) >= 3:
                 margin = float(support_margin or 0.0)
@@ -765,6 +845,10 @@ def analyze_center_of_mass(
                 "support_available": bool(support_union),
                 "center_within_support": supported,
                 "outside_support_distance": round(float(outside_distance), 6),
+                "center_method": com_proxy["method"],
+                "center_source_objects": com_proxy["source_objects"],
+                "center_source_count": com_proxy["component_count"],
+                "center_weight_total": com_proxy["weight_total"],
             }
             samples.append(sample)
             if support_union and contact_like and not supported:
@@ -781,6 +865,8 @@ def analyze_center_of_mass(
                             "sampled_frames": [frame],
                             "support_objects": support_item["support_objects"],
                             "center_xy": sample["center_xy"],
+                            "center_method": sample["center_method"],
+                            "center_source_objects": sample["center_source_objects"],
                             "support_union_xy": support_item["support_union_xy"],
                             "support_footprint_xy": support_item["support_footprint_xy"],
                             "support_footprint_method": support_item["support_footprint_method"],

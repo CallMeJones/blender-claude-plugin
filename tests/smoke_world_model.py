@@ -118,6 +118,77 @@ def main():
         armature_modifier = cube.modifiers.new("Agent Bridge World Armature Mod", "ARMATURE")
         armature_modifier.object = armature
 
+        bpy.ops.object.armature_add(location=(4.0, 0.0, 0.0))
+        ikfk_armature = context.object
+        ikfk_armature.name = "Agent Bridge IKFK Armature"
+        ikfk_armature.data.name = "Agent Bridge IKFK Armature Data"
+        _select(context, ikfk_armature)
+        bpy.ops.object.mode_set(mode="EDIT")
+        bones = ikfk_armature.data.edit_bones
+        upper = bones[0]
+        upper.name = "DEF_UpperArm"
+        upper.head = (0.0, 0.0, 0.0)
+        upper.tail = (0.0, 0.0, 1.0)
+        upper.use_deform = True
+        forearm = bones.new("DEF_Forearm")
+        forearm.head = upper.tail
+        forearm.tail = (0.0, 0.0, 2.0)
+        forearm.parent = upper
+        forearm.use_connect = True
+        forearm.use_deform = True
+        ik_control = bones.new("CTRL_IK_Hand")
+        ik_control.head = (0.6, 0.0, 2.0)
+        ik_control.tail = (0.6, 0.0, 2.35)
+        ik_control.use_deform = False
+        fk_control = bones.new("CTRL_FK_Forearm")
+        fk_control.head = (-0.55, 0.0, 1.0)
+        fk_control.tail = (-0.55, 0.0, 1.35)
+        fk_control.use_deform = False
+        pole_control = bones.new("CTRL_Pole_Elbow")
+        pole_control.head = (0.0, -0.8, 1.0)
+        pole_control.tail = (0.0, -0.8, 1.35)
+        pole_control.use_deform = False
+        bpy.ops.object.mode_set(mode="POSE")
+        forearm_pose = ikfk_armature.pose.bones.get("DEF_Forearm")
+        if forearm_pose:
+            ik_constraint = forearm_pose.constraints.new(type="IK")
+            ik_constraint.name = "IK Hand Target"
+            ik_constraint.target = ikfk_armature
+            ik_constraint.subtarget = "CTRL_IK_Hand"
+            ik_constraint.pole_target = ikfk_armature
+            ik_constraint.pole_subtarget = "CTRL_Pole_Elbow"
+            ik_constraint.chain_count = 2
+        upper_pose = ikfk_armature.pose.bones.get("DEF_UpperArm")
+        if upper_pose:
+            copy_rotation = upper_pose.constraints.new(type="COPY_ROTATION")
+            copy_rotation.name = "FK Forearm Rotation"
+            copy_rotation.target = ikfk_armature
+            copy_rotation.subtarget = "CTRL_FK_Forearm"
+        ik_pose = ikfk_armature.pose.bones.get("CTRL_IK_Hand")
+        fk_pose = ikfk_armature.pose.bones.get("CTRL_FK_Forearm")
+        if ik_pose:
+            ik_pose.location.x = 0.1
+            ik_pose.keyframe_insert(data_path="location", frame=1)
+            ik_pose.location.x = 0.6
+            ik_pose.keyframe_insert(data_path="location", frame=16)
+        if fk_pose:
+            fk_pose.rotation_mode = "XYZ"
+            fk_pose.rotation_euler.y = 0.0
+            fk_pose.keyframe_insert(data_path="rotation_euler", frame=1)
+            fk_pose.rotation_euler.y = 0.4
+            fk_pose.keyframe_insert(data_path="rotation_euler", frame=16)
+        ikfk_action = ikfk_armature.animation_data.action if ikfk_armature.animation_data else None
+        if ikfk_action:
+            ikfk_action.name = "Agent Bridge IKFK Pose Library"
+            created_actions.append(ikfk_action)
+            try:
+                marker = ikfk_action.pose_markers.new("IK Reach Pose")
+                marker.frame = 16
+            except Exception:
+                pass
+        bpy.ops.object.mode_set(mode="OBJECT")
+        created_objects.append(ikfk_armature)
+
         bpy.ops.mesh.primitive_cube_add(size=1.0, location=(0.0, 0.0, -0.55))
         ground = context.object
         ground.name = "Agent Bridge World Ground"
@@ -159,6 +230,7 @@ def main():
             "get_curve_text_details",
             "get_simulation_details",
             "inspect_simulation_bake",
+            "stage_persistent_simulation_bake",
             "get_collection_layer_details",
             "get_render_camera_compositor_details",
         }:
@@ -177,10 +249,21 @@ def main():
         assert armature_details["armature"]["control_hints"]["control_candidate_count"] >= 1, rigging
         assert armature_details["armature"]["pose_library_candidates"], rigging
 
+        ikfk_rigging = _execute(context, "get_rigging_details", {"object_names": ["Agent Bridge IKFK Armature"]})
+        ikfk_details = ikfk_rigging["objects"][0]["armature"]
+        ikfk_controls = ikfk_details["control_hints"]["control_candidates"]
+        ikfk_roles = {role for item in ikfk_controls for role in item.get("control_roles", [])}
+        assert {"ik", "fk", "pole"}.issubset(ikfk_roles), ikfk_rigging
+        assert ikfk_details["pose_library_candidates"][0]["pose_marker_count"] >= 1, ikfk_rigging
+        forearm_details = next(item for item in ikfk_details["pose_bones"] if item["name"] == "DEF_Forearm")
+        ik_targets = forearm_details["constraints"][0]["targets"][0]
+        assert ik_targets["subtarget"] == "CTRL_IK_Hand", ikfk_rigging
+        assert ik_targets["pole_subtarget"] == "CTRL_Pole_Elbow", ikfk_rigging
+
         animation_context = _execute(
             context,
             "get_animation_scene_context",
-            {"object_names": ["Cube", "Agent Bridge World Armature", "Agent Bridge World Ground"]},
+            {"object_names": ["Cube", "Agent Bridge World Armature", "Agent Bridge IKFK Armature", "Agent Bridge World Ground"]},
         )
         by_name = {item["name"]: item for item in animation_context["objects"]}
         assert by_name["Cube"]["rig"]["likely_rig_driven"] is True, animation_context
@@ -190,12 +273,14 @@ def main():
         assert by_name["Agent Bridge World Armature"]["rig_control_hints"]["control_candidate_count"] >= 1, animation_context
         assert by_name["Agent Bridge World Armature"]["object_animation"]["channel_summary"]["has_pose_bone_keys"], animation_context
         assert by_name["Agent Bridge World Armature"]["pose_library_candidates"], animation_context
+        assert by_name["Agent Bridge IKFK Armature"]["rig_control_hints"]["control_candidate_count"] >= 3, animation_context
+        assert by_name["Agent Bridge IKFK Armature"]["pose_library_candidates"], animation_context
         assert "get_rigging_details" in by_name["Cube"]["recommended_detail_tools"], animation_context
         assert "get_shape_key_details" in by_name["Cube"]["recommended_detail_tools"], animation_context
         assert "get_simulation_details" in animation_context["recommended_next_tools"], animation_context
         assert animation_context["summary"]["rig_driven_object_count"] >= 2, animation_context
-        assert animation_context["summary"]["rig_control_candidate_count"] >= 1, animation_context
-        assert animation_context["summary"]["pose_library_candidate_count"] >= 1, animation_context
+        assert animation_context["summary"]["rig_control_candidate_count"] >= 4, animation_context
+        assert animation_context["summary"]["pose_library_candidate_count"] >= 2, animation_context
         assert animation_context["summary"]["contact_surface_candidate_count"] >= 1, animation_context
         assert animation_context["contact_surface_candidates"][0]["name"] == "Agent Bridge World Ground", animation_context
         assert any(route["object"] == "Cube" and route["rig_control_candidate_count"] >= 1 and route["animation_routing_confidence"] == "high" for route in animation_context["subject_routing"]), animation_context
@@ -218,6 +303,7 @@ def main():
         assert cube_simulation["rigid_body"]["mass"] == 2.5, simulations
         assert cube_simulation["particle_systems"][0]["point_cache"], simulations
         assert "compare_animation_to_brief" in simulations["recommended_next_tools"], simulations
+        assert "stage_persistent_simulation_bake" in simulations["recommended_next_tools"], simulations
 
         frame_before_simulation_inspect = scene.frame_current
         simulation_bake = _execute(
@@ -235,6 +321,19 @@ def main():
         assert simulation_bake["object_summaries"][0]["sample_count"] == len(simulation_bake["sampled_frames"]), simulation_bake
         assert simulation_bake["simulation_details"]["summary"]["rigid_body_object_count"] >= 1, simulation_bake
         assert scene.frame_current == frame_before_simulation_inspect, simulation_bake
+
+        staged_bake = _execute(
+            context,
+            "stage_persistent_simulation_bake",
+            {"object_names": ["Cube"], "frame_start": 1, "frame_end": 12, "auto_run_if_trusted": False},
+        )
+        assert staged_bake["requires_user_approval"] is True, staged_bake
+        assert staged_bake["auto_ran"] is False, staged_bake
+        assert staged_bake["bake_operator_scope"] == "scene_wide_ptcache_bake_all", staged_bake
+        assert "scene-wide" in staged_bake["scope_warning"], staged_bake
+        script_text = bpy.data.texts[staged_bake["staged"]["text_datablock"]].as_string()
+        assert "bpy.ops.ptcache.bake_all" in script_text, staged_bake
+        assert "scope_warning" in script_text, staged_bake
 
         bpy.ops.mesh.primitive_cube_add(size=0.25, location=(3.0, 3.0, 0.0))
         plain_object = context.object

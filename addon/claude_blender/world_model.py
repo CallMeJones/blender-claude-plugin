@@ -258,28 +258,29 @@ def _pose_bone_control_hints(obj, *, max_candidates=16):
             reasons.append("custom_shape")
         if not reasons:
             continue
+        control_roles = []
+        if "ik" in name_lower:
+            control_roles.append("ik")
+        if "fk" in name_lower:
+            control_roles.append("fk")
+        if "pole" in name_lower:
+            control_roles.append("pole")
+        if "target" in name_lower:
+            control_roles.append("target")
         candidates.append(
             {
                 "name": pose_bone.name,
                 "parent": _safe_name(pose_bone.parent),
                 "use_deform": bool(data_bone.use_deform) if data_bone else None,
                 "constraint_types": sorted({con.type for con in constraints}),
-                "constraint_targets": [
-                    {
-                        "constraint": con.name,
-                        "type": con.type,
-                        "target": _safe_name(getattr(con, "target", None)),
-                        "subtarget": getattr(con, "subtarget", ""),
-                    }
-                    for con in constraints[:8]
-                    if getattr(con, "target", None) or getattr(con, "subtarget", "")
-                ],
+                "constraint_targets": _pose_constraint_targets(constraints),
                 "custom_shape": _safe_name(getattr(pose_bone, "custom_shape", None)),
                 "lock_location": [bool(value) for value in getattr(pose_bone, "lock_location", (False, False, False))],
                 "lock_rotation": [bool(value) for value in getattr(pose_bone, "lock_rotation", (False, False, False))],
                 "lock_scale": [bool(value) for value in getattr(pose_bone, "lock_scale", (False, False, False))],
                 "custom_properties": _idprops_summary(pose_bone, maximum=8),
                 "likely_control": True,
+                "control_roles": control_roles,
                 "reasons": reasons,
             }
         )
@@ -289,6 +290,25 @@ def _pose_bone_control_hints(obj, *, max_candidates=16):
         "control_candidates": candidates[: max(1, int(max_candidates or 1))],
         "truncated": len(candidates) > max(1, int(max_candidates or 1)),
     }
+
+
+def _pose_constraint_targets(constraints, *, maximum=8):
+    targets = []
+    for con in list(constraints or [])[:maximum]:
+        item = {
+            "constraint": con.name,
+            "type": con.type,
+            "target": _safe_name(getattr(con, "target", None)),
+            "subtarget": getattr(con, "subtarget", ""),
+        }
+        pole_target = getattr(con, "pole_target", None)
+        pole_subtarget = getattr(con, "pole_subtarget", "")
+        if pole_target or pole_subtarget:
+            item["pole_target"] = _safe_name(pole_target)
+            item["pole_subtarget"] = pole_subtarget
+        if item["target"] or item["subtarget"] or item.get("pole_target") or item.get("pole_subtarget"):
+            targets.append(item)
+    return targets
 
 
 def _pose_library_candidates(obj, *, max_actions=8):
@@ -864,7 +884,12 @@ def rigging_details(context, *, object_names=None, max_objects=12):
                     {
                         "name": bone.name,
                         "constraints": [
-                            {"name": con.name, "type": con.type, "influence": round(float(con.influence), 5)}
+                            {
+                                "name": con.name,
+                                "type": con.type,
+                                "influence": round(float(con.influence), 5),
+                                "targets": _pose_constraint_targets([con]),
+                            }
                             for con in list(bone.constraints)[:12]
                         ],
                     }
@@ -1062,7 +1087,7 @@ def simulation_details(context, *, object_names=None, max_objects=20):
             if world_cache["frame_start"] > scene_frame_range[0] or world_cache["frame_end"] < scene_frame_range[1]:
                 cautions.append({"object": "", "message": "Rigid body world cache range does not cover the scene frame range."})
     if summary["unbaked_cache_count"]:
-        recommended_next_tools.add("compare_animation_to_brief")
+        recommended_next_tools.update({"compare_animation_to_brief", "stage_persistent_simulation_bake"})
     return {
         "ok": True,
         "message": f"Found simulation state on {len(result)} object(s)",
@@ -1075,7 +1100,7 @@ def simulation_details(context, *, object_names=None, max_objects=20):
         "objects": result,
         "recommended_next_tools": sorted(recommended_next_tools),
         "cautions": cautions[:24],
-        "note": "Read-only simulation inspection; bake or run simulation intentionally before treating physics-heavy validation as final.",
+        "note": "Read-only simulation inspection; use inspect_simulation_bake for evaluated samples and stage_persistent_simulation_bake for explicit approval-gated persistent bakes.",
     }
 
 
@@ -1199,6 +1224,7 @@ def inspect_simulation_bake(context, *, object_names=None, frame_start=None, fra
     recommendations = ["Use these evaluated samples before deciding whether a simulation needs a persistent bake or helper repair."]
     if unbaked_count:
         recommendations.append("Cache state is unbaked; treat sampled results as inspection evidence, not final baked output.")
+        recommendations.append("Use stage_persistent_simulation_bake when the user wants to intentionally bake persistent point caches.")
     if not candidates:
         recommendations.append("No simulation-capable objects matched the request.")
     return {

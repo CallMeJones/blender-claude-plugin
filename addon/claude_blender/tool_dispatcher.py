@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import time
+import textwrap
 
 import bpy
 
@@ -1446,6 +1447,157 @@ def inspect_simulation_bake(context, args):
     )
 
 
+def _simulation_bake_script(*, object_names, frame_start, frame_end, clear_existing, include_scene_rigid_body_world):
+    names_literal = repr([str(name) for name in object_names or [] if str(name)])
+    return textwrap.dedent(
+        f"""
+        import bpy
+
+        scene = bpy.context.scene
+        target_names = {names_literal}
+        frame_start = {int(frame_start)}
+        frame_end = {int(frame_end)}
+        clear_existing = {bool(clear_existing)!r}
+        include_scene_rigid_body_world = {bool(include_scene_rigid_body_world)!r}
+        original_frame = int(scene.frame_current)
+        scope_warning = (
+            "bpy.ops.ptcache.bake_all is scene-wide; target_names only limit range preparation "
+            "and inspection evidence."
+        )
+
+        def set_cache_range(cache, label, touched):
+            if cache is None:
+                return
+            cache.frame_start = frame_start
+            cache.frame_end = frame_end
+            touched.append(label)
+
+        touched_caches = []
+        if include_scene_rigid_body_world and scene.rigidbody_world:
+            set_cache_range(getattr(scene.rigidbody_world, "point_cache", None), "scene.rigidbody_world", touched_caches)
+
+        objects = [bpy.data.objects.get(name) for name in target_names] if target_names else list(scene.objects)
+        objects = [obj for obj in objects if obj is not None]
+        for obj in objects:
+            for modifier in getattr(obj, "modifiers", []):
+                set_cache_range(getattr(modifier, "point_cache", None), obj.name + "." + modifier.name, touched_caches)
+            for psys in getattr(obj, "particle_systems", []):
+                set_cache_range(getattr(psys, "point_cache", None), obj.name + "." + psys.name, touched_caches)
+
+        try:
+            scene.frame_set(frame_start)
+            if clear_existing:
+                bpy.ops.ptcache.free_bake_all()
+            bpy.ops.ptcache.bake_all(bake=True)
+        finally:
+            scene.frame_set(original_frame)
+
+        print("=== persistent simulation bake complete ===")
+        print("frame_range:", frame_start, frame_end)
+        print("target_objects:", [obj.name for obj in objects])
+        print("touched_caches:", touched_caches)
+        print("scope_warning:", scope_warning)
+        """
+    ).strip()
+
+
+def stage_persistent_simulation_bake(context, args):
+    object_names = _name_list(args.get("object_names"))
+    frame_start = _bounded_int(args.get("frame_start"), context.scene.frame_start, minimum=-100000, maximum=100000)
+    frame_end = _bounded_int(args.get("frame_end"), context.scene.frame_end, minimum=-100000, maximum=100000)
+    if frame_end < frame_start:
+        frame_start, frame_end = frame_end, frame_start
+    sample = world_model.inspect_simulation_bake(
+        context,
+        object_names=object_names,
+        frame_start=frame_start,
+        frame_end=frame_end,
+        sample_count=2,
+        max_objects=_bounded_int(args.get("max_objects"), 20, maximum=80),
+    )
+    if object_names and not sample.get("object_names"):
+        return {
+            "ok": False,
+            "message": "No requested simulation-capable objects were found to bake",
+            "inspection": sample,
+            "requires_user_approval": False,
+        }
+    if not sample.get("object_names") and not ((sample.get("bake_status") or {}).get("rigid_body_world_cache")):
+        return {
+            "ok": False,
+            "message": "No simulation caches were found to bake",
+            "inspection": sample,
+            "requires_user_approval": False,
+        }
+    include_world = bool(args.get("include_scene_rigid_body_world", True))
+    clear_existing = bool(args.get("clear_existing", False))
+    code = _simulation_bake_script(
+        object_names=object_names,
+        frame_start=frame_start,
+        frame_end=frame_end,
+        clear_existing=clear_existing,
+        include_scene_rigid_body_world=include_world,
+    )
+    range_scope = "requested objects plus scene rigid-body world" if object_names else "all simulation caches in the active scene"
+    scope_warning = (
+        "Blender's bpy.ops.ptcache.bake_all operator is scene-wide; object_names limit inspection "
+        "and cache-range preparation, not the bake operator scope."
+    )
+    staged = script_runner.stage_script(
+        context,
+        code=code,
+        intent="Bake persistent Blender simulation point caches with a fixed Agent Bridge template.",
+        expected_changes=(
+            f"Sets point-cache ranges to frames {frame_start}-{frame_end} for {range_scope}, "
+            "then runs the scene-wide bpy.ops.ptcache.bake_all(bake=True) operator. "
+            "This can take time and writes persistent cache state."
+        ),
+        risk_level="high",
+        target_objects=object_names,
+    )
+    result = {
+        "ok": bool(staged.get("ok")),
+        "message": "Persistent simulation bake script staged for approval",
+        "inspection": sample,
+        "staged": staged,
+        "frame_range": [frame_start, frame_end],
+        "range_preparation_scope": range_scope,
+        "bake_operator_scope": "scene_wide_ptcache_bake_all",
+        "scope_warning": scope_warning,
+        "clear_existing": clear_existing,
+        "include_scene_rigid_body_world": include_world,
+        "requires_user_approval": bool(staged.get("requires_user_approval", True)),
+        "auto_run_attempted": False,
+        "auto_ran": False,
+    }
+    if not staged.get("ok") or staged.get("analysis", {}).get("blocked"):
+        return result
+    if bool(args.get("auto_run_if_trusted", True)) and script_runner.external_script_trust_active(context):
+        prefs = preferences.get_preferences(context)
+        run_result = script_runner.run_externally_approved_script(
+            context,
+            "",
+            checkpoint_enabled=bool(getattr(prefs, "checkpoints_enabled", True)),
+            checkpoint_dir=getattr(prefs, "checkpoint_dir", None),
+        )
+        result.update(
+            {
+                "ok": bool(run_result.get("ok")),
+                "message": (
+                    "Persistent simulation bake script staged and auto-ran under active external script trust"
+                    if run_result.get("ok")
+                    else "Persistent simulation bake script staged but auto-run failed under active external script trust"
+                ),
+                "run_result": run_result,
+                "auto_run_attempted": True,
+                "auto_ran": bool(run_result.get("ok")),
+                "auto_run_reason": "external_script_trust_active",
+                "requires_user_approval": False,
+            }
+        )
+    return result
+
+
 def get_collection_layer_details(context, args):
     return world_model.collection_layer_details(
         context,
@@ -2783,6 +2935,7 @@ TOOL_FUNCTIONS = {
     "get_curve_text_details": get_curve_text_details,
     "get_simulation_details": get_simulation_details,
     "inspect_simulation_bake": inspect_simulation_bake,
+    "stage_persistent_simulation_bake": stage_persistent_simulation_bake,
     "get_collection_layer_details": get_collection_layer_details,
     "get_render_camera_compositor_details": get_render_camera_compositor_details,
     "select_objects": select_objects,

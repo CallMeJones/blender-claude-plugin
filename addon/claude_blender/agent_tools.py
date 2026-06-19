@@ -18,7 +18,7 @@ AGENT_GUIDANCE = (
     "For model refinement and production presentation, prefer shade_smooth_selected, add_bevel_and_subsurf, create_wheel_assembly, add_panel_seams, add_window_materials, apply_vehicle_refinement_template, apply_product_refinement_template, apply_character_refinement_template, create_studio_product_stage, add_dimension_callouts, apply_lighting_preset, create_material_palette, create_product_turntable_setup, and organize_scene_for_production when they fit the task. "
     "For shape-key animation, prefer create_shape_key and animate_shape_key before drafting Python. "
     "For long-running or high-resolution renders, playblasts, frame sequences, or MP4 quality checks, use start_render_job and poll get_render_job_status instead of draft_script; use assemble_render_job_video for PNG sequences and validate_render_job_output before reporting success; use cancel_render_job if the user wants to stop it. "
-    "For animation generation, review, or repair, call run_animation_task for simple prompt-in/task-out use, or call plan_animation_workflow first when you need manual control of the generated workflow. plan_animation_workflow returns the brief, scene routing, timing chart, ordered helper calls, evaluator calls, repair calls, and script fallback rules. For common helper-backed generation, call run_animation_workflow to execute the plan, review the result, optionally capture playblast evidence, and leave changes in preview. Use any animation_brief in context as the prompt contract; otherwise call create_animation_brief first when the prompt needs an explicit contract, success criteria, or later validation. Call get_animation_scene_context before advanced animation in scenes with rigs, constraints, drivers, shape keys, physics, or unclear edit targets so you know whether to animate object transforms, rig controls, shape keys, materials, physics, or camera settings. Use create_timing_chart, block_key_poses, add_breakdown_pose, set_pose_hold, set_rig_pose_hold, and create_motion_arc for animator-style blocking before spline/f-curve polish; use set_rig_pose_hold only after identifying armature control bones. Then use analyze_animation_principles plus focused analyzers to check timing, spacing, arcs, pose clarity, anticipation, squash/stretch, contact, center-of-mass support, speed/acceleration plausibility, simulation cache readiness, and settle before repair; use inspect_simulation_bake before writing custom simulation/bake scripts. Use capture_animation_playblast and review_playblast_against_brief when visual frame evidence matters; use capture_object_inspection_renders and review_inspection_renders_against_brief when close-up object detail evidence matters; if review or repair tools return repair_operations, prefer run_animation_repair_loop for bounded helper repair and review-again behavior, or execute relevant tool_call name/input entries deliberately when manual control is needed. Then prefer set_scene_frame_range, set_animation_preview_range, animate_selected_transform, animate_object_bounce, create_progressive_bounce_animation, animate_material_property, animate_light_property, create_follow_path_animation, create_turntable_animation, create_pulse_animation, create_reveal_animation, create_staggered_motion, set_action_interpolation, retime_actions, add_action_cycles, clear_animation, and create_camera_orbit. "
+    "For animation generation, review, or repair, call run_animation_task for simple prompt-in/task-out use, or call plan_animation_workflow first when you need manual control of the generated workflow. plan_animation_workflow returns the brief, scene routing, timing chart, ordered helper calls, evaluator calls, repair calls, and script fallback rules. For common helper-backed generation, call run_animation_workflow to execute the plan, review the result, optionally capture playblast evidence, and leave changes in preview. Use any animation_brief in context as the prompt contract; otherwise call create_animation_brief first when the prompt needs an explicit contract, success criteria, or later validation. Call get_animation_scene_context before advanced animation in scenes with rigs, constraints, drivers, shape keys, physics, or unclear edit targets so you know whether to animate object transforms, rig controls, shape keys, materials, physics, or camera settings. Use create_timing_chart, block_key_poses, add_breakdown_pose, set_pose_hold, set_rig_pose_hold, and create_motion_arc for animator-style blocking before spline/f-curve polish; use set_rig_pose_hold only after identifying armature control bones. Then use analyze_animation_principles plus focused analyzers to check timing, spacing, arcs, pose clarity, anticipation, squash/stretch, contact, center-of-mass support, speed/acceleration plausibility, simulation cache readiness, and settle before repair; use inspect_simulation_bake before persistent bake decisions, and use stage_persistent_simulation_bake when the user intentionally wants a persistent point-cache bake. Use capture_animation_playblast and review_playblast_against_brief when visual frame evidence matters; use capture_object_inspection_renders and review_inspection_renders_against_brief when close-up object detail evidence matters; if review or repair tools return repair_operations, prefer run_animation_repair_loop for bounded helper repair and review-again behavior, or execute relevant tool_call name/input entries deliberately when manual control is needed. Then prefer set_scene_frame_range, set_animation_preview_range, animate_selected_transform, animate_object_bounce, create_progressive_bounce_animation, animate_material_property, animate_light_property, create_follow_path_animation, create_turntable_animation, create_pulse_animation, create_reveal_animation, create_staggered_motion, set_action_interpolation, retime_actions, add_action_cycles, clear_animation, and create_camera_orbit. "
     "For complex scene builds that need many objects or more than about eight helper calls, stage one cohesive Blender Python script with draft_script instead of making a long chain of helper calls. "
     "When helper tools cannot express the requested edit, use draft_script to stage Blender Python for user approval; if the user has granted external script trust, draft_script may auto-run after static checks. "
     "When calling draft_script, put the complete Python source in the code field. Do not put script code in final chat text for the user to paste manually. "
@@ -856,6 +856,23 @@ def blender_tool_definitions():
                     "frame_start": {"type": "integer"},
                     "frame_end": {"type": "integer"},
                     "sample_count": {"type": "integer"},
+                    "max_objects": {"type": "integer"},
+                },
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "stage_persistent_simulation_bake",
+            "description": "Stage a fixed-template scene-wide persistent simulation point-cache bake script for explicit user approval, or auto-run it when external script trust is active.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "object_names": {"type": "array", "items": {"type": "string"}},
+                    "frame_start": {"type": "integer"},
+                    "frame_end": {"type": "integer"},
+                    "clear_existing": {"type": "boolean"},
+                    "include_scene_rigid_body_world": {"type": "boolean"},
+                    "auto_run_if_trusted": {"type": "boolean"},
                     "max_objects": {"type": "integer"},
                 },
                 "additionalProperties": False,
@@ -2397,6 +2414,7 @@ _TOOL_GROUPS = {
         "analyze_camera_framing",
         "analyze_motion_physics",
         "inspect_simulation_bake",
+        "stage_persistent_simulation_bake",
         "compare_animation_to_brief",
         "review_playblast_against_brief",
         "review_inspection_renders_against_brief",
@@ -2463,6 +2481,7 @@ _TOOL_GROUPS = {
         "get_curve_text_details",
         "get_simulation_details",
         "inspect_simulation_bake",
+        "stage_persistent_simulation_bake",
         "get_collection_layer_details",
         "get_render_camera_compositor_details",
         "analyze_motion_arcs",
@@ -2605,7 +2624,7 @@ _TOOL_GROUPS = {
         "add_copy_transform_constraint",
     },
     "curves_text": {"get_curve_text_details", "create_text_object", "create_curve_path", "create_follow_path_animation"},
-    "particles": {"get_simulation_details", "inspect_simulation_bake", "add_particle_system_to_selected"},
+    "particles": {"get_simulation_details", "inspect_simulation_bake", "stage_persistent_simulation_bake", "add_particle_system_to_selected"},
     "geometry_nodes": {"get_geometry_nodes_details", "add_geometry_nodes_modifier"},
     "preview_control": {"commit_preview", "revert_preview"},
 }
@@ -2614,7 +2633,7 @@ _GROUP_KEYWORDS = {
     "selection": {"select", "selected", "active", "frame", "playhead", "inspect", "workspace", "tab", "focus", "viewport focus"},
     "basic_edit": {"make", "create", "add", "move", "scale", "rotate", "transform", "object", "primitive", "empty", "marker", "collection", "duplicate", "copy", "parent", "align", "distribute", "layout", "arrange", "hide", "unhide", "visibility", "visible", "display", "wireframe", "show name", "in front"},
     "materials": {"material", "shader", "color", "colour", "red", "blue", "green", "metal", "metallic", "chrome", "glass", "emission", "glow", "window"},
-    "animation": {"animate", "animation", "animation brief", "prompt contract", "success criteria", "timing chart", "key pose", "key poses", "hold", "breakdown", "keyframe", "timeline", "frame", "orbit", "bounce", "driver", "motion", "motion arc", "arc", "follow path", "path", "retime", "interpolation", "easing", "loop", "cycles", "turntable", "pulse", "reveal", "stagger", "playblast", "timing", "spacing", "blocking", "anticipation", "squash", "stretch", "settle", "follow-through", "principles", "center of mass", "support", "contact sliding", "simulation", "physics bake"},
+    "animation": {"animate", "animation", "animation brief", "prompt contract", "success criteria", "timing chart", "key pose", "key poses", "hold", "breakdown", "keyframe", "timeline", "frame", "orbit", "bounce", "driver", "motion", "motion arc", "arc", "follow path", "path", "retime", "interpolation", "easing", "loop", "cycles", "turntable", "pulse", "reveal", "stagger", "playblast", "timing", "spacing", "blocking", "anticipation", "squash", "stretch", "settle", "follow-through", "principles", "center of mass", "support", "contact sliding", "simulation", "physics bake", "persistent bake"},
     "camera_render": {"camera", "render", "render job", "quality check", "thumbnail", "still", "mp4", "video assembly", "assemble video", "validate render", "1080p", "4k", "frame sequence", "samples", "light", "lighting", "world", "background", "dof", "depth of field", "lens", "compositor", "resolution", "intensity", "studio", "product stage", "presentation", "close-up", "closeup", "underside"},
     "deep_inspect": {"inspect", "analyze", "analyse", "summarize", "summary", "details", "world model", "what", "list", "screenshot", "viewport", "visual", "image", "capture", "playblast", "review", "diagnostic", "diagnostics", "missing external", "linked library", "linked libraries", "blend file", "data-block", "datablock", "backup", "workspace", "layout json", "underside", "gear"},
     "advanced_create": {"geometry nodes", "shape key", "text", "curve", "particle", "armature", "constraint", "rig", "driver", "callout", "dimension", "label", "palette", "swatch", "organize", "collection"},
@@ -2624,7 +2643,7 @@ _GROUP_KEYWORDS = {
     "character": {"character", "humanoid", "person", "head", "face", "eyes", "shoulder", "body", "toon", "avatar"},
     "rigging": {"rig", "armature", "bone", "constraint", "copy location", "copy rotation", "track to"},
     "curves_text": {"curve", "path", "text", "label", "spline"},
-    "particles": {"particle", "particles", "simulation", "sim", "physics", "bake", "cache", "point cache", "spark", "dust"},
+    "particles": {"particle", "particles", "simulation", "sim", "physics", "bake", "persistent bake", "cache", "point cache", "spark", "dust"},
     "geometry_nodes": {"geometry node", "geometry nodes", "node group"},
     "preview_control": {"commit", "revert", "undo", "cancel preview", "accept preview"},
 }
@@ -2736,6 +2755,7 @@ def select_blender_tool_definitions(prompt="", context_bundle=None, *, max_schem
                 "analyze_camera_framing",
                 "analyze_motion_physics",
                 "inspect_simulation_bake",
+                "stage_persistent_simulation_bake",
                 "compare_animation_to_brief",
                 "review_playblast_against_brief",
                 "review_inspection_renders_against_brief",

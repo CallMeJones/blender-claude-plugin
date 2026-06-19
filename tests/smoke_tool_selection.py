@@ -151,6 +151,15 @@ def main():
         simulation_names = _names(simulation_tools)
         assert "get_simulation_details" in simulation_names, simulation_meta
         assert "inspect_simulation_bake" in simulation_names, simulation_meta
+        assert "stage_persistent_simulation_bake" in simulation_names, simulation_meta
+
+        bake_tools, bake_meta = agent_tools.select_blender_tool_definitions(
+            "Bake the persistent rigid body point cache after inspecting the physics simulation.",
+            bundle,
+        )
+        bake_names = _names(bake_tools)
+        assert "inspect_simulation_bake" in bake_names, bake_meta
+        assert "stage_persistent_simulation_bake" in bake_names, bake_meta
 
         rig_repair_tools, rig_repair_meta = agent_tools.select_blender_tool_definitions(
             "Review the character rig pose clarity, inspect controls, and hold a keyed armature control pose.",
