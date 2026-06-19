@@ -13,7 +13,7 @@ import bpy
 
 
 DEFAULT_MAX_BYTES = 5 * 1024 * 1024
-PREVIEW_IMAGE_NAME = "Claude Viewport Preview"
+PREVIEW_IMAGE_NAME = "Agent Bridge Viewport Preview"
 LATEST_CAPTURE_RESOURCE_URI = "blender://captures/latest"
 LATEST_CAPTURE_METADATA_URI = "blender://captures/latest/metadata"
 MIN_RESIZED_DIMENSION = 64

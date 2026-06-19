@@ -1,4 +1,4 @@
-﻿"""Blender background smoke test for model refinement helpers."""
+"""Blender background smoke test for model refinement helpers."""
 
 from __future__ import annotations
 
@@ -100,13 +100,13 @@ def main():
 
         _execute(context, "shade_smooth_selected", {"add_weighted_normals": True})
         assert all(poly.use_smooth for poly in cube.data.polygons)
-        assert cube.modifiers.get("Claude Weighted Normals")
+        assert cube.modifiers.get("Agent Bridge Weighted Normals")
 
         _execute(context, "add_bevel_and_subsurf", {"bevel_width": 0.05, "bevel_segments": 3, "subsurf_levels": 1})
-        assert cube.modifiers.get("Claude Detail Bevel")
-        assert cube.modifiers.get("Claude Detail Subdivision")
+        assert cube.modifiers.get("Agent Bridge Detail Bevel")
+        assert cube.modifiers.get("Agent Bridge Detail Subdivision")
 
-        wheel = _execute(context, "create_wheel_assembly", {"name": "Claude Test Wheel", "location": [2.2, -1.2, -0.6], "radius": 0.35})
+        wheel = _execute(context, "create_wheel_assembly", {"name": "Agent Bridge Test Wheel", "location": [2.2, -1.2, -0.6], "radius": 0.35})
         assert len(wheel["objects"]) == 2
 
         seams = _execute(context, "add_panel_seams", {"target_name": "Cube"})
@@ -115,7 +115,7 @@ def main():
         glass = _execute(context, "add_window_materials", {"target_name": "Cube", "create_panels": True})
         assert glass["created_objects"]
 
-        stage = _execute(context, "create_studio_product_stage", {"target_name": "Cube", "stage_name": "Claude Test Stage"})
+        stage = _execute(context, "create_studio_product_stage", {"target_name": "Cube", "stage_name": "Agent Bridge Test Stage"})
         assert stage["created_objects"]
         assert len(stage["lights"]) == 3
         assert stage["camera"]
@@ -132,7 +132,7 @@ def main():
         palette = _execute(
             context,
             "create_material_palette",
-            {"palette_name": "Claude Test Palette", "palette": "automotive", "assign_to_selected": True},
+            {"palette_name": "Agent Bridge Test Palette", "palette": "automotive", "assign_to_selected": True},
         )
         assert len(palette["materials"]) == 5
         assert len(palette["swatches"]) == 5
@@ -141,12 +141,12 @@ def main():
         turntable = _execute(
             context,
             "create_product_turntable_setup",
-            {"target_name": "Cube", "frame_start": 1, "frame_end": 48, "setup_name": "Claude Test Turntable", "create_stage": False},
+            {"target_name": "Cube", "frame_start": 1, "frame_end": 48, "setup_name": "Agent Bridge Test Turntable", "create_stage": False},
         )
         assert turntable["animation"]["action"], turntable
         assert turntable["camera_orbit"]["camera"], turntable
 
-        organized = _execute(context, "organize_scene_for_production", {"collection_prefix": "Claude Test Production"})
+        organized = _execute(context, "organize_scene_for_production", {"collection_prefix": "Agent Bridge Test Production"})
         assert organized["collections"], organized
 
         _execute(context, "revert_preview", {})
@@ -185,7 +185,7 @@ def main():
         assert product["created_objects"], product
         assert "studio stage" in product["features"], product
         assert "product presentation" in product["expected_changes"], product
-        assert cube.modifiers.get("Claude Detail Bevel")
+        assert cube.modifiers.get("Agent Bridge Detail Bevel")
         _execute(context, "revert_preview", {})
         final = _snapshot(cube)
         assert final == initial, {"initial": initial, "final": final}
@@ -208,7 +208,7 @@ def main():
         assert vehicle["created_objects"]
         assert any("Wheel" in name for name in vehicle["created_objects"])
         assert "vehicle detail kit" in vehicle["expected_changes"], vehicle
-        assert cube.modifiers.get("Claude Detail Bevel")
+        assert cube.modifiers.get("Agent Bridge Detail Bevel")
         _execute(context, "revert_preview", {})
         final = _snapshot(cube)
         assert final == initial, {"initial": initial, "final": final}

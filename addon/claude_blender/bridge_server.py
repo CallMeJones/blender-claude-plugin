@@ -478,7 +478,7 @@ def _ensure_timer():
 
 
 class _BridgeHandler(BaseHTTPRequestHandler):
-    server_version = "ClaudeBlenderBridge/0.2"
+    server_version = "BlenderAgentBridge/0.2"
 
     def log_message(self, fmt, *args):
         return
@@ -573,7 +573,7 @@ def start_bridge(*, host=DEFAULT_HOST, port=DEFAULT_PORT, auth_token=""):
         _ensure_timer()
         server = ThreadingHTTPServer((DEFAULT_HOST, int(port)), _BridgeHandler)
         server.auth_token = str(auth_token or "")
-        thread = threading.Thread(target=server.serve_forever, name="ClaudeBlenderBridge", daemon=True)
+        thread = threading.Thread(target=server.serve_forever, name="BlenderAgentBridge", daemon=True)
         thread.start()
         _server = server
         _thread = thread

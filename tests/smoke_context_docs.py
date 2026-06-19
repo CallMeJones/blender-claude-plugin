@@ -1,4 +1,4 @@
-﻿"""Blender background smoke test for context, docs, and image payload wiring."""
+"""Blender background smoke test for context, docs, and image payload wiring."""
 
 from __future__ import annotations
 
@@ -303,7 +303,7 @@ def main():
         assert bpy.data.images.get(viewport_capture.PREVIEW_IMAGE_NAME) is not None
 
         large_png = os.path.join(cache_dir, "large.png")
-        large_image = bpy.data.images.new("Claude Resize Source", width=256, height=256)
+        large_image = bpy.data.images.new("Agent Bridge Resize Source", width=256, height=256)
         rng = random.Random(42)
         large_image.pixels[:] = [
             value

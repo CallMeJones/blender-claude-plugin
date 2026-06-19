@@ -1,4 +1,4 @@
-﻿"""Smoke tests for deep Blender world-model inspection tools."""
+"""Smoke tests for deep Blender world-model inspection tools."""
 
 from __future__ import annotations
 
@@ -29,23 +29,23 @@ def _select(context, obj):
 
 
 def _make_curve_object(scene):
-    curve = bpy.data.curves.new("Claude World Curve Data", "CURVE")
+    curve = bpy.data.curves.new("Agent Bridge World Curve Data", "CURVE")
     curve.dimensions = "3D"
     curve.bevel_depth = 0.03
     spline = curve.splines.new("POLY")
     spline.points.add(1)
     spline.points[0].co = (0.0, 0.0, 0.0, 1.0)
     spline.points[1].co = (1.0, 0.0, 1.0, 1.0)
-    obj = bpy.data.objects.new("Claude World Curve", curve)
+    obj = bpy.data.objects.new("Agent Bridge World Curve", curve)
     scene.collection.objects.link(obj)
     return obj
 
 
 def _make_text_object(scene):
-    text = bpy.data.curves.new("Claude World Text Data", "FONT")
+    text = bpy.data.curves.new("Agent Bridge World Text Data", "FONT")
     text.body = "World model"
     text.align_x = "CENTER"
-    obj = bpy.data.objects.new("Claude World Text", text)
+    obj = bpy.data.objects.new("Agent Bridge World Text", text)
     scene.collection.objects.link(obj)
     return obj
 
@@ -61,7 +61,7 @@ def main():
         cube = bpy.data.objects["Cube"]
         _select(context, cube)
 
-        material = bpy.data.materials.new("Claude World Shader")
+        material = bpy.data.materials.new("Agent Bridge World Shader")
         material.use_nodes = True
         cube.data.materials.clear()
         cube.data.materials.append(material)
@@ -71,8 +71,8 @@ def main():
         shape_lift.value = 0.4
         assert shape_basis.name == "Basis"
 
-        gn_group = bpy.data.node_groups.new("Claude World Geometry Nodes", "GeometryNodeTree")
-        gn_modifier = cube.modifiers.new("Claude World GN", "NODES")
+        gn_group = bpy.data.node_groups.new("Agent Bridge World Geometry Nodes", "GeometryNodeTree")
+        gn_modifier = cube.modifiers.new("Agent Bridge World GN", "NODES")
         gn_modifier.node_group = gn_group
 
         cube["custom_driver_source"] = 1.0
@@ -85,7 +85,7 @@ def main():
 
         bpy.ops.object.armature_add(location=(2.0, 0.0, 0.0))
         armature = context.object
-        armature.name = "Claude World Armature"
+        armature.name = "Agent Bridge World Armature"
         if armature.data and armature.data.bones:
             armature.data.bones[0].name = "CTRL_Main"
             armature.data.bones["CTRL_Main"].use_deform = False
@@ -98,7 +98,7 @@ def main():
             pose_bone.keyframe_insert(data_path="location", frame=12)
             pose_action = armature.animation_data.action if armature.animation_data else None
         if pose_action:
-            pose_action.name = "Claude World Pose Action"
+            pose_action.name = "Agent Bridge World Pose Action"
             created_actions.append(pose_action)
         try:
             if pose_action:
@@ -107,13 +107,13 @@ def main():
         except Exception:
             pass
         created_objects.append(armature)
-        armature_modifier = cube.modifiers.new("Claude World Armature Mod", "ARMATURE")
+        armature_modifier = cube.modifiers.new("Agent Bridge World Armature Mod", "ARMATURE")
         armature_modifier.object = armature
 
         bpy.ops.mesh.primitive_cube_add(size=1.0, location=(0.0, 0.0, -0.55))
         ground = context.object
-        ground.name = "Claude World Ground"
-        ground.data.name = "Claude World Ground Mesh"
+        ground.name = "Agent Bridge World Ground"
+        ground.data.name = "Agent Bridge World Ground Mesh"
         ground.scale = (3.0, 3.0, 0.04)
         created_objects.append(ground)
         context.view_layer.update()
@@ -122,7 +122,7 @@ def main():
         text_obj = _make_text_object(scene)
         created_objects.extend([curve_obj, text_obj])
 
-        collection = bpy.data.collections.new("Claude World Collection")
+        collection = bpy.data.collections.new("Agent Bridge World Collection")
         scene.collection.children.link(collection)
         collection.objects.link(cube)
 
@@ -130,7 +130,7 @@ def main():
         if hasattr(scene, "node_tree") and scene.node_tree:
             scene.node_tree.nodes.new(type="CompositorNodeBlur")
         elif hasattr(scene, "compositing_node_group"):
-            compositor_group = bpy.data.node_groups.new("Claude World Compositor", "CompositorNodeTree")
+            compositor_group = bpy.data.node_groups.new("Agent Bridge World Compositor", "CompositorNodeTree")
             created_node_groups.append(compositor_group)
             compositor_group.nodes.new(type="CompositorNodeBlur")
             scene.compositing_node_group = compositor_group
@@ -159,10 +159,10 @@ def main():
         assert geometry["objects"], geometry
         assert geometry["objects"][0]["geometry_node_modifiers"], geometry
 
-        shader = _execute(context, "get_shader_nodes_details", {"material_names": ["Claude World Shader"]})
+        shader = _execute(context, "get_shader_nodes_details", {"material_names": ["Agent Bridge World Shader"]})
         assert shader["materials"][0]["node_tree"], shader
 
-        rigging = _execute(context, "get_rigging_details", {"object_names": ["Claude World Armature", "Cube"]})
+        rigging = _execute(context, "get_rigging_details", {"object_names": ["Agent Bridge World Armature", "Cube"]})
         assert any(item["type"] == "ARMATURE" for item in rigging["objects"]), rigging
         armature_details = next(item for item in rigging["objects"] if item["type"] == "ARMATURE")
         assert armature_details["armature"]["control_hints"]["control_candidate_count"] >= 1, rigging
@@ -171,16 +171,16 @@ def main():
         animation_context = _execute(
             context,
             "get_animation_scene_context",
-            {"object_names": ["Cube", "Claude World Armature", "Claude World Ground"]},
+            {"object_names": ["Cube", "Agent Bridge World Armature", "Agent Bridge World Ground"]},
         )
         by_name = {item["name"]: item for item in animation_context["objects"]}
         assert by_name["Cube"]["rig"]["likely_rig_driven"] is True, animation_context
         assert by_name["Cube"]["suggested_primary_animation_target"] == "rig_controls", animation_context
         assert by_name["Cube"]["animation_routing_confidence"] == "high", animation_context
         assert by_name["Cube"]["rig"]["control_targets"][0]["control_candidate_count"] >= 1, animation_context
-        assert by_name["Claude World Armature"]["rig_control_hints"]["control_candidate_count"] >= 1, animation_context
-        assert by_name["Claude World Armature"]["object_animation"]["channel_summary"]["has_pose_bone_keys"], animation_context
-        assert by_name["Claude World Armature"]["pose_library_candidates"], animation_context
+        assert by_name["Agent Bridge World Armature"]["rig_control_hints"]["control_candidate_count"] >= 1, animation_context
+        assert by_name["Agent Bridge World Armature"]["object_animation"]["channel_summary"]["has_pose_bone_keys"], animation_context
+        assert by_name["Agent Bridge World Armature"]["pose_library_candidates"], animation_context
         assert "get_rigging_details" in by_name["Cube"]["recommended_detail_tools"], animation_context
         assert "get_shape_key_details" in by_name["Cube"]["recommended_detail_tools"], animation_context
         assert "get_simulation_details" in animation_context["recommended_next_tools"], animation_context
@@ -188,7 +188,7 @@ def main():
         assert animation_context["summary"]["rig_control_candidate_count"] >= 1, animation_context
         assert animation_context["summary"]["pose_library_candidate_count"] >= 1, animation_context
         assert animation_context["summary"]["contact_surface_candidate_count"] >= 1, animation_context
-        assert animation_context["contact_surface_candidates"][0]["name"] == "Claude World Ground", animation_context
+        assert animation_context["contact_surface_candidates"][0]["name"] == "Agent Bridge World Ground", animation_context
         assert any(route["object"] == "Cube" and route["rig_control_candidate_count"] >= 1 and route["animation_routing_confidence"] == "high" for route in animation_context["subject_routing"]), animation_context
         assert animation_context["summary"]["active_camera"] == "Camera", animation_context
 
@@ -196,7 +196,7 @@ def main():
         assert shape_keys["objects"], shape_keys
         assert any(key["name"] == "Lift" for key in shape_keys["objects"][0]["key_blocks"]), shape_keys
 
-        curves = _execute(context, "get_curve_text_details", {"object_names": ["Claude World Curve", "Claude World Text"]})
+        curves = _execute(context, "get_curve_text_details", {"object_names": ["Agent Bridge World Curve", "Agent Bridge World Text"]})
         assert len(curves["objects"]) == 2, curves
 
         simulations = _execute(context, "get_simulation_details", {"object_names": ["Cube"]})
@@ -204,7 +204,7 @@ def main():
 
         collections = _execute(context, "get_collection_layer_details", {"max_depth": 3})
         assert collections["scene_collection"], collections
-        assert any(item["name"] == "Claude World Collection" for item in collections["collections"]), collections
+        assert any(item["name"] == "Agent Bridge World Collection" for item in collections["collections"]), collections
 
         render = _execute(context, "get_render_camera_compositor_details", {})
         assert render["render"]["engine"], render
@@ -215,11 +215,11 @@ def main():
         for obj in created_objects:
             if obj.name in bpy.data.objects:
                 bpy.data.objects.remove(obj, do_unlink=True)
-        for name in ["Claude World Curve Data", "Claude World Text Data"]:
+        for name in ["Agent Bridge World Curve Data", "Agent Bridge World Text Data"]:
             data = bpy.data.curves.get(name)
             if data:
                 bpy.data.curves.remove(data)
-        for name in ["Claude World Shader"]:
+        for name in ["Agent Bridge World Shader"]:
             material = bpy.data.materials.get(name)
             if material:
                 bpy.data.materials.remove(material)
@@ -229,15 +229,15 @@ def main():
         for action in created_actions:
             if action.name in bpy.data.actions:
                 bpy.data.actions.remove(action)
-        for name in ["Claude World Geometry Nodes"]:
+        for name in ["Agent Bridge World Geometry Nodes"]:
             group = bpy.data.node_groups.get(name)
             if group:
                 bpy.data.node_groups.remove(group)
-        for name in ["Claude World Ground Mesh"]:
+        for name in ["Agent Bridge World Ground Mesh"]:
             mesh = bpy.data.meshes.get(name)
             if mesh:
                 bpy.data.meshes.remove(mesh)
-        collection = bpy.data.collections.get("Claude World Collection")
+        collection = bpy.data.collections.get("Agent Bridge World Collection")
         if collection:
             bpy.data.collections.remove(collection)
         claude_blender.unregister()

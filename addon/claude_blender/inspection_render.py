@@ -272,7 +272,7 @@ def capture_object_inspection_renders(
     resolution_y=600,
     lens=50.0,
     distance_factor=3.0,
-    camera_name="Claude Inspection Camera",
+    camera_name="Agent Bridge Inspection Camera",
     note="",
     capture_dir=None,
 ):
@@ -301,9 +301,9 @@ def capture_object_inspection_renders(
         "filepath": str(scene.render.filepath),
         "file_format": str(scene.render.image_settings.file_format),
     }
-    camera_data = bpy.data.cameras.new(f"{_safe_id(camera_name, 'Claude_Inspection_Camera')}_Data")
+    camera_data = bpy.data.cameras.new(f"{_safe_id(camera_name, 'Agent_Bridge_Inspection_Camera')}_Data")
     camera_data.lens = float(lens)
-    camera = bpy.data.objects.new(_safe_id(camera_name, "Claude_Inspection_Camera"), camera_data)
+    camera = bpy.data.objects.new(_safe_id(camera_name, "Agent_Bridge_Inspection_Camera"), camera_data)
     scene.collection.objects.link(camera)
 
     images = []

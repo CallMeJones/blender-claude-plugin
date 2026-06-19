@@ -79,7 +79,7 @@ Use follow-up tools for detailed data:
 - `get_render_camera_compositor_details()`
 - `search_blender_docs(query)`
 
-This lets Claude ask for more when needed without dumping the whole file into every request.
+This lets external agents ask for more when needed without dumping the whole file into every request.
 
 ### Deep World Model
 
@@ -94,7 +94,7 @@ This lets Claude ask for more when needed without dumping the whole file into ev
 - collection hierarchy and view layers;
 - render, camera, world, and compositor settings.
 
-The prompt planner includes only a small `world_model_summary` by default and points Claude to the specific deep tools when a task needs details. This keeps token use low while giving the agent enough local reach to inspect complex scenes before drafting Python.
+The prompt planner includes only a small `world_model_summary` by default and points external agents to the specific deep tools when a task needs details. This keeps token use low while giving the agent enough local reach to inspect complex scenes before drafting Python.
 
 ## Docs Engine
 
@@ -131,7 +131,7 @@ The cache layout is:
     manual_index.json
 ```
 
-The search tool returns only top matching snippets and URLs. It never sends the whole docs cache to Claude.
+The search tool returns only top matching snippets and URLs. It never exposes the whole docs cache to external clients.
 
 ## Context Budgeting
 
@@ -165,7 +165,7 @@ Simple changes should go through allowlisted helper tools instead of arbitrary g
 Initial helpers:
 
 - `list_scene_objects(type_filter, max_objects)`
-- `capture_viewport(max_bytes)`: captures the interactive viewport/window when UI is available and returns metadata plus the local PNG artifact path. Normal Claude visual prompts should still use the Viewport context toggle, which can attach the image block directly.
+- `capture_viewport(max_bytes)`: captures the interactive viewport/window when UI is available and returns metadata plus the local PNG artifact path. External clients can use the Viewport context toggle or explicit MCP image resources when visual evidence is needed.
 - `capture_object_inspection_renders(object_names, views, frame, resolution_x, resolution_y, lens, distance_factor, camera_name, note)`: renders bounded diagnostic close-up PNGs of named objects, such as underside or side views, and returns metadata plus MCP image resource URIs.
 - `select_objects(object_names, active_object_name, extend)`
 - `set_current_frame(frame)`
@@ -237,16 +237,16 @@ Initial helpers:
 - `create_product_turntable_setup(target_name, frame_start, frame_end, revolutions, setup_name)`
 - `organize_scene_for_production(collection_prefix, selected_only)`
 
-Helpers should validate inputs and return structured results. Claude can still propose Python for advanced operations, but the default path for common edits should be helper-first.
+Helpers should validate inputs and return structured results. External agents can still propose Python for advanced operations, but the default path for common edits should be helper-first.
 
-`get_animation_scene_context` is the first Milestone 7D routing layer. It does not replace deep detail tools; it summarizes likely animation ownership so Claude can choose the right next inspection before editing. It flags rig-driven objects, likely rig control bones, shape-key deformation targets, material or shader animation, object/data/action owners, action slots and keyed channel ranges when available, pose-marker/pose-library candidates, constraints, drivers, NLA tracks, simulation/rigid-body hints, likely contact surfaces, and camera readiness, then returns subject routing with animation-owner recommendations and routing confidence plus recommended detail tools such as `get_rigging_details`, `get_shape_key_details`, `get_animation_details`, `get_simulation_details`, and `get_render_camera_compositor_details`.
+`get_animation_scene_context` is the first Milestone 7D routing layer. It does not replace deep detail tools; it summarizes likely animation ownership so external agents can choose the right next inspection before editing. It flags rig-driven objects, likely rig control bones, shape-key deformation targets, material or shader animation, object/data/action owners, action slots and keyed channel ranges when available, pose-marker/pose-library candidates, constraints, drivers, NLA tracks, simulation/rigid-body hints, likely contact surfaces, and camera readiness, then returns subject routing with animation-owner recommendations and routing confidence plus recommended detail tools such as `get_rigging_details`, `get_shape_key_details`, `get_animation_details`, `get_simulation_details`, and `get_render_camera_compositor_details`.
 
-The advanced helpers are intentionally bounded. They create useful starter states and simple edits without exposing arbitrary node graph, rig, or simulation mutation. When Claude needs a custom geometry-node network, production rig, compositor graph, destructive mesh operation, import/export, or complex simulation setup, it should draft approved Python after inspecting context and docs.
+The advanced helpers are intentionally bounded. They create useful starter states and simple edits without exposing arbitrary node graph, rig, or simulation mutation. When an external agent needs a custom geometry-node network, production rig, compositor graph, destructive mesh operation, import/export, or complex simulation setup, it should draft approved Python after inspecting context and docs.
 Reusable refinement templates should stay bounded and composable. Vehicle, product, and character kits inspect bounds, add tasteful primitive/curve/material details, preserve preview rollback, and escalate to approved Python for topology-heavy work.
 
 ## Script Drafting Protocol
 
-For generated Python, Claude should produce:
+For generated Python, external agents should produce:
 
 ```text
 intent
@@ -262,14 +262,14 @@ The add-on should show these fields before execution. The script runner should p
 
 ## Live Preview Context
 
-When live preview is enabled, Claude should know:
+When live preview is enabled, external agents should know:
 
 - Which helper tools are allowed to mutate the scene immediately.
 - Whether the current preview transaction is pending, committed, reverted, or failed.
 - Which objects, materials, actions, cameras, and lights changed in the transaction.
 - Whether animation edits should jump to changed frames or preserve the current frame.
 
-Claude should prefer immediate helper calls for low-risk visible changes and reserve generated Python for operations helpers cannot express.
+External agents should prefer immediate helper calls for low-risk visible changes and reserve generated Python for operations helpers cannot express.
 
 ## Viewport Image Context
 

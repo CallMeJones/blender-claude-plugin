@@ -1,4 +1,4 @@
-﻿"""Blender background smoke test for approval-gated script execution."""
+"""Blender background smoke test for approval-gated script execution."""
 
 from __future__ import annotations
 

@@ -1521,7 +1521,7 @@ def create_primitive(context, args):
     return live_preview.create_primitive(
         context,
         primitive_type=str(args.get("primitive_type") or "CUBE"),
-        name=str(args.get("name") or "Claude Object"),
+        name=str(args.get("name") or "Agent Bridge Object"),
         location=_float_list(args.get("location"), 3, (0.0, 0.0, 0.0)),
         rotation=_float_list(args.get("rotation"), 3, (0.0, 0.0, 0.0)),
         scale=_float_list(args.get("scale"), 3, (1.0, 1.0, 1.0)),
@@ -1530,7 +1530,7 @@ def create_primitive(context, args):
 
 
 def assign_material_to_selected(context, args):
-    name = str(args.get("name") or "Claude Material")
+    name = str(args.get("name") or "Agent Bridge Material")
     color = _float_list(args.get("color"), 4, (0.8, 0.1, 0.1, 1.0))
     return live_preview.assign_material_to_selected(
         context,
@@ -1541,7 +1541,7 @@ def assign_material_to_selected(context, args):
 
 
 def assign_emission_material_to_selected(context, args):
-    name = str(args.get("name") or "Claude Emission")
+    name = str(args.get("name") or "Agent Bridge Emission")
     color = _float_list(args.get("color"), 4, (0.2, 0.6, 1.0, 1.0))
     return live_preview.assign_emission_material_to_selected(
         context,
@@ -1555,7 +1555,7 @@ def assign_emission_material_to_selected(context, args):
 def create_collection(context, args):
     return live_preview.create_collection(
         context,
-        name=str(args.get("name") or "Claude Collection"),
+        name=str(args.get("name") or "Agent Bridge Collection"),
         label=args.get("label", "Create collection"),
     )
 
@@ -1563,7 +1563,7 @@ def create_collection(context, args):
 def link_selected_to_collection(context, args):
     return live_preview.link_selected_to_collection(
         context,
-        collection_name=str(args.get("collection_name") or "Claude Collection"),
+        collection_name=str(args.get("collection_name") or "Agent Bridge Collection"),
         label=args.get("label", "Link selected to collection"),
     )
 
@@ -1585,7 +1585,7 @@ def add_modifier_to_selected(context, args):
 def create_shader_material(context, args):
     return advanced_helpers.create_shader_material(
         context,
-        name=str(args.get("name") or "Claude Shader Material"),
+        name=str(args.get("name") or "Agent Bridge Shader Material"),
         base_color=_float_list(args.get("base_color"), 4, (0.8, 0.8, 0.8, 1.0)),
         metallic=float(args.get("metallic", 0.0)),
         roughness=float(args.get("roughness", 0.5)),
@@ -1600,8 +1600,8 @@ def create_shader_material(context, args):
 def add_geometry_nodes_modifier(context, args):
     return advanced_helpers.add_geometry_nodes_modifier(
         context,
-        name=str(args.get("name") or "Claude Geometry Nodes"),
-        node_group_name=str(args.get("node_group_name") or "Claude Geometry Nodes"),
+        name=str(args.get("name") or "Agent Bridge Geometry Nodes"),
+        node_group_name=str(args.get("node_group_name") or "Agent Bridge Geometry Nodes"),
         selected_only=bool(args.get("selected_only", True)),
         label=args.get("label", "Add Geometry Nodes modifier"),
     )
@@ -1611,7 +1611,7 @@ def create_shape_key(context, args):
     return advanced_helpers.create_shape_key(
         context,
         object_name=str(args.get("object_name") or ""),
-        key_name=str(args.get("key_name") or "Claude Shape"),
+        key_name=str(args.get("key_name") or "Agent Bridge Shape"),
         value=float(args.get("value", 0.0)),
         label=args.get("label", "Create shape key"),
     )
@@ -1621,7 +1621,7 @@ def animate_shape_key(context, args):
     return advanced_helpers.animate_shape_key(
         context,
         object_name=str(args.get("object_name") or ""),
-        key_name=str(args.get("key_name") or "Claude Shape"),
+        key_name=str(args.get("key_name") or "Agent Bridge Shape"),
         frame_start=int(args.get("frame_start", context.scene.frame_start)),
         frame_end=int(args.get("frame_end", context.scene.frame_end)),
         value_start=float(args.get("value_start", 0.0)),
@@ -1703,7 +1703,7 @@ def create_follow_path_animation(context, args):
         path_points=args.get("path_points") or [],
         frame_start=int(args.get("frame_start", context.scene.frame_start)),
         frame_end=int(args.get("frame_end", context.scene.frame_end)),
-        constraint_name=str(args.get("constraint_name") or "Claude Follow Path"),
+        constraint_name=str(args.get("constraint_name") or "Agent Bridge Follow Path"),
         follow_curve=bool(args.get("follow_curve", True)),
         interpolation=str(args.get("interpolation") or "LINEAR"),
         label=args.get("label", "Create follow path animation"),
@@ -1890,7 +1890,7 @@ def create_motion_arc(context, args):
         frame_end=args.get("frame_end"),
         sample_step=_bounded_int(args.get("sample_step"), 4, minimum=1, maximum=10000),
         selected_only=bool(args.get("selected_only", False)),
-        name_prefix=str(args.get("name_prefix") or "Claude Motion Arc"),
+        name_prefix=str(args.get("name_prefix") or "Agent Bridge Motion Arc"),
         bevel_depth=float(args.get("bevel_depth", 0.015)),
         color=_float_list(args.get("color"), 4, (0.08, 0.45, 1.0, 1.0)),
         label=args.get("label", "Create motion arc"),
@@ -1900,7 +1900,7 @@ def create_motion_arc(context, args):
 def create_text_object(context, args):
     return advanced_helpers.create_text_object(
         context,
-        name=str(args.get("name") or "Claude Text"),
+        name=str(args.get("name") or "Agent Bridge Text"),
         body=str(args.get("body") or "Text"),
         location=_float_list(args.get("location"), 3, (0.0, 0.0, 0.0)),
         rotation=_float_list(args.get("rotation"), 3, (0.0, 0.0, 0.0)),
@@ -1918,7 +1918,7 @@ def create_curve_path(context, args):
     points = args.get("points") or []
     return advanced_helpers.create_curve_path(
         context,
-        name=str(args.get("name") or "Claude Curve"),
+        name=str(args.get("name") or "Agent Bridge Curve"),
         points=points,
         bevel_depth=float(args.get("bevel_depth", 0.02)),
         cyclic=bool(args.get("cyclic", False)),
@@ -1931,7 +1931,7 @@ def create_curve_path(context, args):
 def add_particle_system_to_selected(context, args):
     return advanced_helpers.add_particle_system_to_selected(
         context,
-        name=str(args.get("name") or "Claude Particles"),
+        name=str(args.get("name") or "Agent Bridge Particles"),
         count=_bounded_int(args.get("count"), 200, maximum=20000),
         frame_start=int(args.get("frame_start", context.scene.frame_start)),
         frame_end=int(args.get("frame_end", context.scene.frame_end)),
@@ -1944,7 +1944,7 @@ def add_particle_system_to_selected(context, args):
 def create_basic_armature(context, args):
     return advanced_helpers.create_basic_armature(
         context,
-        name=str(args.get("name") or "Claude Armature"),
+        name=str(args.get("name") or "Agent Bridge Armature"),
         location=_float_list(args.get("location"), 3, (0.0, 0.0, 0.0)),
         rotation=_float_list(args.get("rotation"), 3, (0.0, 0.0, 0.0)),
         show_in_front=bool(args.get("show_in_front", True)),
@@ -1957,7 +1957,7 @@ def add_copy_transform_constraint(context, args):
         context,
         target_name=str(args.get("target_name") or ""),
         constraint_type=str(args.get("constraint_type") or "COPY_LOCATION"),
-        name=str(args.get("name") or "Claude Copy Transform"),
+        name=str(args.get("name") or "Agent Bridge Copy Transform"),
         influence=float(args.get("influence", 1.0)),
         label=args.get("label", "Add copy transform constraint"),
     )
@@ -2000,7 +2000,7 @@ def set_world_background(context, args):
 def create_empty(context, args):
     return advanced_helpers.create_empty(
         context,
-        name=str(args.get("name") or "Claude Empty"),
+        name=str(args.get("name") or "Agent Bridge Empty"),
         location=_float_list(args.get("location"), 3, (0.0, 0.0, 0.0)),
         rotation=_float_list(args.get("rotation"), 3, (0.0, 0.0, 0.0)),
         scale=_float_list(args.get("scale"), 3, (1.0, 1.0, 1.0)),
@@ -2042,7 +2042,7 @@ def set_object_display(context, args):
 def duplicate_selected_objects(context, args):
     return advanced_helpers.duplicate_selected_objects(
         context,
-        name_prefix=str(args.get("name_prefix") or "Claude Copy "),
+        name_prefix=str(args.get("name_prefix") or "Agent Bridge Copy "),
         offset=_float_list(args.get("offset"), 3, (0.0, 0.0, 0.0)),
         linked_data=bool(args.get("linked_data", False)),
         copy_animation=bool(args.get("copy_animation", False)),
@@ -2054,7 +2054,7 @@ def duplicate_selected_objects(context, args):
 def parent_selected_to_empty(context, args):
     return advanced_helpers.parent_selected_to_empty(
         context,
-        name=str(args.get("name") or "Claude Parent"),
+        name=str(args.get("name") or "Agent Bridge Parent"),
         location=_optional_float_list(args.get("location"), 3, (0.0, 0.0, 0.0)),
         empty_display_type=str(args.get("empty_display_type") or "PLAIN_AXES"),
         keep_transform=bool(args.get("keep_transform", True)),
@@ -2104,13 +2104,13 @@ def add_bevel_and_subsurf(context, args):
 def create_wheel_assembly(context, args):
     return advanced_helpers.create_wheel_assembly(
         context,
-        name=str(args.get("name") or "Claude Wheel"),
+        name=str(args.get("name") or "Agent Bridge Wheel"),
         location=_float_list(args.get("location"), 3, (0.0, 0.0, 0.0)),
         radius=float(args.get("radius", 0.45)),
         tire_thickness=float(args.get("tire_thickness", 0.12)),
         axis=str(args.get("axis") or "Y"),
-        tire_material_name=str(args.get("tire_material_name") or "Claude Tire Rubber"),
-        rim_material_name=str(args.get("rim_material_name") or "Claude Wheel Rim"),
+        tire_material_name=str(args.get("tire_material_name") or "Agent Bridge Tire Rubber"),
+        rim_material_name=str(args.get("rim_material_name") or "Agent Bridge Wheel Rim"),
         label=args.get("label", "Create wheel assembly"),
     )
 
@@ -2119,7 +2119,7 @@ def add_panel_seams(context, args):
     return advanced_helpers.add_panel_seams(
         context,
         target_name=str(args.get("target_name") or ""),
-        seam_material_name=str(args.get("seam_material_name") or "Claude Panel Seams"),
+        seam_material_name=str(args.get("seam_material_name") or "Agent Bridge Panel Seams"),
         bevel_depth=float(args.get("bevel_depth", 0.015)),
         label=args.get("label", "Add panel seams"),
     )
@@ -2129,7 +2129,7 @@ def add_window_materials(context, args):
     return advanced_helpers.add_window_materials(
         context,
         target_name=str(args.get("target_name") or ""),
-        material_name=str(args.get("material_name") or "Claude Blue Glass"),
+        material_name=str(args.get("material_name") or "Agent Bridge Blue Glass"),
         color=_float_list(args.get("color"), 4, (0.08, 0.35, 0.65, 0.42)),
         create_panels=bool(args.get("create_panels", True)),
         label=args.get("label", "Add window materials"),
@@ -2172,7 +2172,7 @@ def create_studio_product_stage(context, args):
     return advanced_helpers.create_studio_product_stage(
         context,
         target_name=str(args.get("target_name") or ""),
-        stage_name=str(args.get("stage_name") or "Claude Product Stage"),
+        stage_name=str(args.get("stage_name") or "Agent Bridge Product Stage"),
         floor=bool(args.get("floor", True)),
         backdrop=bool(args.get("backdrop", True)),
         lighting=bool(args.get("lighting", True)),
@@ -2198,7 +2198,7 @@ def apply_lighting_preset(context, args):
         context,
         target_name=str(args.get("target_name") or ""),
         preset=str(args.get("preset") or "product_softbox"),
-        rig_name=str(args.get("rig_name") or "Claude Lighting"),
+        rig_name=str(args.get("rig_name") or "Agent Bridge Lighting"),
         label=args.get("label", "Apply lighting preset"),
     )
 
@@ -2206,7 +2206,7 @@ def apply_lighting_preset(context, args):
 def create_material_palette(context, args):
     return advanced_helpers.create_material_palette(
         context,
-        palette_name=str(args.get("palette_name") or "Claude Material Palette"),
+        palette_name=str(args.get("palette_name") or "Agent Bridge Material Palette"),
         palette=str(args.get("palette") or "product_neutral"),
         create_swatches=bool(args.get("create_swatches", True)),
         assign_to_selected=bool(args.get("assign_to_selected", False)),
@@ -2223,7 +2223,7 @@ def create_product_turntable_setup(context, args):
         revolutions=float(args.get("revolutions", 1.0)),
         radius=float(args.get("radius", 0.0)),
         height=float(args.get("height", 0.0)),
-        setup_name=str(args.get("setup_name") or "Claude Product Turntable"),
+        setup_name=str(args.get("setup_name") or "Agent Bridge Product Turntable"),
         create_stage=bool(args.get("create_stage", True)),
         label=args.get("label", "Create product turntable setup"),
     )
@@ -2232,7 +2232,7 @@ def create_product_turntable_setup(context, args):
 def organize_scene_for_production(context, args):
     return advanced_helpers.organize_scene_for_production(
         context,
-        collection_prefix=str(args.get("collection_prefix") or "Claude Production"),
+        collection_prefix=str(args.get("collection_prefix") or "Agent Bridge Production"),
         selected_only=bool(args.get("selected_only", False)),
         label=args.get("label", "Organize scene for production"),
     )
@@ -2242,7 +2242,7 @@ def add_track_to_constraint(context, args):
     return live_preview.add_track_to_constraint(
         context,
         target_name=str(args.get("target_name") or ""),
-        name=str(args.get("name") or "Claude Track To"),
+        name=str(args.get("name") or "Agent Bridge Track To"),
         track_axis=str(args.get("track_axis") or "TRACK_NEGATIVE_Z"),
         up_axis=str(args.get("up_axis") or "UP_Y"),
         influence=float(args.get("influence", 1.0)),
@@ -2257,7 +2257,7 @@ def add_light(context, args):
     return live_preview.add_light(
         context,
         light_type=light_type,
-        name=str(args.get("name") or "Claude Light"),
+        name=str(args.get("name") or "Agent Bridge Light"),
         location=_float_list(args.get("location"), 3, (3.0, -4.0, 4.0)),
         energy=float(args.get("energy", 500.0)),
         color=_float_list(args.get("color"), 3, (1.0, 0.92, 0.82)),
@@ -2268,7 +2268,7 @@ def add_light(context, args):
 def add_camera(context, args):
     return live_preview.add_camera(
         context,
-        name=str(args.get("name") or "Claude Camera"),
+        name=str(args.get("name") or "Agent Bridge Camera"),
         location=_float_list(args.get("location"), 3, (4.0, -6.0, 4.0)),
         rotation=_float_list(args.get("rotation"), 3, (1.1, 0.0, 0.65)),
         lens=float(args.get("lens", 50.0)),
@@ -2319,7 +2319,7 @@ def create_camera_orbit(context, args):
         frame_end=int(args.get("frame_end", context.scene.frame_end)),
         radius=float(args.get("radius", 5.0)),
         height=float(args.get("height", 2.5)),
-        name=str(args.get("name") or "Claude Orbit Camera"),
+        name=str(args.get("name") or "Agent Bridge Orbit Camera"),
         lens=float(args.get("lens", 35.0)),
         label=args.get("label", "Create camera orbit"),
     )
@@ -2381,7 +2381,7 @@ def capture_object_inspection_renders(context, args):
         resolution_y=_bounded_int(args.get("resolution_y"), 600, minimum=64, maximum=4096),
         lens=_bounded_float(args.get("lens"), 50.0, minimum=1.0, maximum=300.0),
         distance_factor=_bounded_float(args.get("distance_factor"), 3.0, minimum=0.5, maximum=20.0),
-        camera_name=str(args.get("camera_name") or "Claude Inspection Camera"),
+        camera_name=str(args.get("camera_name") or "Agent Bridge Inspection Camera"),
         note=str(args.get("note") or args.get("brief") or ""),
         capture_dir=getattr(prefs, "capture_cache_dir", None),
     )

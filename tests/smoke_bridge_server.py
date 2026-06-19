@@ -123,7 +123,7 @@ def main():
 
         capture_dir = tempfile.mkdtemp(prefix="claude-blender-captures-")
         capture_path = os.path.join(capture_dir, "viewport-test.png")
-        image = bpy.data.images.new("Claude Test Capture", width=1, height=1)
+        image = bpy.data.images.new("Agent Bridge Test Capture", width=1, height=1)
         image.pixels[:] = [1.0, 1.0, 1.0, 1.0]
         image.filepath_raw = capture_path
         image.file_format = "PNG"

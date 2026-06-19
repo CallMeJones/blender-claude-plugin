@@ -459,7 +459,6 @@ def checkpoint_metadata(context, path, *, ok=None, message=""):
         "exists": exists,
         "restorable": restorable,
         "created_by_bridge": _is_checkpoint_path(path),
-        "created_by_claude": _is_checkpoint_path(path),
         "size_bytes": int(size_bytes),
         "scene_name": scene.name if scene else "",
         "current_filepath": bpy.data.filepath or "",

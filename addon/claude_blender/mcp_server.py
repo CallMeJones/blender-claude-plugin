@@ -28,7 +28,7 @@ except ImportError:  # Allows direct execution as addon/claude_blender/mcp_serve
 
 PROTOCOL_VERSION = "2025-06-18"
 SUPPORTED_PROTOCOL_VERSIONS = (PROTOCOL_VERSION,)
-SERVER_NAME = "claude-blender"
+SERVER_NAME = "blender-agent-bridge"
 SERVER_VERSION = build_info.MCP_SERVER_VERSION
 DEFAULT_BRIDGE_URL = "http://127.0.0.1:8765"
 DEFAULT_PAGE_SIZE = 100

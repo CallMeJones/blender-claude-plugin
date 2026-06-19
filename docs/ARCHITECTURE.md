@@ -87,7 +87,7 @@ Use layered structured summaries before screenshots and full data dumps:
 - Visual layer: viewport screenshot or preview render, with camera/view metadata.
 - Capability layer: available safe tools and helper APIs.
 
-This keeps tokens and privacy under control while still giving Claude useful grounding.
+This keeps tokens and privacy under control while still giving external agents useful grounding.
 
 ## Visual Context Strategy
 
@@ -115,7 +115,7 @@ Recommended path:
 
 The docs tool should return concise snippets plus URLs, not whole pages. The agent should cite doc URLs in the transcript when docs influenced code and use the search report/source breakdown to explain whether results came from local indexes or official fallback URLs.
 
-For scripting tasks, the system prompt should tell Claude to look up docs before using APIs it is uncertain about, especially animation data, drivers, geometry nodes, operators with context requirements, and extension-specific behavior.
+For scripting tasks, client guidance should tell external agents to look up docs before using APIs they are uncertain about, especially animation data, drivers, geometry nodes, operators with context requirements, and extension-specific behavior.
 
 ## Safe Helper Strategy
 
@@ -158,7 +158,7 @@ Common changes should use typed helper tools before arbitrary code:
 - `create_product_turntable_setup`
 - `organize_scene_for_production`
 
-Helpers can validate object names, expected types, frame ranges, and value ranges before applying changes. When a helper is too limited, Claude can fall back to a proposed Python script.
+Helpers can validate object names, expected types, frame ranges, and value ranges before applying changes. When a helper is too limited, an external agent can fall back to a proposed Python script.
 
 Advanced helpers live in `advanced_helpers.py` and still write through the live-preview transaction layer. They should cover bounded starter actions for deep systems, while arbitrary custom node graphs, rigs, simulations, and destructive edits stay in the approval-gated script path.
 Refinement helpers also live in `advanced_helpers.py` for now. If product/character/vehicle kits grow further, split them into a dedicated template module with shared bounds/material/primitive utilities.
@@ -168,7 +168,7 @@ Refinement helpers also live in `advanced_helpers.py` for now. If product/charac
 The add-on should support immediate visual feedback through a reversible preview transaction:
 
 1. User enables live preview or approves a low-risk action class.
-2. Claude calls a typed helper such as `set_selected_transform`, `assign_material_to_selected`, `add_light`, or `animate_selected_transform`.
+2. The external agent calls a typed helper such as `set_selected_transform`, `assign_material_to_selected`, `add_light`, or `animate_selected_transform`.
 3. The helper validates inputs and records the previous state needed for rollback.
 4. The change is applied to the actual Blender scene on the main thread.
 5. The add-on updates dependency state and requests viewport/timeline redraw.
@@ -188,7 +188,7 @@ Execution should go through one controlled Blender operator:
 4. Run static checks for blocked modules, dangerous calls, file/network/process access, and broad destructive edits.
 5. Save undo point/checkpoint.
 6. Execute inside Blender's main thread with controlled globals and captured stdout/stderr/reports.
-7. Return result to Claude and show it to the user.
+7. Return the result to the external client and show it to the user.
 
 Default mode should be approval-required. Later, an autonomous mode can allow only prebuilt safe tools without arbitrary code execution.
 

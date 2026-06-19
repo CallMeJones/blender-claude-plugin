@@ -25,10 +25,10 @@ The first milestone should be useful but controlled:
 - Add-on preferences for bridge settings, local paths, privacy defaults, and execution mode.
 - No in-add-on LLM provider transport; external MCP clients host Anthropic/OpenAI/Gemini/etc. connections.
 - Scene summary generation for selected objects and overall scene state.
-- Layered context bundles that describe Blender version, mode, scene graph, selection, render settings, and animation state before Claude writes code.
+- Layered context bundles that describe Blender version, mode, scene graph, selection, render settings, and animation state before external agents choose helpers or scripts.
 - Optional viewport screenshot exposed as local metadata/resources.
 - Live preview mode for approved low-risk helper changes, with immediate viewport/timeline redraw and revert/commit controls.
-- Script proposal flow where Claude drafts Blender Python but the user approves before execution.
+- Script proposal flow where external agents draft Blender Python through `draft_script`, but the user approves before execution unless session script trust is active.
 - Undo/checkpoint support before running generated scripts.
 - Version-aware docs search tool pointed at official Blender Python docs.
 - Simple editing helpers/templates for common object, material, camera, light, and keyframe changes.
@@ -46,35 +46,35 @@ The first milestone should be useful but controlled:
 
 1. Ask About Scene
 
-User asks, "What is in this scene and how can I improve the lighting?" The add-on sends a structured scene digest plus optional screenshot. Claude returns analysis and suggestions.
+User asks, "What is in this scene and how can I improve the lighting?" An external agent reads a structured scene digest plus optional screenshot resources and returns analysis and suggestions.
 
 2. Make A Small Change
 
-User asks, "Add a warm key light and a cool rim light." Claude proposes a script. The add-on previews it. User approves. The add-on saves an undo point and executes.
+User asks, "Add a warm key light and a cool rim light." An external agent uses safe helper tools when possible, or stages a script for approval when helper tools are not expressive enough. The add-on saves an undo point/checkpoint before risky execution.
 
 3. Create An Object
 
-User asks, "Make a stylized low-poly spaceship from primitives." Claude inspects units, selection, and collections, then proposes creation code. User approves and can undo.
+User asks, "Make a stylized low-poly spaceship from primitives." An external agent inspects units, selection, and collections, then uses bounded creation helpers or stages approved Python. The user can undo or restore checkpointed work.
 
 4. Build An Animation
 
-User asks, "Animate the camera orbiting this product over 120 frames." Claude reads selected object bounds and timeline settings, proposes camera/path/keyframe code, then executes after approval.
+User asks, "Animate the camera orbiting this product over 120 frames." An external agent reads selected object bounds and timeline settings, then uses camera/path/keyframe helpers before considering approved Python.
 
 5. Use Blender Docs
 
-User asks for a geometry nodes or modifier workflow. Claude calls `search_blender_docs` for relevant API references before writing code.
+User asks for a geometry nodes or modifier workflow. The external agent calls `search_blender_docs` for relevant API references before staging code.
 
 6. Make Safe Scripted Changes
 
-User asks for a change. Claude first inspects context, retrieves docs for unfamiliar APIs, drafts a change plan, then uses either safe helper tools or a proposed script. The add-on checks the proposal, shows the expected changes, saves recovery state, and runs only after approval.
+User asks for a change. The external agent first inspects context, retrieves docs for unfamiliar APIs, drafts a change plan, then uses either safe helper tools or a proposed script. The add-on checks the proposal, shows the expected changes, saves recovery state, and runs only after approval or active script trust.
 
 7. See Changes Immediately
 
-User asks, "Make this object red and animate it bouncing." Claude uses safe helper calls for material and keyframes. The add-on applies each approved helper action to the live scene, updates the viewport/timeline, and keeps a visible preview transaction that can be committed or reverted.
+User asks, "Make this object red and animate it bouncing." The external agent uses safe helper calls for material and keyframes. The add-on applies each approved helper action to the live scene, updates the viewport/timeline, and keeps a visible preview transaction that can be committed or reverted.
 
 8. Work Progressively Like An Agent
 
-User clears the input and asks a follow-up such as, "now add the lighting pass." The add-on sends the current scene context plus compact `Claude Agent Memory`, so Claude can continue the same scene/object/animation goal while treating the open Blender scene as the source of truth.
+User asks a follow-up such as, "now add the lighting pass." The external agent reads the current scene context plus compact `Blender Agent Bridge Memory`, so it can continue the same scene/object/animation goal while treating the open Blender scene as the source of truth.
 
 9. Connect From An External Agent
 
@@ -82,7 +82,7 @@ User starts the `External Bridge` in Blender and copies the MCP config into a co
 
 ## Tool Surface
 
-Expose Claude to narrow client tools rather than raw Python first:
+Expose external agents to narrow client tools rather than raw Python first:
 
 - `inspect_scene`: returns scene, collections, selected objects, camera, lights, timeline, and render settings.
 - `list_scene_objects`: returns object names, types, selection state, visibility, collections, and locations.
@@ -166,7 +166,7 @@ Expose Claude to narrow client tools rather than raw Python first:
 - `run_approved_script`: only runs code after explicit user approval.
 - `undo_last_action`: calls Blender undo for the last approved execution.
 - `save_checkpoint`: saves a copy of the current `.blend` before risky work.
-- `agent_memory`: compact running project context stored locally in `Claude Agent Memory`.
+- `agent_memory`: compact running project context stored locally in `Blender Agent Bridge Memory`.
 
 ## Milestones
 
@@ -182,19 +182,18 @@ Acceptance:
 - Sidebar panel appears in the 3D View.
 - Preferences persist local configuration.
 
-### Milestone 1: Text Chat + Scene Context
+### Milestone 1: Scene Context And External Agent Grounding
 
-- Implement API transport.
 - Implement context bundle generation.
 - Implement scene, selection, object, material, render, and animation digests.
-- Send user prompt plus structured scene context.
-- Display Claude response in Blender UI.
+- Expose structured scene context to external clients through the bridge.
+- Display bridge status, context summaries, and tool/script results in Blender UI.
 
 Acceptance:
 
-- Claude can answer questions about selected objects and scene settings.
+- External agents can answer questions about selected objects and scene settings from bridge context.
 - Large scenes are summarized without sending full geometry by default.
-- Claude can ask for deeper object/material/animation details through tools instead of guessing.
+- External agents can ask for deeper object/material/animation details through tools instead of guessing.
 
 Status: Initial scene context, per-project agent memory, token-aware context planning, sidebar char/token estimates, and read-only detail retrieval tools are implemented.
 Deep world-model inspection is now available for geometry nodes, shader nodes, rigging/constraints/drivers, shape keys, curves/text, simulations, collection/view-layer organization, render/camera settings, and compositor nodes.
@@ -208,7 +207,7 @@ The sidebar no longer hosts provider chat. It now focuses on bridge status, MCP 
 
 Acceptance:
 
-- Claude can comment on visible composition, object placement, materials, and framing.
+- External agents can comment on visible composition, object placement, materials, and framing when viewport resources are enabled.
 - User can toggle screenshot inclusion per prompt.
 
 Status: Viewport screenshot attachment is implemented with a user toggle, project/session-scoped capture storage, maximum byte limit, API-only image blocks, transcript-safe metadata, MCP capture resources for external clients, and explicit PNG downscaling/re-save when a capture exceeds the request byte budget. Initial animation playblast frame capture is now scaffolded as sampled viewport PNG resources for MCP clients. Broader visual QA and automated animation review remain later work.
@@ -225,7 +224,7 @@ Acceptance:
 - Add-on can create and modify Blender objects.
 - Failures show readable errors and do not silently corrupt state.
 
-Status: Initial approval-gated script flow is implemented. Claude can stage generated Python with `draft_script`; the sidebar shows pending script status, risk, intent, expected changes, static issues/warnings, and Run/Reject controls; static checks block obvious risky imports/calls; execution pushes a Blender undo point when possible, saves a timestamped `.blend` checkpoint when enabled, and records stdout/errors in a local Text datablock. Failed scripts can be sent back to Claude with `Repair Script`. When the user grants a runtime external script trust window, `draft_script` auto-runs staged scripts that pass static checks, and `run_approved_script` remains available for already staged scripts.
+Status: Initial approval-gated script flow is implemented. External agents can stage generated Python with `draft_script`; the sidebar shows pending script status, risk, intent, expected changes, static issues/warnings, and Run/Reject controls; static checks block obvious risky imports/calls; execution pushes a Blender undo point when possible, saves a timestamped `.blend` checkpoint when enabled, and records stdout/errors in a local Text datablock. Failed scripts expose traceback/log context locally so external clients can draft a corrected script. When the user grants a runtime external script trust window, `draft_script` auto-runs staged scripts that pass static checks, and `run_approved_script` remains available for already staged scripts.
 Tool-loop calls now have a larger output budget for complete `draft_script.code` payloads, and the dispatcher tolerates common alternate script field names before reporting missing code.
 
 ### Milestone 3.5: Live Preview Transactions
@@ -244,7 +243,7 @@ Acceptance:
 Status: Initial tool loop implemented for scene object listing, object selection, playhead changes, selected-object movement, absolute transform edits, primitive creation, material assignment, emission material assignment, collection creation/linking, bounded modifier creation, Track To constraints, timeline setup, active camera selection, selected-object transform keyframes, light creation, camera creation, camera orbit creation, scene inspection, docs lookup scaffold, commit, and revert.
 Advanced helper coverage is now implemented for Principled shader material setup, Geometry Nodes starter modifiers, shape key creation/animation, text objects, curve paths, bounded particles, basic armatures, copy-transform constraints, render settings, camera settings, and world background colors. These tools still use the reversible live-preview transaction; complex custom node graphs, production rigs, and simulation setups remain approval-gated Python.
 Model refinement helpers are now implemented for shade smoothing, bevel/subdivision stacks, wheel assemblies, panel seams, window/glass panels, and bounded vehicle, product, and character refinement templates.
-The agent loop now uses request-specific tool schema selection so Claude receives a compact task-relevant subset instead of the whole growing toolbox.
+The bridge now uses request-specific tool schema selection so external agents receive a compact task-relevant subset instead of the whole growing toolbox.
 
 ### Milestone 4: Docs-Aware Coding
 
@@ -256,7 +255,7 @@ The agent loop now uses request-specific tool schema selection so Claude receive
 
 Acceptance:
 
-- Claude can look up API details before drafting code.
+- External agents can look up API details before drafting code.
 - Responses cite the docs snippets used in the local transcript/log.
 - Scripts use current Blender API names and avoid outdated examples.
 
@@ -265,7 +264,7 @@ Status: Docs cache is implemented as a version-keyed local JSON cache with curat
 ### Milestone 4.5: Safe Editing Helpers
 
 - Implement allowlisted helper functions for frequent edits.
-- Let Claude prefer helper calls over arbitrary Python for simple changes.
+- Let external agents prefer helper calls over arbitrary Python for simple changes.
 - Add expected-change previews for helper calls.
 
 Acceptance:
@@ -283,7 +282,7 @@ Status: Safe editing helpers now cover the original simple edits plus advanced b
 
 Acceptance:
 
-- Claude can create simple object, material, light, and camera animations.
+- External agents can create simple object, material, light, and camera animations through helper tools.
 - Generated animations can be previewed, sampled for visual review, and undone.
 
 Status: Basic animation helpers are implemented for transforms, object bounce, material/light properties, path following, interpolation, retiming, cycles, preview ranges, turntables, pulse/reveal/staggered motion, and camera orbits. Initial sampled playblast frame capture is implemented for interactive Blender sessions and exposed through MCP resources. Remaining work: timing/blocking tools, animation-principles review, physics/contact validation, and repair loops.
@@ -481,7 +480,7 @@ Status: Orchestration, guidance, and routing reliability are implemented in code
 
 - Which client-host integrations should be documented first after MCP: Claude Desktop, Claude Code, Codex, Cursor, or a small standalone example?
 - How much autonomy should the default mode allow: suggest-only, approval-required, or limited autonomous tools?
-- How strict should the default docs-first rule be before Claude is allowed to generate Blender Python?
+- How strict should the default docs-first rule be before external agents are allowed to generate Blender Python?
 - Which changes are safe enough for immediate live preview, and which must stay preview-only until explicit approval?
 
 ## User Decisions Captured

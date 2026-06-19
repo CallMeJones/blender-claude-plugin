@@ -1,4 +1,4 @@
-﻿"""Blender background smoke test for animation control and preset helpers."""
+"""Blender background smoke test for animation control and preset helpers."""
 
 from __future__ import annotations
 
@@ -113,7 +113,7 @@ def main():
     cube.keyframe_insert(data_path="location", frame=20)
     scene.frame_set(1)
     existing_action = cube.animation_data.action
-    existing_action.name = "Claude Existing Animation Action"
+    existing_action.name = "Agent Bridge Existing Animation Action"
     for fcurve in live_preview._iter_action_fcurves(existing_action):
         for point in fcurve.keyframe_points:
             point.interpolation = "LINEAR"
@@ -236,7 +236,7 @@ def main():
             "create_primitive",
             {
                 "primitive_type": "CUBE",
-                "name": "Claude Stagger Target",
+                "name": "Agent Bridge Stagger Target",
                 "location": [2.0, 0.0, 0.0],
                 "rotation": [0.0, 0.0, 0.0],
                 "scale": [0.5, 0.5, 0.5],

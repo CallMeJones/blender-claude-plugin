@@ -1,4 +1,4 @@
-﻿"""Blender background smoke test for common safe editing helper tools."""
+"""Blender background smoke test for common safe editing helper tools."""
 
 from __future__ import annotations
 
@@ -84,8 +84,8 @@ def main():
     cube.location = (-1.0, 0.0, 0.0)
     bpy.ops.mesh.primitive_cube_add(size=1.0, location=(3.0, 0.0, 2.0))
     second = context.object
-    second.name = "Claude Layout Source"
-    second.data.name = "Claude Layout Source Mesh"
+    second.name = "Agent Bridge Layout Source"
+    second.data.name = "Agent Bridge Layout Source Mesh"
     _select_objects(context, [cube, second], cube)
     initial = _snapshot(context, [cube, second])
 
@@ -103,7 +103,7 @@ def main():
             context,
             "create_empty",
             {
-                "name": "Claude Layout Marker",
+                "name": "Agent Bridge Layout Marker",
                 "location": [0.0, 2.0, 1.0],
                 "rotation": [0.0, 0.0, 0.0],
                 "scale": [1.0, 1.0, 1.0],
@@ -160,19 +160,19 @@ def main():
 
         distributed = _execute(context, "distribute_selected_objects", {"axis": "X", "start": -2.0, "end": 2.0})
         assert distributed["positions"]["Cube"] == -2.0
-        assert distributed["positions"]["Claude Layout Source"] == 2.0
+        assert distributed["positions"]["Agent Bridge Layout Source"] == 2.0
 
         duplicated = _execute(
             context,
             "duplicate_selected_objects",
-            {"name_prefix": "Claude Layout Copy ", "offset": [0.0, 2.0, 0.0], "linked_data": False},
+            {"name_prefix": "Agent Bridge Layout Copy ", "offset": [0.0, 2.0, 0.0], "linked_data": False},
         )
         duplicate_objects = [bpy.data.objects[name] for name in duplicated["objects"]]
         assert len(duplicate_objects) == 2
         assert all(obj.data.name in bpy.data.meshes for obj in duplicate_objects)
         assert duplicate_objects[0].data is not cube.data
 
-        parented = _execute(context, "parent_selected_to_empty", {"name": "Claude Layout Parent"})
+        parented = _execute(context, "parent_selected_to_empty", {"name": "Agent Bridge Layout Parent"})
         empty = bpy.data.objects[parented["empty"]]
         assert empty.type == "EMPTY"
         assert all(obj.parent == empty for obj in duplicate_objects)
@@ -200,7 +200,7 @@ def main():
             context,
             "set_object_visibility",
             {
-                "object_names": ["Claude Layout Source"],
+                "object_names": ["Agent Bridge Layout Source"],
                 "selected_only": False,
                 "hide_viewport": True,
                 "hide_render": True,

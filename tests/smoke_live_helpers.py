@@ -1,4 +1,4 @@
-"""Blender background smoke test for Claude live helper tools."""
+"""Blender background smoke test for Agent Bridge live helper tools."""
 
 from __future__ import annotations
 
@@ -58,7 +58,7 @@ def main():
         "create_primitive",
         {
             "primitive_type": "UV_SPHERE",
-            "name": "Claude Smoke Sphere",
+            "name": "Agent Bridge Smoke Sphere",
             "location": [3.0, 0.0, 0.0],
             "rotation": [0.0, 0.0, 0.0],
             "scale": [1.0, 1.0, 1.0],
@@ -70,18 +70,18 @@ def main():
     _select_object(context, sphere)
 
     _execute(context, "set_selected_transform", {"location": [3.0, 0.0, 1.0], "scale": [0.5, 0.5, 0.5]})
-    _execute(context, "assign_material_to_selected", {"name": "Claude Smoke Blue", "color": [0.1, 0.25, 1.0, 1.0]})
+    _execute(context, "assign_material_to_selected", {"name": "Agent Bridge Smoke Blue", "color": [0.1, 0.25, 1.0, 1.0]})
     _execute(
         context,
         "assign_emission_material_to_selected",
-        {"name": "Claude Smoke Glow", "color": [0.05, 0.6, 1.0, 1.0], "strength": 2.0},
+        {"name": "Agent Bridge Smoke Glow", "color": [0.05, 0.6, 1.0, 1.0], "strength": 2.0},
     )
-    _execute(context, "create_collection", {"name": "Claude Smoke Collection"})
-    _execute(context, "link_selected_to_collection", {"collection_name": "Claude Smoke Collection"})
+    _execute(context, "create_collection", {"name": "Agent Bridge Smoke Collection"})
+    _execute(context, "link_selected_to_collection", {"collection_name": "Agent Bridge Smoke Collection"})
     _execute(
         context,
         "add_modifier_to_selected",
-        {"modifier_type": "BEVEL", "name": "Claude Smoke Bevel", "amount": 0.05, "segments": 2},
+        {"modifier_type": "BEVEL", "name": "Agent Bridge Smoke Bevel", "amount": 0.05, "segments": 2},
     )
     _execute(context, "set_scene_frame_range", {"frame_start": 1, "frame_end": 80, "current_frame": 1, "fps": 24})
     _execute(
@@ -100,7 +100,7 @@ def main():
     _execute(
         context,
         "add_track_to_constraint",
-        {"target_name": "Cube", "name": "Claude Smoke Track To", "track_axis": "TRACK_NEGATIVE_Z", "up_axis": "UP_Y"},
+        {"target_name": "Cube", "name": "Agent Bridge Smoke Track To", "track_axis": "TRACK_NEGATIVE_Z", "up_axis": "UP_Y"},
     )
     assert len(bpy.data.objects["Camera"].constraints) == initial["default_camera_constraints"] + 1
 
@@ -113,13 +113,13 @@ def main():
             "frame_end": 80,
             "radius": 5.0,
             "height": 2.5,
-            "name": "Claude Smoke Orbit Camera",
+            "name": "Agent Bridge Smoke Orbit Camera",
             "lens": 35.0,
         },
     )
 
-    assert "Claude Smoke Sphere" in bpy.data.objects
-    assert scene.camera and scene.camera.name.startswith("Claude Smoke Orbit Camera")
+    assert "Agent Bridge Smoke Sphere" in bpy.data.objects
+    assert scene.camera and scene.camera.name.startswith("Agent Bridge Smoke Orbit Camera")
     state = scene.claude_blender
     assert state.pending_preview
     assert state.pending_preview_summary, "Missing pending preview rollback summary"

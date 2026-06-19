@@ -157,7 +157,7 @@ def main():
         stage = _execute(
             context,
             "create_studio_product_stage",
-            {"target_name": "Cube", "stage_name": "Claude Character Visual QA Stage"},
+            {"target_name": "Cube", "stage_name": "Agent Bridge Character Visual QA Stage"},
         )
         assert stage["camera"], stage
         rendered_paths.append(_render_kit(context, artifact_dir, "character-refinement-kit"))

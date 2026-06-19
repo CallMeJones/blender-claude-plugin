@@ -569,7 +569,7 @@ class CLAUDEBLENDER_OT_approve_external_script_run(bpy.types.Operator):
             context.window_manager.clipboard = result.get("approval_token", "")
             state.last_response = (
                 "External script run approved.\n"
-                "The one-time token was copied to the clipboard and is not shown in chat history.\n"
+                "The one-time token was copied to the clipboard and is not stored in bridge logs.\n"
                 f"Expires in {result.get('ttl_seconds', script_runner.EXTERNAL_APPROVAL_TTL_SECONDS)} second(s)."
             )
             self.report({"INFO"}, "External run token copied to clipboard")

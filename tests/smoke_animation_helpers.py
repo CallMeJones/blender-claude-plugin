@@ -1,4 +1,4 @@
-﻿"""Blender background smoke test for animation workflow helper tools."""
+"""Blender background smoke test for animation workflow helper tools."""
 
 from __future__ import annotations
 
@@ -448,7 +448,7 @@ def main():
 
         bpy.ops.mesh.primitive_cube_add(size=1.0, location=(2.0, 0.0, -1.05))
         support = context.object
-        support.name = "Claude Off Support"
+        support.name = "Agent Bridge Off Support"
         support.scale = (0.5, 0.5, 0.05)
         context.view_layer.update()
         try:
@@ -457,7 +457,7 @@ def main():
                 "analyze_center_of_mass",
                 {
                     "object_names": ["Cube"],
-                    "support_object_names": ["Claude Off Support"],
+                    "support_object_names": ["Agent Bridge Off Support"],
                     "frame_start": 1,
                     "frame_end": 1,
                     "sample_step": 1,
@@ -465,7 +465,7 @@ def main():
                     "contact_tolerance": 0.2,
                 },
             )
-            assert center["support_object_names"] == ["Claude Off Support"], center
+            assert center["support_object_names"] == ["Agent Bridge Off Support"], center
             assert any(item.get("requirement") == "center_of_mass" for item in center["findings"]), center
         finally:
             bpy.data.objects.remove(support, do_unlink=True)
@@ -651,7 +651,7 @@ def main():
             context,
             "create_basic_armature",
             {
-                "name": "Claude Rig Repair Armature",
+                "name": "Agent Bridge Rig Repair Armature",
                 "location": [3.0, 0.0, 0.0],
                 "rotation": [0.0, 0.0, 0.0],
             },
@@ -666,8 +666,8 @@ def main():
             control_bone.rotation_quaternion = (0.707107, 0.707107, 0.0, 0.0)
         bpy.ops.mesh.primitive_cube_add(size=0.5, location=(3.0, 0.0, 0.0))
         rig_subject = context.object
-        rig_subject.name = "Claude Rig Repair Subject"
-        rig_subject.data.name = "Claude Rig Repair Subject Mesh"
+        rig_subject.name = "Agent Bridge Rig Repair Subject"
+        rig_subject.data.name = "Agent Bridge Rig Repair Subject Mesh"
         rig_subject.parent = rig
         live_preview._record_created_id("object", rig_subject.name)
         live_preview._record_created_id("mesh", rig_subject.data.name)
@@ -841,15 +841,15 @@ def main():
             "create_follow_path_animation",
             {
                 "object_name": "Camera",
-                "path_name": "Claude Camera Motion Path",
+                "path_name": "Agent Bridge Camera Motion Path",
                 "path_points": [[-4.0, -4.0, 3.0], [0.0, -6.0, 4.0], [4.0, -4.0, 3.0]],
                 "frame_start": 1,
                 "frame_end": 48,
-                "constraint_name": "Claude Camera Follow Path",
+                "constraint_name": "Agent Bridge Camera Follow Path",
             },
         )
         assert follow["path"] in bpy.data.objects
-        assert camera.constraints.get("Claude Camera Follow Path")
+        assert camera.constraints.get("Agent Bridge Camera Follow Path")
         assert camera.animation_data and camera.animation_data.action
 
         details = _execute(context, "get_animation_details", {"object_names": ["Cube", "Camera", "Light"], "max_actions": 12})

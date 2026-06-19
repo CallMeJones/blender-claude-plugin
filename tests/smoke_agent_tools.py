@@ -47,8 +47,8 @@ def main():
         assert current["frame_current"] == 12, current
         assert scene.frame_current == 12
 
-        extra_camera_data = bpy.data.cameras.new("Claude Tool Camera Data")
-        extra_camera = bpy.data.objects.new("Claude Tool Camera", extra_camera_data)
+        extra_camera_data = bpy.data.cameras.new("Agent Bridge Tool Camera Data")
+        extra_camera = bpy.data.objects.new("Agent Bridge Tool Camera", extra_camera_data)
         scene.collection.objects.link(extra_camera)
         original_camera = scene.camera.name if scene.camera else None
         changed = _execute(context, "set_active_camera", {"camera_name": extra_camera.name})
@@ -63,10 +63,10 @@ def main():
         claude_blender.unregister()
         print("smoke_agent_tools: ok")
     finally:
-        if "Claude Tool Camera" in bpy.data.objects:
-            bpy.data.objects.remove(bpy.data.objects["Claude Tool Camera"], do_unlink=True)
-        if "Claude Tool Camera Data" in bpy.data.cameras:
-            bpy.data.cameras.remove(bpy.data.cameras["Claude Tool Camera Data"])
+        if "Agent Bridge Tool Camera" in bpy.data.objects:
+            bpy.data.objects.remove(bpy.data.objects["Agent Bridge Tool Camera"], do_unlink=True)
+        if "Agent Bridge Tool Camera Data" in bpy.data.cameras:
+            bpy.data.cameras.remove(bpy.data.cameras["Agent Bridge Tool Camera Data"])
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-﻿"""Blender background smoke test for advanced safe helper tools."""
+"""Blender background smoke test for advanced safe helper tools."""
 
 from __future__ import annotations
 
@@ -92,7 +92,7 @@ def main():
     scene = context.scene
     cube = bpy.data.objects["Cube"]
     camera = bpy.data.objects["Camera"]
-    existing_material = bpy.data.materials.new("Claude Existing Node Material")
+    existing_material = bpy.data.materials.new("Agent Bridge Existing Node Material")
     existing_material.use_nodes = True
     nodes = existing_material.node_tree.nodes
     for node in list(nodes):
@@ -116,7 +116,7 @@ def main():
             context,
             "create_shader_material",
             {
-                "name": "Claude Advanced Chrome",
+                "name": "Agent Bridge Advanced Chrome",
                 "base_color": [0.2, 0.45, 1.0, 1.0],
                 "metallic": 0.8,
                 "roughness": 0.22,
@@ -144,19 +144,19 @@ def main():
         geometry_nodes = _execute(
             context,
             "add_geometry_nodes_modifier",
-            {"name": "Claude Advanced GN", "node_group_name": "Claude Advanced GN Group"},
+            {"name": "Agent Bridge Advanced GN", "node_group_name": "Agent Bridge Advanced GN Group"},
         )
         assert geometry_nodes["node_group"] in bpy.data.node_groups
-        assert cube.modifiers.get("Claude Advanced GN")
+        assert cube.modifiers.get("Agent Bridge Advanced GN")
 
-        shape_key = _execute(context, "create_shape_key", {"object_name": "Cube", "key_name": "Claude Bulge", "value": 0.25})
+        shape_key = _execute(context, "create_shape_key", {"object_name": "Cube", "key_name": "Agent Bridge Bulge", "value": 0.25})
         assert shape_key["shape_key"] in cube.data.shape_keys.key_blocks
         _execute(
             context,
             "animate_shape_key",
             {
                 "object_name": "Cube",
-                "key_name": "Claude Bulge",
+                "key_name": "Agent Bridge Bulge",
                 "frame_start": 1,
                 "frame_end": 40,
                 "value_start": 0.0,
@@ -168,16 +168,16 @@ def main():
         particles = _execute(
             context,
             "add_particle_system_to_selected",
-            {"name": "Claude Advanced Particles", "count": 12, "frame_start": 1, "frame_end": 20, "lifetime": 30},
+            {"name": "Agent Bridge Advanced Particles", "count": 12, "frame_start": 1, "frame_end": 20, "lifetime": 30},
         )
         assert particles["objects"] == ["Cube"]
-        assert cube.modifiers.get("Claude Advanced Particles")
+        assert cube.modifiers.get("Agent Bridge Advanced Particles")
 
         text = _execute(
             context,
             "create_text_object",
             {
-                "name": "Claude Advanced Label",
+                "name": "Agent Bridge Advanced Label",
                 "body": "Advanced",
                 "location": [0.0, -2.0, 1.5],
                 "rotation": [1.5708, 0.0, 0.0],
@@ -192,7 +192,7 @@ def main():
             context,
             "create_curve_path",
             {
-                "name": "Claude Advanced Path",
+                "name": "Agent Bridge Advanced Path",
                 "points": [[-1.0, 0.0, 0.0], [0.0, 0.6, 1.0], [1.0, 0.0, 0.0]],
                 "bevel_depth": 0.03,
                 "color": [0.0, 0.6, 1.0, 1.0],
@@ -203,7 +203,7 @@ def main():
         armature = _execute(
             context,
             "create_basic_armature",
-            {"name": "Claude Advanced Armature", "location": [2.0, 0.0, 0.0], "rotation": [0.0, 0.0, 0.0]},
+            {"name": "Agent Bridge Advanced Armature", "location": [2.0, 0.0, 0.0], "rotation": [0.0, 0.0, 0.0]},
         )
         assert bpy.data.objects[armature["object"]].type == "ARMATURE"
 
@@ -211,7 +211,7 @@ def main():
         _execute(
             context,
             "add_copy_transform_constraint",
-            {"target_name": "Cube", "constraint_type": "COPY_LOCATION", "name": "Claude Advanced Copy Location"},
+            {"target_name": "Cube", "constraint_type": "COPY_LOCATION", "name": "Agent Bridge Advanced Copy Location"},
         )
         assert len(camera.constraints) == initial["camera_constraints"] + 1
 

@@ -336,7 +336,7 @@ def _download_zip(url, destination):
     temp_fd, temp_path = tempfile.mkstemp(prefix="docs-download-", suffix=".zip", dir=os.path.dirname(destination))
     os.close(temp_fd)
     try:
-        request = urllib.request.Request(url, headers={"User-Agent": "ClaudeBlender/0.1"})
+        request = urllib.request.Request(url, headers={"User-Agent": "BlenderAgentBridge/0.1"})
         with urllib.request.urlopen(request, timeout=120) as response, open(temp_path, "wb") as output:
             shutil.copyfileobj(response, output)
         os.replace(temp_path, destination)

@@ -74,17 +74,17 @@ MATERIAL_PALETTES = {
 
 PRODUCT_REFINEMENT_STYLES = {
     "studio": {
-        "material": ("Claude Product Satin White", (0.82, 0.84, 0.8, 1.0)),
+        "material": ("Agent Bridge Product Satin White", (0.82, 0.84, 0.8, 1.0)),
         "bevel_factor": 0.018,
         "segments": 3,
     },
     "catalog": {
-        "material": ("Claude Product Catalog Blue", (0.05, 0.22, 0.72, 1.0)),
+        "material": ("Agent Bridge Product Catalog Blue", (0.05, 0.22, 0.72, 1.0)),
         "bevel_factor": 0.014,
         "segments": 2,
     },
     "premium": {
-        "material": ("Claude Product Premium Graphite", (0.035, 0.038, 0.042, 1.0)),
+        "material": ("Agent Bridge Product Premium Graphite", (0.035, 0.038, 0.042, 1.0)),
         "bevel_factor": 0.02,
         "segments": 4,
     },
@@ -92,18 +92,18 @@ PRODUCT_REFINEMENT_STYLES = {
 
 CHARACTER_PALETTES = {
     "neutral": {
-        "skin": ("Claude Character Skin", (0.72, 0.48, 0.36, 1.0)),
-        "hair": ("Claude Character Hair", (0.09, 0.065, 0.045, 1.0)),
-        "eye": ("Claude Character Eye", (0.02, 0.025, 0.03, 1.0)),
-        "accent": ("Claude Character Accent", (0.18, 0.32, 0.72, 1.0)),
-        "guide": ("Claude Character Guide Lines", (0.04, 0.04, 0.045, 1.0)),
+        "skin": ("Agent Bridge Character Skin", (0.72, 0.48, 0.36, 1.0)),
+        "hair": ("Agent Bridge Character Hair", (0.09, 0.065, 0.045, 1.0)),
+        "eye": ("Agent Bridge Character Eye", (0.02, 0.025, 0.03, 1.0)),
+        "accent": ("Agent Bridge Character Accent", (0.18, 0.32, 0.72, 1.0)),
+        "guide": ("Agent Bridge Character Guide Lines", (0.04, 0.04, 0.045, 1.0)),
     },
     "toon": {
-        "skin": ("Claude Toon Skin", (0.95, 0.68, 0.48, 1.0)),
-        "hair": ("Claude Toon Hair", (0.03, 0.025, 0.055, 1.0)),
-        "eye": ("Claude Toon Eye", (0.0, 0.0, 0.0, 1.0)),
-        "accent": ("Claude Toon Accent", (0.95, 0.22, 0.16, 1.0)),
-        "guide": ("Claude Toon Guide Lines", (0.02, 0.02, 0.025, 1.0)),
+        "skin": ("Agent Bridge Toon Skin", (0.95, 0.68, 0.48, 1.0)),
+        "hair": ("Agent Bridge Toon Hair", (0.03, 0.025, 0.055, 1.0)),
+        "eye": ("Agent Bridge Toon Eye", (0.0, 0.0, 0.0, 1.0)),
+        "accent": ("Agent Bridge Toon Accent", (0.95, 0.22, 0.16, 1.0)),
+        "guide": ("Agent Bridge Toon Guide Lines", (0.02, 0.02, 0.025, 1.0)),
     },
 }
 
@@ -361,7 +361,7 @@ def _record_material_node_tree_animation(material):
 
 def _assign_material_node_tree_preview_action(material):
     _record_material_node_tree_animation(material)
-    action = bpy.data.actions.new(name=f"{material.name} Claude Material Preview Action")
+    action = bpy.data.actions.new(name=f"{material.name} Agent Bridge Material Preview Action")
     material.node_tree.animation_data_create().action = action
     live_preview._record_created_id("action", action.name)
     return action
@@ -530,7 +530,7 @@ def _create_empty_target(context, name, location, *, display_size=0.4):
 
 def _track_to_target(obj, target):
     constraint = obj.constraints.new(type="TRACK_TO")
-    constraint.name = "Claude Look At Target"
+    constraint.name = "Agent Bridge Look At Target"
     constraint.target = target
     constraint.track_axis = "TRACK_NEGATIVE_Z"
     constraint.up_axis = "UP_Y"
@@ -604,7 +604,7 @@ def create_shader_material(
     material = bpy.data.materials.get(name)
     created = material is None
     if material is None:
-        material = bpy.data.materials.new(name or "Claude Shader Material")
+        material = bpy.data.materials.new(name or "Agent Bridge Shader Material")
         live_preview._record_created_id("material", material.name)
     else:
         _record_shader_material(material)
@@ -683,7 +683,7 @@ def add_geometry_nodes_modifier(
     group = bpy.data.node_groups.get(node_group_name)
     created_group = group is None
     if group is None:
-        group = bpy.data.node_groups.new(node_group_name or "Claude Geometry Nodes", "GeometryNodeTree")
+        group = bpy.data.node_groups.new(node_group_name or "Agent Bridge Geometry Nodes", "GeometryNodeTree")
         live_preview._record_created_id("node_group", group.name)
         group.interface.new_socket(name="Geometry", in_out="INPUT", socket_type="NodeSocketGeometry")
         group.interface.new_socket(name="Geometry", in_out="OUTPUT", socket_type="NodeSocketGeometry")
@@ -694,7 +694,7 @@ def add_geometry_nodes_modifier(
         group.links.new(group_input.outputs["Geometry"], group_output.inputs["Geometry"])
     changed = []
     for obj in targets:
-        modifier = obj.modifiers.new(name or "Claude Geometry Nodes", "NODES")
+        modifier = obj.modifiers.new(name or "Agent Bridge Geometry Nodes", "NODES")
         modifier.node_group = group
         live_preview._record_created_modifier(obj, modifier)
         changed.append(obj.name)
@@ -718,7 +718,7 @@ def add_geometry_nodes_modifier(
     }
 
 
-def create_shape_key(context, *, object_name="", key_name="Claude Shape", value=0.0, label="Create shape key"):
+def create_shape_key(context, *, object_name="", key_name="Agent Bridge Shape", value=0.0, label="Create shape key"):
     obj = bpy.data.objects.get(object_name) if object_name else context.active_object
     if obj is None or obj.type != "MESH":
         return {"ok": False, "message": "A mesh object is required for shape keys"}
@@ -729,7 +729,7 @@ def create_shape_key(context, *, object_name="", key_name="Claude Shape", value=
     key = obj.data.shape_keys.key_blocks.get(key_name)
     created = key is None
     if key is None:
-        key = obj.shape_key_add(name=key_name or "Claude Shape")
+        key = obj.shape_key_add(name=key_name or "Agent Bridge Shape")
     key.value = max(float(key.slider_min), min(float(key.slider_max), float(value)))
     transaction["applied_steps"].append(
         {
@@ -777,7 +777,7 @@ def animate_shape_key(
     if key is None:
         if not create_if_missing:
             return {"ok": False, "message": f"Shape key not found: {key_name}"}
-        key = obj.shape_key_add(name=key_name or "Claude Shape")
+        key = obj.shape_key_add(name=key_name or "Agent Bridge Shape")
     frame_start = int(frame_start)
     frame_end = int(frame_end)
     if frame_start == frame_end:
@@ -971,7 +971,7 @@ def _resolve_animation_material(context, material_name="", object_name="", creat
     if material is None and has_material_slots:
         material = obj.active_material or (obj.data.materials[0] if len(obj.data.materials) else None)
     if material is None and create_if_missing:
-        material = bpy.data.materials.new(str(material_name or "Claude Animated Material"))
+        material = bpy.data.materials.new(str(material_name or "Agent Bridge Animated Material"))
         live_preview._record_created_id("material", material.name)
         if has_material_slots:
             live_preview._record_object_materials(obj)
@@ -1130,7 +1130,7 @@ def _record_light_data_animation(light_obj):
 
 def _assign_light_preview_action(light_obj):
     _record_light_data_animation(light_obj)
-    action = bpy.data.actions.new(name=f"{light_obj.name} Claude Light Preview Action")
+    action = bpy.data.actions.new(name=f"{light_obj.name} Agent Bridge Light Preview Action")
     light_obj.data.animation_data_create().action = action
     live_preview._record_created_id("action", action.name)
     return action
@@ -1229,7 +1229,7 @@ def create_follow_path_animation(
     path_points=None,
     frame_start,
     frame_end,
-    constraint_name="Claude Follow Path",
+    constraint_name="Agent Bridge Follow Path",
     follow_curve=True,
     interpolation="LINEAR",
     label="Create follow path animation",
@@ -1257,7 +1257,7 @@ def create_follow_path_animation(
     live_preview._record_object_transform(obj)
     action = live_preview._assign_preview_action(obj)
     constraint = obj.constraints.new(type="FOLLOW_PATH")
-    constraint.name = constraint_name or "Claude Follow Path"
+    constraint.name = constraint_name or "Agent Bridge Follow Path"
     constraint.target = path_obj
     constraint.use_curve_follow = bool(follow_curve)
     constraint.use_fixed_location = True
@@ -2358,7 +2358,7 @@ def create_motion_arc(
     frame_end=None,
     sample_step=4,
     selected_only=False,
-    name_prefix="Claude Motion Arc",
+    name_prefix="Agent Bridge Motion Arc",
     bevel_depth=0.015,
     color=(0.08, 0.45, 1.0, 1.0),
     label="Create motion arc",
@@ -2554,7 +2554,7 @@ def create_text_object(
     curve.size = max(0.01, float(size))
     curve.align_x = align_x if align_x in {"LEFT", "CENTER", "RIGHT", "JUSTIFY", "FLUSH"} else "CENTER"
     curve.align_y = align_y if align_y in {"CENTER", "TOP", "BOTTOM"} else "CENTER"
-    obj = bpy.data.objects.new(name or "Claude Text", curve)
+    obj = bpy.data.objects.new(name or "Agent Bridge Text", curve)
     obj.location = _coerce_vector(location, (0.0, 0.0, 0.0))
     obj.rotation_euler = _coerce_vector(rotation, (0.0, 0.0, 0.0))
     obj.scale = _coerce_vector(scale, (1.0, 1.0, 1.0))
@@ -2593,7 +2593,7 @@ def create_curve_path(
         xyz = _coerce_vector(values, (0.0, 0.0, 0.0))
         point.co = (xyz[0], xyz[1], xyz[2], 1.0)
     spline.use_cyclic_u = bool(cyclic)
-    obj = bpy.data.objects.new(name or "Claude Curve", curve)
+    obj = bpy.data.objects.new(name or "Agent Bridge Curve", curve)
     context.scene.collection.objects.link(obj)
     live_preview._record_created_id("object", obj.name)
     live_preview._record_created_id("curve", curve.name)
@@ -2623,7 +2623,7 @@ def add_particle_system_to_selected(
     transaction = live_preview.begin(label)
     changed = []
     for obj in selected:
-        modifier = obj.modifiers.new(name or "Claude Particles", "PARTICLE_SYSTEM")
+        modifier = obj.modifiers.new(name or "Agent Bridge Particles", "PARTICLE_SYSTEM")
         live_preview._record_created_modifier(obj, modifier)
         settings = modifier.particle_system.settings
         settings.name = f"{modifier.name} Settings"
@@ -2659,7 +2659,7 @@ def create_basic_armature(
     obj = context.object
     if obj is None:
         return {"ok": False, "message": "Armature was not created"}
-    obj.name = name or "Claude Armature"
+    obj.name = name or "Agent Bridge Armature"
     obj.data.name = f"{obj.name} Data"
     obj.show_in_front = bool(show_in_front)
     live_preview._record_created_id("object", obj.name)
@@ -2675,7 +2675,7 @@ def add_copy_transform_constraint(
     *,
     target_name,
     constraint_type="COPY_LOCATION",
-    name="Claude Copy Transform",
+    name="Agent Bridge Copy Transform",
     influence=1.0,
     label="Add copy transform constraint",
 ):
@@ -2692,7 +2692,7 @@ def add_copy_transform_constraint(
     changed = []
     for obj in selected:
         constraint = obj.constraints.new(type=constraint_type)
-        constraint.name = name or f"Claude {constraint_type.title()}"
+        constraint.name = name or f"Agent Bridge {constraint_type.title()}"
         constraint.target = target
         constraint.influence = max(0.0, min(1.0, float(influence)))
         live_preview._record_created_constraint(obj, constraint)
@@ -2778,7 +2778,7 @@ def set_camera_settings(
 
 def set_world_background(context, *, color, label="Set world background"):
     _record_scene_world(context.scene)
-    world = context.scene.world or bpy.data.worlds.new("Claude World")
+    world = context.scene.world or bpy.data.worlds.new("Agent Bridge World")
     if context.scene.world is None:
         context.scene.world = world
         live_preview._record_created_id("world", world.name)
@@ -2840,7 +2840,7 @@ def _resolve_edit_objects(context, *, object_names=None, selected_only=True, inc
 def create_empty(
     context,
     *,
-    name="Claude Empty",
+    name="Agent Bridge Empty",
     location=(0.0, 0.0, 0.0),
     rotation=(0.0, 0.0, 0.0),
     scale=(1.0, 1.0, 1.0),
@@ -2850,7 +2850,7 @@ def create_empty(
     label="Create empty",
 ):
     transaction = live_preview.begin(label, context)
-    obj = bpy.data.objects.new(name or "Claude Empty", object_data=None)
+    obj = bpy.data.objects.new(name or "Agent Bridge Empty", object_data=None)
     display_type = str(empty_display_type or "PLAIN_AXES").upper()
     obj.empty_display_type = display_type if display_type in EMPTY_DISPLAY_TYPES else "PLAIN_AXES"
     obj.empty_display_size = max(0.01, float(empty_display_size))
@@ -2969,7 +2969,7 @@ def set_object_display(
 def duplicate_selected_objects(
     context,
     *,
-    name_prefix="Claude Copy ",
+    name_prefix="Agent Bridge Copy ",
     offset=(0.0, 0.0, 0.0),
     linked_data=False,
     copy_animation=False,
@@ -3026,7 +3026,7 @@ def duplicate_selected_objects(
 def parent_selected_to_empty(
     context,
     *,
-    name="Claude Parent",
+    name="Agent Bridge Parent",
     location=None,
     empty_display_type="PLAIN_AXES",
     keep_transform=True,
@@ -3043,7 +3043,7 @@ def parent_selected_to_empty(
         center /= len(selected)
         location = center
     location = _coerce_vector(location, (0.0, 0.0, 0.0))
-    empty = bpy.data.objects.new(name or "Claude Parent", object_data=None)
+    empty = bpy.data.objects.new(name or "Agent Bridge Parent", object_data=None)
     empty.empty_display_type = empty_display_type if empty_display_type in {"PLAIN_AXES", "ARROWS", "CUBE", "SPHERE"} else "PLAIN_AXES"
     empty.empty_display_size = 1.0
     empty.location = location
@@ -3186,8 +3186,8 @@ def shade_smooth_selected(context, *, add_weighted_normals=True, label="Shade sm
         _record_mesh_smoothing(obj.data)
         for polygon in obj.data.polygons:
             polygon.use_smooth = True
-        if add_weighted_normals and obj.modifiers.get("Claude Weighted Normals") is None:
-            modifier = obj.modifiers.new("Claude Weighted Normals", "WEIGHTED_NORMAL")
+        if add_weighted_normals and obj.modifiers.get("Agent Bridge Weighted Normals") is None:
+            modifier = obj.modifiers.new("Agent Bridge Weighted Normals", "WEIGHTED_NORMAL")
             live_preview._record_created_modifier(obj, modifier)
         changed.append(obj.name)
     transaction["applied_steps"].append({"type": "shade_smooth_selected", "label": label, "objects": changed})
@@ -3211,17 +3211,17 @@ def add_bevel_and_subsurf(
     transaction = live_preview.begin(label)
     changed = []
     for obj in selected:
-        bevel = obj.modifiers.new("Claude Detail Bevel", "BEVEL")
+        bevel = obj.modifiers.new("Agent Bridge Detail Bevel", "BEVEL")
         bevel.width = max(0.0, min(10.0, float(bevel_width)))
         bevel.segments = max(1, min(16, int(bevel_segments)))
         live_preview._record_created_modifier(obj, bevel)
         if int(subsurf_levels) > 0:
-            subsurf = obj.modifiers.new("Claude Detail Subdivision", "SUBSURF")
+            subsurf = obj.modifiers.new("Agent Bridge Detail Subdivision", "SUBSURF")
             subsurf.levels = max(0, min(3, int(subsurf_levels)))
             subsurf.render_levels = max(0, min(3, int(subsurf_levels)))
             live_preview._record_created_modifier(obj, subsurf)
         if weighted_normals:
-            normals = obj.modifiers.new("Claude Weighted Normals", "WEIGHTED_NORMAL")
+            normals = obj.modifiers.new("Agent Bridge Weighted Normals", "WEIGHTED_NORMAL")
             live_preview._record_created_modifier(obj, normals)
         changed.append(obj.name)
     transaction["applied_steps"].append({"type": "add_bevel_and_subsurf", "label": label, "objects": changed})
@@ -3238,8 +3238,8 @@ def create_wheel_assembly(
     radius=0.45,
     tire_thickness=0.12,
     axis="Y",
-    tire_material_name="Claude Tire Rubber",
-    rim_material_name="Claude Wheel Rim",
+    tire_material_name="Agent Bridge Tire Rubber",
+    rim_material_name="Agent Bridge Wheel Rim",
     label="Create wheel assembly",
 ):
     transaction = live_preview.begin(label)
@@ -3247,7 +3247,7 @@ def create_wheel_assembly(
     rim_material = _material_for_color(rim_material_name, (0.72, 0.72, 0.68, 1.0))
     objects = _create_wheel_parts(
         context,
-        name=name or "Claude Wheel",
+        name=name or "Agent Bridge Wheel",
         location=_coerce_vector(location, (0.0, 0.0, 0.0)),
         radius=radius,
         thickness=tire_thickness,
@@ -3267,7 +3267,7 @@ def add_panel_seams(
     context,
     *,
     target_name="",
-    seam_material_name="Claude Panel Seams",
+    seam_material_name="Agent Bridge Panel Seams",
     bevel_depth=0.015,
     label="Add panel seams",
 ):
@@ -3327,7 +3327,7 @@ def add_window_materials(
     context,
     *,
     target_name="",
-    material_name="Claude Blue Glass",
+    material_name="Agent Bridge Blue Glass",
     color=(0.08, 0.35, 0.65, 0.42),
     create_panels=True,
     label="Add window materials",
@@ -3424,7 +3424,7 @@ def create_studio_product_stage(
     context,
     *,
     target_name="",
-    stage_name="Claude Product Stage",
+    stage_name="Agent Bridge Product Stage",
     floor=True,
     backdrop=True,
     lighting=True,
@@ -3441,7 +3441,7 @@ def create_studio_product_stage(
     center_x, center_y, center_z = bounds["center"]
     sx, sy, sz = bounds["size"]
     max_dim = max(1.0, sx, sy, sz)
-    stage_name = str(stage_name or "Claude Product Stage")
+    stage_name = str(stage_name or "Agent Bridge Product Stage")
     floor_material = _material_for_color(f"{stage_name} Warm Gray", (0.58, 0.57, 0.54, 1.0))
     backdrop_material = _material_for_color(f"{stage_name} Soft Backdrop", (0.72, 0.71, 0.68, 1.0))
 
@@ -3655,7 +3655,7 @@ def apply_lighting_preset(
     *,
     target_name="",
     preset="product_softbox",
-    rig_name="Claude Lighting",
+    rig_name="Agent Bridge Lighting",
     label="Apply lighting preset",
 ):
     target = bpy.data.objects.get(target_name) if target_name else context.active_object
@@ -3668,7 +3668,7 @@ def apply_lighting_preset(
     center_x, center_y, center_z = bounds["center"]
     sx, sy, sz = bounds["size"]
     max_dim = max(1.0, sx, sy, sz)
-    rig_name = str(rig_name or "Claude Lighting")
+    rig_name = str(rig_name or "Agent Bridge Lighting")
     target_empty = _create_empty_target(
         context,
         f"{rig_name} Target",
@@ -3720,7 +3720,7 @@ def apply_lighting_preset(
 def create_material_palette(
     context,
     *,
-    palette_name="Claude Material Palette",
+    palette_name="Agent Bridge Material Palette",
     palette="product_neutral",
     create_swatches=True,
     assign_to_selected=False,
@@ -3729,7 +3729,7 @@ def create_material_palette(
     palette_key = str(palette or "product_neutral").lower()
     entries = MATERIAL_PALETTES.get(palette_key) or MATERIAL_PALETTES["product_neutral"]
     transaction = live_preview.begin(label, context)
-    palette_name = str(palette_name or "Claude Material Palette")
+    palette_name = str(palette_name or "Agent Bridge Material Palette")
     selected_for_assignment = [obj for obj in context.selected_objects if obj.type == "MESH" and obj.data]
     materials = []
     for suffix, color in entries:
@@ -3802,7 +3802,7 @@ def create_product_turntable_setup(
     revolutions=1.0,
     radius=0.0,
     height=0.0,
-    setup_name="Claude Product Turntable",
+    setup_name="Agent Bridge Product Turntable",
     create_stage=True,
     label="Create product turntable setup",
 ):
@@ -3877,11 +3877,11 @@ def create_product_turntable_setup(
 def organize_scene_for_production(
     context,
     *,
-    collection_prefix="Claude Production",
+    collection_prefix="Agent Bridge Production",
     selected_only=False,
     label="Organize scene for production",
 ):
-    collection_prefix = str(collection_prefix or "Claude Production")
+    collection_prefix = str(collection_prefix or "Agent Bridge Production")
     objects = list(context.selected_objects) if selected_only else list(context.scene.objects)
     objects = [obj for obj in objects if obj and not obj.name.startswith(collection_prefix)]
     if not objects:
@@ -3969,8 +3969,8 @@ def apply_vehicle_refinement_template(
         )
         shade_smooth_selected(context, add_weighted_normals=True, label=label)
 
-        tire_material = _material_for_color("Claude Tire Rubber", (0.005, 0.005, 0.006, 1.0))
-        rim_material = _material_for_color("Claude Wheel Rim", (0.72, 0.72, 0.68, 1.0))
+        tire_material = _material_for_color("Agent Bridge Tire Rubber", (0.005, 0.005, 0.006, 1.0))
+        rim_material = _material_for_color("Agent Bridge Wheel Rim", (0.72, 0.72, 0.68, 1.0))
         for side_name, y in (("Left", min_y - y_offset * 0.08), ("Right", max_y + y_offset * 0.08)):
             for axle_name, x in (("Front", x_front), ("Rear", x_rear)):
                 created.extend(
@@ -3992,8 +3992,8 @@ def apply_vehicle_refinement_template(
         created.extend(glass.get("created_objects") or [])
         created.extend(seams.get("objects") or [])
 
-        headlight_material = _material_for_color("Claude Headlight White", (1.0, 0.95, 0.82, 1.0))
-        tail_material = _material_for_color("Claude Tail Light Red", (1.0, 0.02, 0.0, 1.0))
+        headlight_material = _material_for_color("Agent Bridge Headlight White", (1.0, 0.95, 0.82, 1.0))
+        tail_material = _material_for_color("Agent Bridge Tail Light Red", (1.0, 0.02, 0.0, 1.0))
         light_z = min_z + sz * 0.36
         light_scale = (sx * 0.035, sy * 0.035, sz * 0.09)
         for y in (min_y + sy * 0.28, max_y - sy * 0.28):

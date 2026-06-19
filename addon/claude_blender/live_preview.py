@@ -516,7 +516,7 @@ def _record_id_animation(data_block, collection_name):
 
 def _assign_preview_action(obj):
     _record_object_animation(obj)
-    action = bpy.data.actions.new(name=f"{obj.name} Claude Preview Action")
+    action = bpy.data.actions.new(name=f"{obj.name} Agent Bridge Preview Action")
     obj.animation_data_create().action = action
     _record_created_id("action", action.name)
     return action
@@ -772,7 +772,7 @@ def assign_emission_material_to_selected(context, *, name, color, strength, labe
         return {"ok": False, "message": "No selected mesh objects for emission material assignment"}
 
     transaction = begin(label, context)
-    material = bpy.data.materials.new(name=name or "Claude Emission Material")
+    material = bpy.data.materials.new(name=name or "Agent Bridge Emission Material")
     _record_created_id("material", material.name)
     material.diffuse_color = (
         float(color[0]),
@@ -817,7 +817,7 @@ def assign_emission_material_to_selected(context, *, name, color, strength, labe
 
 
 def create_collection(context, *, name, label="Create collection"):
-    name = str(name or "Claude Collection")
+    name = str(name or "Agent Bridge Collection")
     transaction = begin(label, context)
     collection = bpy.data.collections.get(name)
     created = collection is None
@@ -851,7 +851,7 @@ def link_selected_to_collection(context, *, collection_name, label="Link selecte
     collection = bpy.data.collections.get(collection_name)
     created = collection is None
     if collection is None:
-        collection = bpy.data.collections.new(collection_name or "Claude Collection")
+        collection = bpy.data.collections.new(collection_name or "Agent Bridge Collection")
         context.scene.collection.children.link(collection)
         _record_created_id("collection", collection.name)
     linked = []
@@ -901,7 +901,7 @@ def add_modifier_to_selected(
     transaction = begin(label, context)
     changed = []
     for obj in selected:
-        modifier = obj.modifiers.new(name=name or f"Claude {modifier_type.title()}", type=modifier_type)
+        modifier = obj.modifiers.new(name=name or f"Agent Bridge {modifier_type.title()}", type=modifier_type)
         _record_created_modifier(obj, modifier)
         if modifier_type == "BEVEL":
             modifier.width = max(0.0, float(amount))
@@ -937,7 +937,7 @@ def add_track_to_constraint(
     context,
     *,
     target_name,
-    name="Claude Track To",
+    name="Agent Bridge Track To",
     track_axis="TRACK_NEGATIVE_Z",
     up_axis="UP_Y",
     influence=1.0,
@@ -958,7 +958,7 @@ def add_track_to_constraint(
     changed = []
     for obj in selected:
         constraint = obj.constraints.new(type="TRACK_TO")
-        constraint.name = name or "Claude Track To"
+        constraint.name = name or "Agent Bridge Track To"
         constraint.target = target
         constraint.track_axis = track_axis
         constraint.up_axis = up_axis

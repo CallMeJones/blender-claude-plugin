@@ -24,6 +24,21 @@ python scripts\build_extension_zip.py --blender blender
 Blender documents the official extension build flow in the manual:
 https://docs.blender.org/manual/en/latest/advanced/extensions/getting_started.html
 
+## GitHub Releases
+
+The `MCP smoke` workflow builds the extension ZIP on pushes, pull requests, manual dispatches, and `v*` tags. Every successful run uploads `dist/*.zip` and `dist/*.sha256` as workflow artifacts. When the ref is a tag such as `v0.1.0`, the workflow also attaches those files to the GitHub Release.
+
+Recommended user-facing release flow:
+
+```powershell
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+After the workflow completes, users can download `claude_blender-<version>.zip` from the GitHub Release and install it in Blender with `Edit > Preferences > Get Extensions > Install from Disk`. Tell users not to install GitHub's generated "Source code" ZIP, because it is the repository checkout and not the packaged Blender extension.
+
+Longer-term, the best one-click update path is a small GitHub Pages extension repository index that points at the GitHub Release ZIP assets. That would let users add one remote repository URL in Blender and receive updates from the Extensions preferences instead of manually downloading each release.
+
 ## Verify
 
 Run the checks that do not require Blender:

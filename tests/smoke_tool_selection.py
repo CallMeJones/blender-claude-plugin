@@ -1,4 +1,4 @@
-﻿"""Smoke tests for dynamic tool-schema selection."""
+"""Smoke tests for dynamic tool-schema selection."""
 
 from __future__ import annotations
 
