@@ -69,6 +69,13 @@ def _bounded_int(value, default, *, minimum=1, maximum=240):
     return max(int(minimum), min(int(maximum), value))
 
 
+def _optional_int(value):
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
 def _resolve_objects(context, object_names=None, *, selected_only=False, max_objects=12):
     names = _name_list(object_names)
     missing = []
@@ -908,11 +915,7 @@ def compare_animation_to_brief(context, *, brief=None, prompt="", subject_names=
         moved = False
         by_object = _object_samples_by_name(samples)
         action = str(brief.get("action") or "").lower()
-        requested_count = timing.get("requested_count")
-        try:
-            requested_count = int(requested_count) if requested_count is not None else None
-        except (TypeError, ValueError):
-            requested_count = None
+        requested_count = _optional_int(timing.get("requested_count"))
         scale_decreases = any("scale decreases" in str(item).lower() or "smaller" in str(item).lower() for item in (brief.get("secondary_actions") or []))
         scale_increases = any("scale increases" in str(item).lower() or "bigger" in str(item).lower() or "grow" in str(item).lower() for item in (brief.get("secondary_actions") or []))
         for name, items in by_object.items():
@@ -1374,6 +1377,104 @@ def _playblast_motion_evidence(visual_evidence):
     }
 
 
+def _count_visual_extrema(points, *, mode, minimum_prominence):
+    count = 0
+    frames = []
+    if len(points) < 3:
+        return count, frames
+    for index in range(1, len(points) - 1):
+        previous = float(points[index - 1]["center_y"])
+        current = float(points[index]["center_y"])
+        following = float(points[index + 1]["center_y"])
+        if mode == "min":
+            is_extreme = current < previous and current < following
+            prominence = min(previous - current, following - current)
+        else:
+            is_extreme = current > previous and current > following
+            prominence = min(current - previous, current - following)
+        if is_extreme and prominence >= float(minimum_prominence):
+            count += 1
+            frames.append(int(points[index].get("frame", 0) or 0))
+    return count, frames
+
+
+def _visual_action_count_evidence(visual_evidence, brief, *, requested_count=None):
+    action = str((brief or {}).get("action") or "").lower() if isinstance(brief, dict) else ""
+    requested_count = _optional_int(requested_count)
+    if requested_count is None or action not in {"bounce", "jump", "fall", "drop"}:
+        return {"available": False, "reason": "no_requested_repeated_visual_action"}
+    track = []
+    skipped_frames = []
+    for frame in visual_evidence or []:
+        subject = _visual_subject_from_item(frame)
+        center = subject.get("center_normalized") if isinstance(subject, dict) else None
+        read = str(subject.get("framing_read") or "") if isinstance(subject, dict) else ""
+        if not isinstance(center, list) or len(center) < 2 or read in {"no_subject", "low_contrast"}:
+            if frame.get("frame") is not None:
+                skipped_frames.append(int(frame.get("frame", 0) or 0))
+            continue
+        try:
+            center_y = float(center[1])
+        except (TypeError, ValueError):
+            continue
+        track.append(
+            {
+                "frame": int(frame.get("frame", 0) or 0),
+                "center_y": round(center_y, 6),
+                "coverage_ratio": round(float(subject.get("coverage_ratio", 0.0) or 0.0), 6),
+                "framing_read": read or "unknown",
+            }
+        )
+    track.sort(key=lambda item: item["frame"])
+    required_samples = max(3, requested_count * 2 + 1)
+    sampled_frames = [item["frame"] for item in track]
+    if len(track) < required_samples:
+        return {
+            "available": False,
+            "reason": "insufficient_visual_samples",
+            "action": action,
+            "requested_count": requested_count,
+            "required_sample_count": required_samples,
+            "usable_sample_count": len(track),
+            "sampled_frames": sampled_frames,
+            "skipped_frames": skipped_frames,
+        }
+    center_values = [item["center_y"] for item in track]
+    center_y_range = max(center_values) - min(center_values) if center_values else 0.0
+    minimum_prominence = max(0.02, center_y_range * 0.2)
+    min_count, min_frames = _count_visual_extrema(track, mode="min", minimum_prominence=minimum_prominence)
+    max_count, max_frames = _count_visual_extrema(track, mode="max", minimum_prominence=minimum_prominence)
+    if action in {"bounce", "jump"}:
+        if min_count >= max_count:
+            detected_count, extrema_frames, extrema_mode = min_count, min_frames, "min_y"
+        else:
+            detected_count, extrema_frames, extrema_mode = max_count, max_frames, "max_y"
+    elif action in {"fall", "drop"}:
+        detected_count, extrema_frames, extrema_mode = max_count, max_frames, "max_y"
+    else:
+        detected_count, extrema_frames, extrema_mode = 0, [], ""
+    confidence = "high" if center_y_range >= 0.08 and detected_count > 0 else "medium" if center_y_range >= 0.03 else "low"
+    return {
+        "available": True,
+        "method": "visual_subject_center_extrema",
+        "action": action,
+        "requested_count": requested_count,
+        "detected_count": int(detected_count),
+        "detected_count_frames": extrema_frames,
+        "extrema_mode": extrema_mode,
+        "min_y_extrema_count": int(min_count),
+        "max_y_extrema_count": int(max_count),
+        "center_y_range": round(float(center_y_range), 6),
+        "minimum_prominence": round(float(minimum_prominence), 6),
+        "confidence": confidence,
+        "sample_count": len(track),
+        "sampled_frames": sampled_frames,
+        "skipped_frames": skipped_frames,
+        "track": track[:24],
+        "note": "Uses screen-space foreground center changes; camera motion, cropping, or weak foreground separation can make this a hint rather than proof.",
+    }
+
+
 def _playblast_frame_evidence(playblast):
     evidence = []
     findings = []
@@ -1773,8 +1874,8 @@ def review_playblast_against_brief(context, *, playblast=None, brief=None, promp
                 evidence=coverage,
             )
         )
-    requested_count = ((brief or {}).get("timing") or {}).get("requested_count") if isinstance(brief, dict) else None
-    if requested_count and usable_frames and len(usable_frames) < max(3, int(requested_count) * 2 + 1):
+    requested_count = _optional_int(((brief or {}).get("timing") or {}).get("requested_count") if isinstance(brief, dict) else None)
+    if requested_count and usable_frames and len(usable_frames) < max(3, requested_count * 2 + 1):
         findings.append(
             _finding(
                 "info",
@@ -1782,9 +1883,37 @@ def review_playblast_against_brief(context, *, playblast=None, brief=None, promp
                 principle="timing_spacing",
                 repair_tool="capture_animation_playblast",
                 evidence={
-                    "requested_count": int(requested_count),
+                    "requested_count": requested_count,
                     "usable_frame_count": len(usable_frames),
                     "sampled_frames": coverage["sampled_frames"],
+                },
+            )
+        )
+    visual_count_evidence = _visual_action_count_evidence(visual_evidence, brief, requested_count=requested_count)
+    if (
+        visual_count_evidence.get("available")
+        and requested_count
+        and visual_count_evidence.get("confidence") != "low"
+        and int(visual_count_evidence.get("detected_count", 0) or 0) != requested_count
+    ):
+        repair_tool = "create_progressive_bounce_animation" if str((brief or {}).get("action") or "").lower() in {"bounce", "jump"} else "block_key_poses"
+        findings.append(
+            _finding(
+                "warning",
+                "Visual playblast evidence suggests the repeated action count does not match the brief.",
+                principle="timing_spacing",
+                requirement="action_count",
+                repair_tool=repair_tool,
+                evidence={
+                    "source": "visual_playblast",
+                    "requested_count": requested_count,
+                    "detected_count": int(visual_count_evidence.get("detected_count", 0) or 0),
+                    "detected_count_frames": visual_count_evidence.get("detected_count_frames") or [],
+                    "sampled_frames": visual_count_evidence.get("sampled_frames") or coverage["sampled_frames"],
+                    "confidence": visual_count_evidence.get("confidence"),
+                    "center_y_range": visual_count_evidence.get("center_y_range"),
+                    "brief_frame_start": coverage["brief_frame_start"],
+                    "brief_frame_end": coverage["brief_frame_end"],
                 },
             )
         )
@@ -1815,7 +1944,7 @@ def review_playblast_against_brief(context, *, playblast=None, brief=None, promp
             "resource_type": metadata.get("resource_type", ""),
             "frame_coverage": coverage,
             "frames": visual_evidence,
-            "motion_evidence": motion_evidence,
+            "motion_evidence": {**motion_evidence, "action_count_evidence": visual_count_evidence},
             "image_interpretation": image_interpretation,
             "review_hints": metadata.get("review_hints") or [],
         },

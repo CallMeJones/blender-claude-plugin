@@ -106,6 +106,29 @@ def _write_pattern_png(path):
         bpy.data.images.remove(image)
 
 
+def _write_subject_png(path, *, center_y):
+    width = 16
+    height = 16
+    image = bpy.data.images.new(f"Agent Smoke Subject {os.path.basename(path)}", width=width, height=height, alpha=True)
+    try:
+        y_center = max(3, min(height - 4, int(center_y)))
+        pixels = []
+        for y in range(height):
+            for x in range(width):
+                is_subject = 6 <= x <= 9 and y_center - 2 <= y <= y_center + 2
+                if is_subject:
+                    bright = 0.9 if (x + y) % 2 else 0.65
+                    pixels.extend([bright, 0.9, 0.1, 1.0])
+                else:
+                    pixels.extend([0.04, 0.04, 0.04, 1.0])
+        image.pixels[:] = pixels
+        image.filepath_raw = path
+        image.file_format = "PNG"
+        image.save()
+    finally:
+        bpy.data.images.remove(image)
+
+
 def main():
     claude_blender.register()
     context = bpy.context
@@ -581,6 +604,46 @@ def main():
         assert static_block["target_frame_range"] == [1, 72], static_review
         assert all(item["tool_call"]["name"] == item["tool"] for item in static_review["repair_operations"]), static_review
         assert any(item.get("target_frames") == [1, 36, 72] for item in static_review["suggested_tool_calls"]), static_review
+
+        visual_count_frames = []
+        for frame_number, center_y in ((1, 12), (12, 4), (24, 12), (36, 4), (48, 12), (60, 12), (72, 12)):
+            path = os.path.join(visual_dir, f"visual-count-{frame_number:04d}.png")
+            _write_subject_png(path, center_y=center_y)
+            visual_count_frames.append(
+                {
+                    "frame": frame_number,
+                    "available": True,
+                    "path": path,
+                    "resource_uri": f"blender://playblasts/visual-count/frames/{frame_number}",
+                    "size_bytes": os.path.getsize(path),
+                    "width": 16,
+                    "height": 16,
+                }
+            )
+        visual_count_review = _execute(
+            context,
+            "review_playblast_against_brief",
+            {
+                "brief": contract,
+                "playblast": {
+                    "available": True,
+                    "playblast_id": "visual-count",
+                    "sampled_frames": [1, 12, 24, 36, 48, 60, 72],
+                    "frames": visual_count_frames,
+                },
+            },
+        )
+        action_count_evidence = visual_count_review["visual_review"]["motion_evidence"]["action_count_evidence"]
+        assert action_count_evidence["available"] is True, visual_count_review
+        assert action_count_evidence["requested_count"] == 3, visual_count_review
+        assert action_count_evidence["detected_count"] == 2, visual_count_review
+        assert action_count_evidence["detected_count_frames"] == [12, 36], visual_count_review
+        assert action_count_evidence["confidence"] in {"medium", "high"}, visual_count_review
+        assert any(
+            item.get("requirement") == "action_count" and item.get("evidence", {}).get("source") == "visual_playblast"
+            for item in visual_count_review["findings"]
+        ), visual_count_review
+        assert any(item["tool"] == "create_progressive_bounce_animation" for item in visual_count_review["repair_operations"]), visual_count_review
 
         inspection_path = os.path.join(visual_dir, "inspection-front-below.png")
         _write_pattern_png(inspection_path)
