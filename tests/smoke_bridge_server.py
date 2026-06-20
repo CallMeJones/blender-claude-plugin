@@ -118,6 +118,9 @@ def main():
         assert "capture_animation_playblast" in names, names
         assert "capture_object_inspection_renders" in names, names
         assert "get_blend_file_diagnostics" in names, names
+        assert "save_blend_file" in names, names
+        assert "open_blend_file" in names, names
+        assert "create_new_blender_project" in names, names
         assert "get_workspace_layout" in names, names
         assert "render_scene_thumbnail" in names, names
         assert "start_render_job" in names, names

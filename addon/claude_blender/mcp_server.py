@@ -146,6 +146,7 @@ TOOL_CATEGORY_LABELS = {
     "script": "Approval-Gated Python",
     "scene": "Scene Settings",
     "navigation": "Workspace And View Navigation",
+    "project_files": "Project Files",
     "external_assets": "External Asset Catalogs",
     "other": "Other",
 }
@@ -776,6 +777,8 @@ def _tool_category(tool):
         return "external_assets"
     if name in {"get_workspace_layout", "jump_to_workspace", "set_viewport_view", "focus_object_in_viewport"}:
         return "navigation"
+    if name in {"get_blend_file_diagnostics", "save_blend_file", "open_blend_file", "create_new_blender_project"}:
+        return "project_files"
     if name in {"start_render_job", "get_render_job_status", "cancel_render_job", "assemble_render_job_video", "validate_render_job_output"}:
         return "camera_render"
     if name.startswith("get_") or name.startswith("list_") or name in {

@@ -52,6 +52,9 @@ def main():
         assert "capture_animation_playblast" in bundle["available_tools"]
         assert "capture_object_inspection_renders" in bundle["available_tools"]
         assert "get_blend_file_diagnostics" in bundle["available_tools"]
+        assert "save_blend_file" in bundle["available_tools"]
+        assert "open_blend_file" in bundle["available_tools"]
+        assert "create_new_blender_project" in bundle["available_tools"]
         assert "get_workspace_layout" in bundle["available_tools"]
         assert "get_visual_evidence_resources" in bundle["available_tools"]
         assert "render_scene_thumbnail" in bundle["available_tools"]
@@ -78,6 +81,9 @@ def main():
         assert "capture_animation_playblast" in {tool["name"] for tool in agent_tools.blender_tool_definitions()}
         assert "capture_object_inspection_renders" in {tool["name"] for tool in agent_tools.blender_tool_definitions()}
         assert "get_blend_file_diagnostics" in {tool["name"] for tool in agent_tools.blender_tool_definitions()}
+        assert "save_blend_file" in {tool["name"] for tool in agent_tools.blender_tool_definitions()}
+        assert "open_blend_file" in {tool["name"] for tool in agent_tools.blender_tool_definitions()}
+        assert "create_new_blender_project" in {tool["name"] for tool in agent_tools.blender_tool_definitions()}
         assert "get_workspace_layout" in {tool["name"] for tool in agent_tools.blender_tool_definitions()}
         assert "get_visual_evidence_resources" in {tool["name"] for tool in agent_tools.blender_tool_definitions()}
         assert "render_scene_thumbnail" in {tool["name"] for tool in agent_tools.blender_tool_definitions()}
@@ -104,6 +110,9 @@ def main():
         assert "capture_animation_playblast" in bridge_protocol.TOOL_CONTRACTS
         assert "capture_object_inspection_renders" in bridge_protocol.TOOL_CONTRACTS
         assert "get_blend_file_diagnostics" in bridge_protocol.TOOL_CONTRACTS
+        assert "save_blend_file" in bridge_protocol.TOOL_CONTRACTS
+        assert "open_blend_file" in bridge_protocol.TOOL_CONTRACTS
+        assert "create_new_blender_project" in bridge_protocol.TOOL_CONTRACTS
         assert "get_workspace_layout" in bridge_protocol.TOOL_CONTRACTS
         assert "get_visual_evidence_resources" in bridge_protocol.TOOL_CONTRACTS
         assert "render_scene_thumbnail" in bridge_protocol.TOOL_CONTRACTS
@@ -180,10 +189,11 @@ def main():
             def _write_frame_capture(fake_context, filepath):
                 frame = int(fake_context.scene.frame_current)
                 captured_frames.append(frame)
-                image = bpy.data.images.new(f"Smoke Playblast Frame {frame}", width=1, height=1)
+                width, height = 800, 450
+                image = bpy.data.images.new(f"Smoke Playblast Frame {frame}", width=width, height=height)
                 try:
                     red = min(1.0, max(0.0, frame / 10.0))
-                    image.pixels = (red, 0.0, 1.0 - red, 1.0)
+                    image.pixels.foreach_set([red, 0.0, 1.0 - red, 1.0] * (width * height))
                     image.filepath_raw = filepath
                     image.file_format = "PNG"
                     image.save()
@@ -207,6 +217,14 @@ def main():
             assert [frame["captured_scene_frame"] for frame in captured_playblast["frames"]] == [1, 3, 5], captured_playblast
             assert [frame["frame"] for frame in captured_playblast["frames"]] == [1, 3, 5], captured_playblast
             assert int(scene.frame_current) == 9, captured_playblast
+            assert captured_playblast["quality"] == "preview", captured_playblast
+            assert captured_playblast["max_width"] == 640, captured_playblast
+            assert captured_playblast["max_height"] == 360, captured_playblast
+            assert all(frame["width"] <= 640 for frame in captured_playblast["frames"]), captured_playblast
+            assert all(frame["height"] <= 360 for frame in captured_playblast["frames"]), captured_playblast
+            assert all(frame["original_width"] == 800 for frame in captured_playblast["frames"]), captured_playblast
+            assert all(frame["original_height"] == 450 for frame in captured_playblast["frames"]), captured_playblast
+            assert all(frame["dimension_limited"] for frame in captured_playblast["frames"]), captured_playblast
             assert captured_playblast["estimated_seconds"] >= 2, captured_playblast
             assert captured_playblast["poll_after_seconds"] >= 1, captured_playblast
             assert captured_playblast["timeout_safe"] is False, captured_playblast

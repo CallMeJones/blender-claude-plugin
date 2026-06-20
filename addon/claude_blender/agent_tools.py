@@ -9,13 +9,14 @@ AGENT_GUIDANCE = (
     "You are an external agent connected to Blender Agent Bridge. Use the provided scene context and Blender tools. "
     "Read context_plan before acting. It explains which scene details were included or omitted to stay within the request budget. "
     "If omitted details matter, call inspect_scene, get_object_details, get_animation_details, get_animation_scene_context, get_material_node_details, get_geometry_nodes_details, get_shader_nodes_details, get_rigging_details, get_shape_key_details, get_curve_text_details, get_simulation_details, inspect_simulation_bake, get_collection_layer_details, get_render_camera_compositor_details, get_blend_file_diagnostics, get_workspace_layout, get_visual_evidence_resources, capture_viewport, capture_animation_playblast, capture_object_inspection_renders, render_scene_thumbnail, start_render_job, get_render_job_status, assemble_render_job_video, validate_render_job_output, or search_blender_docs instead of guessing. "
+    "For .blend lifecycle work, use get_blend_file_diagnostics before save/open/new decisions; use save_blend_file for save/save-as/save-copy, open_blend_file only with explicit discard confirmation, and create_new_blender_project only with explicit discard confirmation. "
     "When target objects are unclear, use list_scene_objects and select_objects before applying selected-object tools. "
     "When the user asks to change the scene, use safe helper tools first so Blender changes immediately. "
     "Use direct Blender data concepts: objects, collections, materials, cameras, lights, actions, keyframes. "
     "For scene building and layout, prefer create_primitive, create_empty, duplicate_selected_objects, parent_selected_to_empty, align_selected_objects, distribute_selected_objects, set_object_visibility, set_object_display, assign_material_to_selected, assign_emission_material_to_selected, create_shader_material, create_text_object, create_curve_path, create_collection, link_selected_to_collection, add_light, add_camera, add_modifier_to_selected, add_geometry_nodes_modifier, add_track_to_constraint, add_copy_transform_constraint, create_basic_armature, add_particle_system_to_selected, set_render_settings, set_camera_settings, and set_world_background. "
     "For model refinement and production presentation, prefer shade_smooth_selected, add_bevel_and_subsurf, create_wheel_assembly, add_panel_seams, add_window_materials, apply_vehicle_refinement_template, apply_product_refinement_template, apply_character_refinement_template, create_studio_product_stage, add_dimension_callouts, apply_lighting_preset, create_material_palette, create_product_turntable_setup, and organize_scene_for_production when they fit the task. "
     "For shape-key animation, prefer create_shape_key and animate_shape_key before drafting Python. "
-    "For long-running or high-resolution renders, playblasts, frame sequences, 1080p/4K previews, or MP4 quality checks, use start_render_job and poll get_render_job_status instead of blocking render_scene_thumbnail, capture tools, or draft_script; report the returned rough estimate/poll interval to the user; use assemble_render_job_video for PNG sequences and validate_render_job_output before reporting success; use cancel_render_job if the user wants to stop it. If a render, playblast, or visual-review tool times out, treat it as recoverable: wait the returned poll_after_seconds, call blender_bridge_status, inspect get_visual_evidence_resources and the audit log, and only rerun if no artifact/result appears. "
+    "For quick animation playblasts and visual review, use low-resolution preview defaults unless the user explicitly asks for HD/final/1080p/4K quality. For long-running or high-resolution renders, frame sequences, 1080p/4K previews, or MP4 quality checks, use start_render_job and poll get_render_job_status instead of blocking render_scene_thumbnail, capture tools, or draft_script; report the returned rough estimate/poll interval to the user; use assemble_render_job_video for PNG sequences and validate_render_job_output before reporting success; use cancel_render_job if the user wants to stop it. If a render, playblast, or visual-review tool times out, treat it as recoverable: wait the returned poll_after_seconds, call blender_bridge_status, inspect get_visual_evidence_resources and the audit log, and only rerun if no artifact/result appears. "
     "For external assets, use list_poly_haven_categories and search_poly_haven_assets/search_sketchfab_models for discovery, inspect_poly_haven_asset_files before choosing Poly Haven formats, download_* tools for cache-only work, import_* tools for preview scene imports, and get_external_asset_cache_diagnostics to report cached/imported assets. Sketchfab tokens must be provided per call or through an environment variable, not Blender preferences. "
     "For animation generation, review, or repair, call run_animation_task for simple prompt-in/task-out use, or call plan_animation_workflow first when you need manual control of the generated workflow. plan_animation_workflow returns the brief, scene routing, timing chart, ordered helper calls, evaluator calls, repair calls, and script fallback rules. For common helper-backed generation, call run_animation_workflow to execute the plan, review the result, optionally capture playblast evidence, and leave changes in preview. Use any animation_brief in context as the prompt contract; otherwise call create_animation_brief first when the prompt needs an explicit contract, success criteria, or later validation. Call get_animation_scene_context before advanced animation in scenes with rigs, constraints, drivers, shape keys, physics, or unclear edit targets so you know whether to animate object transforms, rig controls, shape keys, materials, physics, or camera settings. Use create_timing_chart, block_key_poses, add_breakdown_pose, set_pose_hold, set_rig_pose_hold, get_rig_pose_library_details, apply_rig_pose_from_action, apply_rig_pose_marker, apply_rig_action_clip, offset_rig_limb_controls, set_rig_custom_property_keyframes, and create_motion_arc for animator-style blocking before spline/f-curve polish; use rig pose/action helpers only after identifying armature controls, pose-library candidates, or existing scalar IK/FK/space properties through rig inspection or repair metadata. Then use analyze_animation_principles plus focused analyzers to check timing, spacing, arcs, pose clarity, anticipation, squash/stretch, contact, center-of-mass support, speed/acceleration plausibility, simulation cache readiness, and settle before repair; use inspect_simulation_bake before persistent bake decisions, and use stage_persistent_simulation_bake when the user intentionally wants a persistent point-cache bake. Use capture_animation_playblast and review_playblast_against_brief when visual frame evidence matters; use capture_object_inspection_renders and review_inspection_renders_against_brief when close-up object detail evidence matters; if review or repair tools return repair_operations, prefer run_animation_repair_loop for bounded helper repair and review-again behavior, or execute relevant tool_call name/input entries deliberately when manual control is needed. Then prefer set_scene_frame_range, set_animation_preview_range, animate_selected_transform, animate_object_bounce, create_progressive_bounce_animation, animate_material_property, animate_light_property, create_follow_path_animation, create_turntable_animation, create_pulse_animation, create_reveal_animation, create_staggered_motion, set_action_interpolation, retime_actions, add_action_cycles, clear_animation, and create_camera_orbit. "
     "For complex scene builds that need many objects or more than about eight helper calls, stage one cohesive Blender Python script with draft_script instead of making a long chain of helper calls. "
@@ -72,7 +73,7 @@ def blender_tool_definitions():
         },
         {
             "name": "capture_animation_playblast",
-            "description": "Capture sampled viewport frames across an animation range and return playblast metadata plus MCP frame resource URIs for visual animation review. Requires an interactive Blender window and fails soft in background mode. This is synchronous and roughly 1 second per sampled frame; if it times out, wait and check blender_bridge_status/latest playblast metadata before recapturing.",
+            "description": "Capture sampled low-resolution viewport frames across an animation range and return playblast metadata plus MCP frame resource URIs for visual animation review. Defaults to preview quality capped at 640x360; request quality/max_width/max_height only when higher fidelity is needed. Requires an interactive Blender window and fails soft in background mode. This is synchronous and roughly 1 second per sampled frame; if it times out, wait and check blender_bridge_status/latest playblast metadata before recapturing.",
             "input_schema": {
                 "type": "object",
                 "properties": {
@@ -85,6 +86,19 @@ def blender_tool_definitions():
                     "max_bytes": {
                         "type": "integer",
                         "description": "Maximum PNG bytes per sampled frame after resizing/compression.",
+                    },
+                    "quality": {
+                        "type": "string",
+                        "enum": ["preview", "low", "standard", "medium", "high", "hd", "source", "original", "full"],
+                        "description": "Frame-size preset. Defaults to preview/low at 640x360; source/original keeps viewport dimensions.",
+                    },
+                    "max_width": {
+                        "type": "integer",
+                        "description": "Optional maximum stored frame width. Overrides the quality preset.",
+                    },
+                    "max_height": {
+                        "type": "integer",
+                        "description": "Optional maximum stored frame height. Overrides the quality preset.",
                     },
                     "brief": {
                         "type": "string",
@@ -130,12 +144,66 @@ def blender_tool_definitions():
         },
         {
             "name": "get_blend_file_diagnostics",
-            "description": "Inspect blend-file health: saved path, backups, missing external files, linked libraries, and data-block usage summaries.",
+            "description": "Inspect blend-file health: saved path, dirty state, backups, missing external files, linked libraries, and data-block usage summaries.",
             "input_schema": {
                 "type": "object",
                 "properties": {
                     "max_items": {"type": "integer", "description": "Maximum external file/library entries to return."},
                 },
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "save_blend_file",
+            "description": "Save the current .blend, save-as to a new .blend path, or save a copy without changing the active file. Refuses accidental overwrite unless overwrite=true.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "filepath": {"type": "string", "description": "Optional .blend path. Omit to save the active file."},
+                    "copy": {"type": "boolean", "description": "Save a copy without changing the active filepath. Requires filepath."},
+                    "overwrite": {"type": "boolean", "description": "Allow replacing an existing target .blend file."},
+                    "create_dirs": {"type": "boolean", "description": "Create the target directory if missing. Defaults to true."},
+                },
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "open_blend_file",
+            "description": "Open an existing .blend file. This replaces the active Blender session, so confirm_discard_current must be true; creates a checkpoint first by default.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "filepath": {"type": "string", "description": "Existing .blend file path to open."},
+                    "confirm_discard_current": {"type": "boolean", "description": "Required true; opening replaces the active session."},
+                    "create_checkpoint": {"type": "boolean", "description": "Save a checkpoint before opening. Defaults to true."},
+                    "require_checkpoint": {"type": "boolean", "description": "Abort if checkpoint creation fails. Defaults to true."},
+                    "checkpoint_dir": {"type": "string"},
+                    "load_ui": {"type": "boolean", "description": "Load UI layout from the opened file when supported. Defaults to false."},
+                },
+                "required": ["filepath", "confirm_discard_current"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "create_new_blender_project",
+            "description": "Create a new Blender project folder and .blend file. This replaces the active Blender session, so confirm_discard_current must be true; creates a checkpoint first by default.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "project_dir": {"type": "string", "description": "Parent or final project directory. Required unless filepath is supplied."},
+                    "project_name": {"type": "string", "description": "Project name used for folder/filename when filepath is omitted."},
+                    "filepath": {"type": "string", "description": "Optional explicit target .blend path."},
+                    "template": {"type": "string", "enum": ["default", "empty", "factory_startup"]},
+                    "create_standard_dirs": {"type": "boolean", "description": "Create assets, refs, renders, and exports folders. Defaults to true."},
+                    "standard_dirs": {"type": "array", "items": {"type": "string"}},
+                    "overwrite": {"type": "boolean", "description": "Allow replacing an existing target .blend file."},
+                    "create_dirs": {"type": "boolean", "description": "Create the project directory if missing. Defaults to true."},
+                    "confirm_discard_current": {"type": "boolean", "description": "Required true; new project replaces the active session."},
+                    "create_checkpoint": {"type": "boolean", "description": "Save a checkpoint before creating the new project. Defaults to true."},
+                    "require_checkpoint": {"type": "boolean", "description": "Abort if checkpoint creation fails. Defaults to true."},
+                    "checkpoint_dir": {"type": "string"},
+                },
+                "required": ["confirm_discard_current"],
                 "additionalProperties": False,
             },
         },
@@ -222,16 +290,21 @@ def blender_tool_definitions():
         },
         {
             "name": "start_render_job",
-            "description": "Start a long-running render or playblast job in a background Blender process and return immediately with a job id, rough ETA, and polling guidance. Use for 1080p/4K, high-sample, full-frame-range renders, frame sequences, or MP4 quality checks instead of blocking render tools or draft_script.",
+            "description": "Start a long-running render or playblast job in a background Blender process and return immediately with a job id, rough ETA, and polling guidance. Auto quality keeps final renders high quality but defaults playblast/preview/review/draft jobs to low resolution unless quality or resolution is specified. Use for 1080p/4K, high-sample, full-frame-range renders, frame sequences, or MP4 quality checks instead of blocking render tools or draft_script.",
             "input_schema": {
                 "type": "object",
                 "properties": {
                     "frame_start": {"type": "integer"},
                     "frame_end": {"type": "integer"},
-                    "resolution_x": {"type": "integer", "description": "Output width. Defaults to 1920."},
-                    "resolution_y": {"type": "integer", "description": "Output height. Defaults to 1080."},
+                    "resolution_x": {"type": "integer", "description": "Output width. Defaults to auto quality profile: 640 for playblast/preview/review jobs, 1920 for final renders."},
+                    "resolution_y": {"type": "integer", "description": "Output height. Defaults to auto quality profile: 360 for playblast/preview/review jobs, 1080 for final renders."},
                     "resolution_percentage": {"type": "integer", "description": "Render percentage. Defaults to 100."},
-                    "samples": {"type": "integer", "description": "Cycles/Eevee render samples. Defaults to 64."},
+                    "samples": {"type": "integer", "description": "Cycles/Eevee render samples. Defaults to auto quality profile: low for playblast/preview/review jobs, higher for final renders."},
+                    "quality": {
+                        "type": "string",
+                        "enum": ["auto", "preview", "low", "standard", "medium", "high", "hd", "final", "full", "production", "1080p"],
+                        "description": "Defaulting profile when resolution/samples are omitted. Auto uses low-res for playblast/preview/review/draft jobs and final-quality defaults otherwise.",
+                    },
                     "fps": {"type": "integer"},
                     "camera_name": {"type": "string", "description": "Optional camera object to render from. Timeline camera markers still work when no camera is passed."},
                     "output_kind": {"type": "string", "enum": ["frames", "video", "mp4"], "description": "Use frames for PNG sequences with progress counts, or video/mp4 for direct MP4 output."},
@@ -2729,6 +2802,12 @@ _CORE_TOOL_NAMES = {
 _FALLBACK_TOOL_NAMES = {"draft_script"}
 
 _TOOL_GROUPS = {
+    "project_files": {
+        "get_blend_file_diagnostics",
+        "save_blend_file",
+        "open_blend_file",
+        "create_new_blender_project",
+    },
     "selection": {"select_objects", "set_current_frame", "get_workspace_layout", "jump_to_workspace", "set_viewport_view", "focus_object_in_viewport"},
     "basic_edit": {
         "select_objects",
@@ -3027,6 +3106,7 @@ _GROUP_KEYWORDS = {
     "materials": {"material", "shader", "color", "colour", "red", "blue", "green", "metal", "metallic", "chrome", "glass", "emission", "glow", "window"},
     "animation": {"animate", "animation", "animation brief", "prompt contract", "success criteria", "timing chart", "key pose", "key poses", "hold", "breakdown", "keyframe", "timeline", "frame", "orbit", "bounce", "driver", "motion", "motion arc", "arc", "follow path", "path", "retime", "interpolation", "easing", "loop", "cycles", "turntable", "pulse", "reveal", "stagger", "playblast", "timing", "spacing", "blocking", "anticipation", "squash", "stretch", "settle", "follow-through", "principles", "center of mass", "support", "contact sliding", "simulation", "physics bake", "persistent bake"},
     "camera_render": {"camera", "render", "render job", "render output", "output resource", "quality check", "thumbnail", "still", "mp4", "video assembly", "assemble video", "validate render", "1080p", "4k", "frame sequence", "samples", "light", "lighting", "world", "background", "dof", "depth of field", "lens", "compositor", "resolution", "intensity", "studio", "product stage", "presentation", "close-up", "closeup", "underside"},
+    "project_files": {"save", "save as", "save-as", "save copy", "open blend", "open file", "load blend", "new project", "create project", "blend file", ".blend", "project folder", "project directory", "checkpoint"},
     "deep_inspect": {"inspect", "analyze", "analyse", "summarize", "summary", "details", "world model", "what", "list", "screenshot", "viewport", "visual", "visual evidence", "evidence resource", "resource uri", "image", "capture", "playblast", "review", "diagnostic", "diagnostics", "missing external", "linked library", "linked libraries", "blend file", "data-block", "datablock", "backup", "workspace", "layout json", "underside", "gear"},
     "external_assets": {"asset", "assets", "asset catalog", "asset library", "external asset", "external assets", "asset cache", "cache diagnostics", "poly haven", "polyhaven", "sketchfab", "hdri", "hdris", "environment map", "texture", "textures", "model library", "download model", "download asset", "import model", "import asset", "import hdri", "import texture", "sketchfab uid"},
     "advanced_create": {"geometry nodes", "shape key", "text", "curve", "particle", "armature", "constraint", "rig", "driver", "callout", "dimension", "label", "palette", "swatch", "organize", "collection"},

@@ -522,6 +522,8 @@ def get_blend_file_diagnostics(context, *, max_items=50):
     filepath = getattr(bpy.data, "filepath", "") or ""
     absolute_filepath = os.path.abspath(filepath) if filepath else ""
     directory = os.path.dirname(absolute_filepath) if absolute_filepath else ""
+    is_dirty = bool(getattr(bpy.data, "is_dirty", False))
+    suggested_project_dir = directory or os.path.join(os.path.expanduser("~"), "Documents", "Blender")
     external_files, missing = _external_files(max_items)
     libraries = _linked_libraries(max_items)
     unsaved = not bool(filepath)
@@ -532,10 +534,14 @@ def get_blend_file_diagnostics(context, *, max_items=50):
             "filepath": filepath,
             "absolute_path": absolute_filepath,
             "is_saved": not unsaved,
+            "is_dirty": is_dirty,
+            "needs_save": bool(unsaved or is_dirty),
+            "can_save_current": bool(filepath and directory and os.path.isdir(directory) and os.access(directory, os.W_OK)),
             "exists": bool(absolute_filepath and os.path.isfile(absolute_filepath)),
             "directory": directory,
             "directory_exists": bool(directory and os.path.isdir(directory)),
             "directory_writable": bool(directory and os.path.isdir(directory) and os.access(directory, os.W_OK)),
+            "suggested_project_dir": suggested_project_dir,
             "backup_files": _backup_files(absolute_filepath, max_items),
         },
         "linked_libraries": libraries,

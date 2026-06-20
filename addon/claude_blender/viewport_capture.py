@@ -427,12 +427,14 @@ def _image_size_tuple(image):
         return 0, 0
 
 
-def _resize_png_to_fit(filepath, max_bytes):
+def _resize_png_to_fit(filepath, max_bytes, *, max_width=0, max_height=0):
     """Downscale and re-save a PNG with Blender's image API until it fits."""
 
     max_bytes = int(max_bytes or DEFAULT_MAX_BYTES)
+    max_width = max(0, int(max_width or 0))
+    max_height = max(0, int(max_height or 0))
     original_size = os.path.getsize(filepath)
-    if original_size <= max_bytes:
+    if original_size <= max_bytes and not max_width and not max_height:
         return filepath, {
             "resized": False,
             "original_size_bytes": original_size,
@@ -449,16 +451,56 @@ def _resize_png_to_fit(filepath, max_bytes):
                 "size_bytes": original_size,
                 "resize_error": "Could not read screenshot dimensions",
             }
-        output_path = _resized_filepath(filepath)
         current_size = original_size
         resized_info = {
-            "resized": True,
+            "resized": False,
             "original_path": filepath,
             "original_size_bytes": original_size,
             "original_width": width,
             "original_height": height,
+            "max_width": max_width,
+            "max_height": max_height,
         }
+        output_path = _resized_filepath(filepath)
+        target_scale = 1.0
+        if max_width and width > max_width:
+            target_scale = min(target_scale, max_width / max(1, width))
+        if max_height and height > max_height:
+            target_scale = min(target_scale, max_height / max(1, height))
+        if target_scale < 1.0:
+            next_width = max(MIN_RESIZED_DIMENSION, int(width * target_scale))
+            next_height = max(MIN_RESIZED_DIMENSION, int(height * target_scale))
+            image.scale(next_width, next_height)
+            image.filepath_raw = output_path
+            image.file_format = "PNG"
+            image.save()
+            current_size = os.path.getsize(output_path)
+            width, height = next_width, next_height
+            resized_info.update(
+                {
+                    "resized": True,
+                    "dimension_limited": True,
+                    "path": output_path,
+                    "size_bytes": current_size,
+                    "width": width,
+                    "height": height,
+                    "resize_scale": round(width / max(1, int(resized_info["original_width"])), 5),
+                }
+            )
+        elif current_size <= max_bytes:
+            return filepath, {
+                "resized": False,
+                "original_size_bytes": original_size,
+                "size_bytes": original_size,
+                "width": width,
+                "height": height,
+                "max_width": max_width,
+                "max_height": max_height,
+            }
+
         for _attempt in range(MAX_RESIZE_ATTEMPTS):
+            if current_size <= max_bytes:
+                return (output_path if resized_info.get("resized") else filepath), resized_info
             scale = math.sqrt(max(1, max_bytes) / max(1, current_size)) * 0.9
             scale = min(0.85, max(0.1, scale))
             next_width = max(MIN_RESIZED_DIMENSION, int(width * scale))
@@ -476,6 +518,7 @@ def _resize_png_to_fit(filepath, max_bytes):
             width, height = next_width, next_height
             resized_info.update(
                 {
+                    "resized": True,
                     "path": output_path,
                     "size_bytes": current_size,
                     "width": width,
@@ -494,7 +537,15 @@ def _resize_png_to_fit(filepath, max_bytes):
             pass
 
 
-def prepare_image_attachment(filepath, *, max_bytes=DEFAULT_MAX_BYTES, capture_method="file", capture_info=None):
+def prepare_image_attachment(
+    filepath,
+    *,
+    max_bytes=DEFAULT_MAX_BYTES,
+    capture_method="file",
+    capture_info=None,
+    max_width=0,
+    max_height=0,
+):
     """Prepare a captured PNG as bounded visual evidence for external clients."""
 
     max_bytes = int(max_bytes or DEFAULT_MAX_BYTES)
@@ -516,7 +567,7 @@ def prepare_image_attachment(filepath, *, max_bytes=DEFAULT_MAX_BYTES, capture_m
         }, {}
 
     try:
-        prepared_path, resize_info = _resize_png_to_fit(filepath, max_bytes)
+        prepared_path, resize_info = _resize_png_to_fit(filepath, max_bytes, max_width=max_width, max_height=max_height)
     except Exception as exc:
         return {
             "requested": True,

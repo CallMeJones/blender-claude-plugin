@@ -28,6 +28,23 @@ FRAME_PREFIX = "frame_"
 MAX_FRAME_RESOURCE_BYTES = 20 * 1024 * 1024
 MAX_VIDEO_RESOURCE_BYTES = 25 * 1024 * 1024
 DEFAULT_RENDER_POLL_INTERVAL_SECONDS = 5
+DEFAULT_FINAL_RENDER_WIDTH = 1920
+DEFAULT_FINAL_RENDER_HEIGHT = 1080
+DEFAULT_FINAL_RENDER_SAMPLES = 64
+DEFAULT_PLAYBLAST_RENDER_WIDTH = 640
+DEFAULT_PLAYBLAST_RENDER_HEIGHT = 360
+DEFAULT_PLAYBLAST_RENDER_SAMPLES = 8
+PREVIEW_INTENT_TERMS = {
+    "playblast",
+    "preview",
+    "review",
+    "draft",
+    "quick",
+    "rough",
+    "blocking",
+    "motion check",
+    "timing check",
+}
 
 _PROCESSES = {}
 
@@ -274,6 +291,63 @@ def _poll_interval_seconds(total_frames, estimated_seconds):
     return 10
 
 
+def _quality_profile(quality, output_kind, job_name, note):
+    requested = str(quality or "auto").strip().lower() or "auto"
+    intent_text = " ".join(
+        [
+            str(output_kind or ""),
+            str(job_name or ""),
+            str(note or ""),
+        ]
+    ).lower()
+    preview_intent = any(term in intent_text for term in PREVIEW_INTENT_TERMS)
+    profile = {
+        "quality": requested,
+        "profile": "final",
+        "resolution_x": DEFAULT_FINAL_RENDER_WIDTH,
+        "resolution_y": DEFAULT_FINAL_RENDER_HEIGHT,
+        "samples": DEFAULT_FINAL_RENDER_SAMPLES,
+        "ffmpeg_quality": "HIGH",
+        "preview_default_applied": False,
+    }
+    if requested in {"low", "preview", "draft", "quick"} or (requested == "auto" and preview_intent):
+        profile.update(
+            {
+                "profile": "preview",
+                "resolution_x": DEFAULT_PLAYBLAST_RENDER_WIDTH,
+                "resolution_y": DEFAULT_PLAYBLAST_RENDER_HEIGHT,
+                "samples": DEFAULT_PLAYBLAST_RENDER_SAMPLES,
+                "ffmpeg_quality": "MEDIUM",
+                "preview_default_applied": True,
+            }
+        )
+    elif requested in {"standard", "medium"}:
+        profile.update(
+            {
+                "profile": "standard",
+                "resolution_x": 960,
+                "resolution_y": 540,
+                "samples": 16,
+                "ffmpeg_quality": "MEDIUM",
+            }
+        )
+    elif requested in {"high", "hd"}:
+        profile.update(
+            {
+                "profile": "hd",
+                "resolution_x": 1280,
+                "resolution_y": 720,
+                "samples": 32,
+                "ffmpeg_quality": "HIGH",
+            }
+        )
+    elif requested in {"final", "full", "production", "1080p"}:
+        profile["quality"] = requested
+    elif requested != "auto":
+        profile["quality"] = "auto"
+    return profile
+
+
 def _copy_current_blend(blend_path):
     os.makedirs(os.path.dirname(blend_path), exist_ok=True)
     result = bpy.ops.wm.save_as_mainfile(filepath=blend_path, copy=True)
@@ -488,13 +562,14 @@ def start_render_job(
     *,
     frame_start=None,
     frame_end=None,
-    resolution_x=1920,
-    resolution_y=1080,
+    resolution_x=None,
+    resolution_y=None,
     resolution_percentage=100,
-    samples=64,
+    samples=None,
     fps=None,
     camera_name="",
     output_kind="frames",
+    quality="auto",
     job_name="",
     note="",
     capture_dir=None,
@@ -525,10 +600,11 @@ def start_render_job(
     blender_binary = getattr(bpy.app, "binary_path", "") or "blender"
     fps_value = _bounded_int(fps, getattr(scene.render, "fps", 24) or 24, minimum=1, maximum=240)
 
-    resolution_x_value = _bounded_int(resolution_x, 1920, minimum=16, maximum=8192)
-    resolution_y_value = _bounded_int(resolution_y, 1080, minimum=16, maximum=8192)
+    quality_profile = _quality_profile(quality, output_kind, job_name, note)
+    resolution_x_value = _bounded_int(resolution_x, quality_profile["resolution_x"], minimum=16, maximum=8192)
+    resolution_y_value = _bounded_int(resolution_y, quality_profile["resolution_y"], minimum=16, maximum=8192)
     resolution_percentage_value = _bounded_int(resolution_percentage, 100, minimum=1, maximum=100)
-    samples_value = _bounded_int(samples, 64, minimum=1, maximum=4096)
+    samples_value = _bounded_int(samples, quality_profile["samples"], minimum=1, maximum=4096)
     estimated_seconds = _rough_estimated_seconds(
         total_frames,
         resolution_x_value,
@@ -577,6 +653,10 @@ def start_render_job(
         "resolution_y": resolution_y_value,
         "resolution_percentage": resolution_percentage_value,
         "samples": samples_value,
+        "quality": quality_profile["quality"],
+        "quality_profile": quality_profile["profile"],
+        "preview_default_applied": bool(quality_profile["preview_default_applied"]),
+        "ffmpeg_quality": quality_profile["ffmpeg_quality"],
         "estimated_seconds": estimated_seconds,
         "estimated_duration": _duration_label(estimated_seconds),
         "estimated_seconds_remaining": estimated_seconds,
@@ -588,7 +668,8 @@ def start_render_job(
         "timeout_safe": True,
         "client_guidance": (
             "This render runs in a background Blender process. Poll get_render_job_status "
-            f"about every {poll_interval}s, then assemble/validate video output when needed."
+            f"about every {poll_interval}s, then assemble/validate video output when needed. "
+            "Playblast/preview/review jobs default to low resolution unless quality or resolution is specified."
         ),
         "camera_name": str(camera_name or "")[:120],
         "pid": 0,
@@ -617,7 +698,7 @@ def start_render_job(
             "frames_dir": frames_dir,
             "video_path": video_path,
             "child_status_path": child_status_path,
-            "quality": "HIGH",
+            "quality": metadata["ffmpeg_quality"],
         }
         with open(script_path, "w", encoding="utf-8", newline="\n") as handle:
             handle.write(_child_script_text(config))

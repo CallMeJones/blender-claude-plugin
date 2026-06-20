@@ -549,6 +549,7 @@ def _assert_compact_tools_visible(proc):
     assert task_tool["inputSchema"]["required"] == ["prompt"], task_tool
     render_tool = next(tool for tool in listed["result"]["tools"] if tool["name"] == "start_render_job")
     assert "output_kind" in render_tool["inputSchema"]["properties"], render_tool
+    assert "quality" in render_tool["inputSchema"]["properties"], render_tool
     assert render_tool["annotations"]["riskLevel"] == "read", render_tool
     assert render_tool["annotations"]["returnsBackgroundJob"] is True, render_tool
     assert render_tool["annotations"]["timeoutSeconds"] == 30, render_tool
@@ -574,6 +575,9 @@ def _assert_full_tools_visible(proc):
         "blender_bridge_status",
         "blender_tool_catalog",
         "list_scene_objects",
+        "save_blend_file",
+        "open_blend_file",
+        "create_new_blender_project",
         "draft_script",
         "run_approved_script",
     }.issubset(names), listed
@@ -585,6 +589,9 @@ def _assert_full_tools_visible(proc):
     assert run_tool["annotations"]["requiresApproval"] is True, run_tool
     assert run_tool["annotations"]["hasSideEffects"] is True, run_tool
     assert run_tool["annotations"]["readOnlyHint"] is False, run_tool
+    open_tool = next(tool for tool in listed["result"]["tools"] if tool["name"] == "open_blend_file")
+    assert open_tool["annotations"]["destructiveHint"] is True, open_tool
+    assert open_tool["annotations"]["timeoutRecovery"]["status_tool"] == "blender_bridge_status", open_tool
     return listed
 
 

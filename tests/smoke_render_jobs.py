@@ -57,6 +57,16 @@ def main():
         assert guarded_thumbnail["estimated_seconds"] >= 1, guarded_thumbnail
         assert guarded_thumbnail["estimated_duration"], guarded_thumbnail
         assert guarded_thumbnail["poll_after_seconds"] >= 1, guarded_thumbnail
+        preview_profile = render_jobs._quality_profile("auto", "frames", "quick playblast preview", "")
+        assert preview_profile["profile"] == "preview", preview_profile
+        assert preview_profile["resolution_x"] == 640, preview_profile
+        assert preview_profile["resolution_y"] == 360, preview_profile
+        assert preview_profile["samples"] == 8, preview_profile
+        assert preview_profile["preview_default_applied"] is True, preview_profile
+        final_profile = render_jobs._quality_profile("auto", "frames", "final product render", "")
+        assert final_profile["profile"] == "final", final_profile
+        assert final_profile["resolution_x"] == 1920, final_profile
+        assert final_profile["resolution_y"] == 1080, final_profile
 
         started = _execute(
             bpy.context,

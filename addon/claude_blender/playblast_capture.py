@@ -16,6 +16,20 @@ from . import live_preview, viewport_capture
 LATEST_PLAYBLAST_METADATA_URI = "blender://playblasts/latest/metadata"
 DEFAULT_MAX_FRAMES = 12
 MAX_PLAYBLAST_FRAMES = 48
+DEFAULT_PLAYBLAST_QUALITY = "preview"
+DEFAULT_PLAYBLAST_MAX_WIDTH = 640
+DEFAULT_PLAYBLAST_MAX_HEIGHT = 360
+PLAYBLAST_QUALITY_PRESETS = {
+    "low": (DEFAULT_PLAYBLAST_MAX_WIDTH, DEFAULT_PLAYBLAST_MAX_HEIGHT),
+    "preview": (DEFAULT_PLAYBLAST_MAX_WIDTH, DEFAULT_PLAYBLAST_MAX_HEIGHT),
+    "standard": (960, 540),
+    "medium": (960, 540),
+    "high": (1280, 720),
+    "hd": (1280, 720),
+    "source": (0, 0),
+    "original": (0, 0),
+    "full": (0, 0),
+}
 METADATA_FILENAME = "metadata.json"
 
 
@@ -240,6 +254,28 @@ def _poll_interval_seconds(estimated_seconds):
     return 10
 
 
+def _playblast_quality_limits(quality, max_width=None, max_height=None):
+    normalized = str(quality or DEFAULT_PLAYBLAST_QUALITY).strip().lower() or DEFAULT_PLAYBLAST_QUALITY
+    preset = PLAYBLAST_QUALITY_PRESETS.get(
+        normalized,
+        PLAYBLAST_QUALITY_PRESETS[DEFAULT_PLAYBLAST_QUALITY],
+    )
+    try:
+        width = int(max_width) if max_width is not None else int(preset[0])
+    except (TypeError, ValueError):
+        width = int(preset[0])
+    try:
+        height = int(max_height) if max_height is not None else int(preset[1])
+    except (TypeError, ValueError):
+        height = int(preset[1])
+    width = max(0, min(4096, width))
+    height = max(0, min(4096, height))
+    if not width and not height and normalized not in {"source", "original", "full"}:
+        normalized = DEFAULT_PLAYBLAST_QUALITY
+        width, height = PLAYBLAST_QUALITY_PRESETS[normalized]
+    return normalized, width, height
+
+
 def _flush_frame_capture_view(context):
     live_preview.redraw(context)
     try:
@@ -255,6 +291,9 @@ def capture_animation_playblast(
     frame_end=None,
     max_frames=DEFAULT_MAX_FRAMES,
     max_bytes=viewport_capture.DEFAULT_MAX_BYTES,
+    quality=DEFAULT_PLAYBLAST_QUALITY,
+    max_width=None,
+    max_height=None,
     brief="",
     capture_dir=None,
 ):
@@ -264,6 +303,12 @@ def capture_animation_playblast(
     sampled_frames = _sample_frames(start, end, max_frames)
     estimated_seconds = _estimated_capture_seconds(len(sampled_frames))
     poll_interval = _poll_interval_seconds(estimated_seconds)
+    quality, resolved_max_width, resolved_max_height = _playblast_quality_limits(quality, max_width=max_width, max_height=max_height)
+    quality_note = (
+        f"Frames are capped to {resolved_max_width or 'source'}x{resolved_max_height or 'source'} by default-quality policy."
+        if resolved_max_width or resolved_max_height
+        else "Frames keep source viewport dimensions because source/original quality was requested."
+    )
     if not viewport_capture.has_ui_context(context):
         return {
             "ok": False,
@@ -276,8 +321,12 @@ def capture_animation_playblast(
             "estimated_duration": _duration_label(estimated_seconds),
             "poll_after_seconds": poll_interval,
             "timeout_safe": False,
+            "quality": quality,
+            "max_width": resolved_max_width,
+            "max_height": resolved_max_height,
             "client_guidance": (
                 "Synchronous sampled viewport playblast capture can block the bridge while frames are captured. "
+                f"{quality_note} "
                 "If an MCP client times out, wait, call blender_bridge_status, then inspect latest playblast metadata."
             ),
             "note": "Animation playblast capture requires an interactive Blender window",
@@ -302,6 +351,8 @@ def capture_animation_playblast(
                     max_bytes=max_bytes,
                     capture_method=method,
                     capture_info=capture_info,
+                    max_width=resolved_max_width,
+                    max_height=resolved_max_height,
                 )
             except Exception as exc:
                 frame_metadata = {
@@ -322,6 +373,10 @@ def capture_animation_playblast(
                     "size_bytes": int(frame_metadata.get("size_bytes", 0) or 0),
                     "width": int(frame_metadata.get("width", 0) or 0),
                     "height": int(frame_metadata.get("height", 0) or 0),
+                    "original_width": int(frame_metadata.get("original_width", 0) or 0),
+                    "original_height": int(frame_metadata.get("original_height", 0) or 0),
+                    "resized": bool(frame_metadata.get("resized")),
+                    "dimension_limited": bool(frame_metadata.get("dimension_limited")),
                     "note": frame_metadata.get("note", ""),
                 }
             )
@@ -356,6 +411,9 @@ def capture_animation_playblast(
         "estimated_duration": _duration_label(estimated_seconds),
         "poll_after_seconds": poll_interval,
         "timeout_safe": False,
+        "quality": quality,
+        "max_width": resolved_max_width,
+        "max_height": resolved_max_height,
         "capture_method": method,
         "brief": str(brief or "")[:1000],
         "resource_type": "png_frame_sequence",
@@ -363,6 +421,7 @@ def capture_animation_playblast(
         "client_guidance": (
             "This sampled playblast ran synchronously on Blender's main thread. "
             f"Rough expected duration was {_duration_label(estimated_seconds)} for {len(sampled_frames)} sampled frame(s). "
+            f"{quality_note} "
             "If an MCP client times out during capture, wait, call blender_bridge_status, then inspect latest playblast metadata before recapturing."
         ),
         "review_hints": [

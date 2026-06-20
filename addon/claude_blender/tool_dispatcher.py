@@ -9,7 +9,7 @@ import textwrap
 
 import bpy
 
-from . import animation_analysis, animation_brief, animation_workflow, advanced_helpers, context_bundle, docs_index, external_assets, inspection_render, lab_parity, live_preview, playblast_capture, preferences, render_jobs, script_runner, viewport_capture, world_model
+from . import animation_analysis, animation_brief, animation_workflow, advanced_helpers, context_bundle, docs_index, external_assets, inspection_render, lab_parity, live_preview, playblast_capture, preferences, project_files, render_jobs, script_runner, viewport_capture, world_model
 
 
 def _float_list(values, length, default):
@@ -2641,6 +2641,9 @@ def capture_animation_playblast(context, args):
             maximum=playblast_capture.MAX_PLAYBLAST_FRAMES,
         ),
         max_bytes=_bounded_int(max_bytes, viewport_capture.DEFAULT_MAX_BYTES, minimum=262144, maximum=20 * 1024 * 1024),
+        quality=str(args.get("quality") or playblast_capture.DEFAULT_PLAYBLAST_QUALITY),
+        max_width=args.get("max_width"),
+        max_height=args.get("max_height"),
         brief=str(args.get("brief") or ""),
         capture_dir=getattr(prefs, "capture_cache_dir", None),
     )
@@ -2673,6 +2676,47 @@ def get_blend_file_diagnostics(context, args):
     return lab_parity.get_blend_file_diagnostics(
         context,
         max_items=_bounded_int(args.get("max_items"), 50, minimum=1, maximum=200),
+    )
+
+
+def save_blend_file(context, args):
+    return project_files.save_blend_file(
+        context,
+        filepath=str(args.get("filepath") or ""),
+        copy=bool(args.get("copy", False)),
+        overwrite=bool(args.get("overwrite", False)),
+        create_dirs=bool(args.get("create_dirs", True)),
+    )
+
+
+def open_blend_file(context, args):
+    return project_files.open_blend_file(
+        context,
+        filepath=str(args.get("filepath") or ""),
+        confirm_discard_current=bool(args.get("confirm_discard_current", False)),
+        create_checkpoint=bool(args.get("create_checkpoint", True)),
+        require_checkpoint=bool(args.get("require_checkpoint", True)),
+        checkpoint_dir=str(args.get("checkpoint_dir") or ""),
+        load_ui=bool(args.get("load_ui", False)),
+    )
+
+
+def create_new_blender_project(context, args):
+    standard_dirs = args.get("standard_dirs")
+    return project_files.create_new_blender_project(
+        context,
+        project_dir=str(args.get("project_dir") or ""),
+        project_name=str(args.get("project_name") or ""),
+        filepath=str(args.get("filepath") or ""),
+        template=str(args.get("template") or "default"),
+        create_standard_dirs=bool(args.get("create_standard_dirs", True)),
+        standard_dirs=standard_dirs if isinstance(standard_dirs, list) else None,
+        overwrite=bool(args.get("overwrite", False)),
+        create_dirs=bool(args.get("create_dirs", True)),
+        confirm_discard_current=bool(args.get("confirm_discard_current", False)),
+        create_checkpoint=bool(args.get("create_checkpoint", True)),
+        require_checkpoint=bool(args.get("require_checkpoint", True)),
+        checkpoint_dir=str(args.get("checkpoint_dir") or ""),
     )
 
 
@@ -2738,13 +2782,14 @@ def start_render_job(context, args):
         context,
         frame_start=args.get("frame_start"),
         frame_end=args.get("frame_end"),
-        resolution_x=_bounded_int(args.get("resolution_x"), 1920, minimum=16, maximum=8192),
-        resolution_y=_bounded_int(args.get("resolution_y"), 1080, minimum=16, maximum=8192),
-        resolution_percentage=_bounded_int(args.get("resolution_percentage"), 100, minimum=1, maximum=100),
-        samples=_bounded_int(args.get("samples"), 64, minimum=1, maximum=4096),
+        resolution_x=args.get("resolution_x"),
+        resolution_y=args.get("resolution_y"),
+        resolution_percentage=args.get("resolution_percentage"),
+        samples=args.get("samples"),
         fps=args.get("fps"),
         camera_name=str(args.get("camera_name") or ""),
         output_kind=str(args.get("output_kind") or "frames"),
+        quality=str(args.get("quality") or "auto"),
         job_name=str(args.get("job_name") or ""),
         note=str(args.get("note") or ""),
         capture_dir=getattr(prefs, "capture_cache_dir", None),
@@ -3248,6 +3293,9 @@ TOOL_FUNCTIONS = {
     "capture_animation_playblast": capture_animation_playblast,
     "capture_object_inspection_renders": capture_object_inspection_renders,
     "get_blend_file_diagnostics": get_blend_file_diagnostics,
+    "save_blend_file": save_blend_file,
+    "open_blend_file": open_blend_file,
+    "create_new_blender_project": create_new_blender_project,
     "get_workspace_layout": get_workspace_layout,
     "get_visual_evidence_resources": get_visual_evidence_resources,
     "jump_to_workspace": jump_to_workspace,

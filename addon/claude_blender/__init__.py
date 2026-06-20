@@ -23,6 +23,7 @@ _MODULE_NAMES = (
     "inspection_render",
     "lab_parity",
     "render_jobs",
+    "project_files",
     "bridge_protocol",
     "bridge_server",
     "docs_index",
