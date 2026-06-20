@@ -68,6 +68,24 @@ def main():
         )
         assert "draft_script" in _names(script_tools), script_meta
 
+        helper_script_tools, helper_script_meta = agent_tools.select_blender_tool_definitions(
+            "Write a Python script to move the selected cube up and make it red.",
+            bundle,
+        )
+        helper_script_names = _names(helper_script_tools)
+        assert "set_selected_location_delta" in helper_script_names, helper_script_meta
+        assert "assign_material_to_selected" in helper_script_names, helper_script_meta
+        assert "draft_script" not in helper_script_names, helper_script_meta
+
+        asset_script_tools, asset_script_meta = agent_tools.select_blender_tool_definitions(
+            "Write a Python script to download and import a Poly Haven sunset HDRI.",
+            bundle,
+        )
+        asset_script_names = _names(asset_script_tools)
+        assert "start_external_asset_download" in asset_script_names, asset_script_meta
+        assert "start_external_asset_import_job" in asset_script_names, asset_script_meta
+        assert "draft_script" not in asset_script_names, asset_script_meta
+
         product_tools, product_meta = agent_tools.select_blender_tool_definitions(
             "Polish this product into a premium catalog studio shot with dimensions and a turntable.",
             bundle,

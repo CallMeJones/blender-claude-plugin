@@ -27,6 +27,7 @@ Current implementation:
 - External agents can stage code with `draft_script`.
 - The add-on writes the code to the `Agent Bridge Pending Script` Text datablock.
 - Static checks block obvious risky imports and calls before the Run button is enabled.
+- `draft_script` refuses common helper-expressible work such as external asset downloads/imports, project file lifecycle operations, simulation bakes, object creation, materials, transforms, and common scene settings, returning `recommended_tools` instead. Explicit custom-script/helper-gap requests still use the approval path.
 - The sidebar shows status, risk, intent, expected changes, static issues/warnings, and Run/Reject controls.
 - Static analysis reports both declared script risk and detected risk (`low`, `medium`, `high`, or `blocked`) with risk reasons and checkpoint recommendation.
 - Execution pushes a Blender undo step when possible, saves a timestamped `.blend` checkpoint when enabled, and records stdout/errors in `Agent Bridge Script Log`.
@@ -62,6 +63,7 @@ Defaults and boundaries:
 - Mutating helper tools still run inside Blender and use the live-preview/revert path.
 - Generated arbitrary Python is normally staged with `draft_script` and must be approved in Blender. When the user grants a runtime external script trust window, `draft_script` auto-runs scripts that pass static checks until trust is revoked or expires.
 - External script trust does not bypass animation workflow routing. Animation-like `draft_script` calls are refused until the client has run the Milestone 7 animation workflow and script fallback is allowed, or until the request states an explicit helper gap that workflow helpers cannot express.
+- External script trust also does not bypass helper-first routing for common helper-covered work; clients should follow `recommended_tools` rather than retrying the same draft.
 - Viewport screenshots, sampled animation playblast frames, inspection renders, render thumbnails, and async render-job outputs exposed through MCP resources are local artifacts. Saved `.blend` files use a project-local `.claude_blender/captures/` folder by default, while unsaved or unwritable projects use Blender's extension user-data directory. Async render jobs launch a background Blender process from a temporary `.blend` copy and can be cancelled with `cancel_render_job` while the bridge session is tracking the process.
 - MCP search summaries, schema lookups, and tool-call results may include `guardrail_warnings` for client routing and recovery. These warnings are advisory; Blender-side path checks, approval gates, preview rollback, and static script analysis remain the enforcement layer.
 - External clients should surface tool calls clearly because MCP tools are model-controlled.

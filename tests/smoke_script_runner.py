@@ -410,6 +410,89 @@ print("created", obj.name)
         assert "claude_animation_trust_bypass_smoke" not in context.scene
         assert script_runner.external_script_trust_active(context, state=state)
 
+        material_guarded_under_trust = json.loads(
+            tool_dispatcher.execute_tool(
+                context,
+                "draft_script",
+                {
+                    "intent": "Make the selected cube red with a Python material script.",
+                    "expected_changes": "Cube gets a red material.",
+                    "risk_level": "low",
+                    "code": (
+                        "import bpy\n"
+                        "obj = bpy.data.objects.get('Cube')\n"
+                        "mat = bpy.data.materials.new('Should Not Stage Red')\n"
+                        "obj.data.materials.append(mat)\n"
+                    ),
+                },
+            )
+        )
+        assert not material_guarded_under_trust["ok"], material_guarded_under_trust
+        assert material_guarded_under_trust["code"] == "material_helper_required", material_guarded_under_trust
+        assert "create_shader_material" in material_guarded_under_trust["recommended_tools"], material_guarded_under_trust
+        assert "auto_ran" not in material_guarded_under_trust, material_guarded_under_trust
+        assert not state.pending_script
+        assert "Should Not Stage Red" not in bpy.data.materials
+        assert script_runner.external_script_trust_active(context, state=state)
+
+        asset_guarded_under_trust = json.loads(
+            tool_dispatcher.execute_tool(
+                context,
+                "draft_script",
+                {
+                    "intent": "Download and import a Poly Haven sunset HDRI with Python.",
+                    "expected_changes": "A downloaded HDRI is imported into the world.",
+                    "risk_level": "medium",
+                    "code": "print('poly haven asset import should use jobs first')",
+                },
+            )
+        )
+        assert not asset_guarded_under_trust["ok"], asset_guarded_under_trust
+        assert asset_guarded_under_trust["code"] == "external_asset_workflow_required", asset_guarded_under_trust
+        assert "start_external_asset_download" in asset_guarded_under_trust["recommended_tools"], asset_guarded_under_trust
+        assert "start_external_asset_import_job" in asset_guarded_under_trust["recommended_tools"], asset_guarded_under_trust
+        assert "auto_ran" not in asset_guarded_under_trust, asset_guarded_under_trust
+        assert not state.pending_script
+        assert script_runner.external_script_trust_active(context, state=state)
+
+        project_file_guarded_under_trust = json.loads(
+            tool_dispatcher.execute_tool(
+                context,
+                "draft_script",
+                {
+                    "intent": "Save this blend file as a new .blend path with Python.",
+                    "expected_changes": "The current project is saved to a new file.",
+                    "risk_level": "medium",
+                    "code": "import bpy\nbpy.ops.wm.save_as_mainfile(filepath='C:/tmp/should-not-stage.blend')",
+                },
+            )
+        )
+        assert not project_file_guarded_under_trust["ok"], project_file_guarded_under_trust
+        assert project_file_guarded_under_trust["code"] == "project_file_helper_required", project_file_guarded_under_trust
+        assert "get_blend_file_diagnostics" in project_file_guarded_under_trust["recommended_tools"], project_file_guarded_under_trust
+        assert "save_blend_file" in project_file_guarded_under_trust["recommended_tools"], project_file_guarded_under_trust
+        assert "auto_ran" not in project_file_guarded_under_trust, project_file_guarded_under_trust
+        assert not state.pending_script
+        assert script_runner.external_script_trust_active(context, state=state)
+
+        custom_helper_gap_allowed = json.loads(
+            tool_dispatcher.execute_tool(
+                context,
+                "draft_script",
+                {
+                    "intent": "Custom procedural material node network that helpers cannot express.",
+                    "expected_changes": "A custom material-node workflow marker is set.",
+                    "risk_level": "low",
+                    "code": "scene['claude_custom_helper_gap_smoke'] = 'ok'",
+                },
+            )
+        )
+        assert custom_helper_gap_allowed["ok"], custom_helper_gap_allowed
+        assert custom_helper_gap_allowed["auto_ran"] is True, custom_helper_gap_allowed
+        assert context.scene["claude_custom_helper_gap_smoke"] == "ok"
+        assert not state.pending_script
+        assert script_runner.external_script_trust_active(context, state=state)
+
         trusted_blocked = script_runner.stage_script(
             context,
             intent="Try blocked code during an active trust window",
