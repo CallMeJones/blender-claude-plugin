@@ -6,6 +6,7 @@ Start with the top-level `README.md`, then use these deeper notes for developmen
 
 - [INSTALL_FROM_GITHUB.md](INSTALL_FROM_GITHUB.md) - GitHub remote-repository install, manual release ZIP fallback, update steps, troubleshooting, and maintainer release smoke.
 - [RELEASE.md](RELEASE.md) - release build, GitHub Actions, GitHub Pages, and verification checklist.
+- [TESTING_GUIDE.md](TESTING_GUIDE.md) - comprehensive automated testing runbook for feature, tool, bridge, MCP, visual, safety, and release coverage.
 
 ## Current Implementation Notes
 
