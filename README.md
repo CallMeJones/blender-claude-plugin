@@ -242,7 +242,7 @@ python tests\smoke_audit_log.py
 python tests\smoke_external_assets.py
 ```
 
-Set `BLENDER_AGENT_BRIDGE_LIVE_PAGES_SMOKE=1` before `smoke_release_consistency.py` to also verify the deployed GitHub Pages extension index advertises the current manifest version.
+Set `BLENDER_AGENT_BRIDGE_LIVE_PAGES_SMOKE=1` before `smoke_release_consistency.py` to also verify the deployed GitHub Pages extension index advertises the current manifest version and that its hosted ZIP matches the advertised SHA-256 hash.
 
 Optional live-network external asset smoke is skipped by default:
 

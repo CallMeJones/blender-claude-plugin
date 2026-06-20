@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import sys
 import tomllib
+import urllib.parse
 import urllib.request
 
 
@@ -20,6 +22,7 @@ MANIFEST_PATH = os.path.join(ROOT, "addon", "claude_blender", "blender_manifest.
 CHANGELOG_PATH = os.path.join(ROOT, "CHANGELOG.md")
 PAGES_INDEX_URL = "https://callmejones.github.io/blender-agent-bridge/index.json"
 LIVE_PAGES_ENV = "BLENDER_AGENT_BRIDGE_LIVE_PAGES_SMOKE"
+MAX_LIVE_ARCHIVE_BYTES = 100 * 1024 * 1024
 
 
 def _read_text(path):
@@ -34,6 +37,17 @@ def _read_manifest():
 
 def _enabled(name):
     return str(os.environ.get(name) or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _download_sha256(url, *, max_bytes=MAX_LIVE_ARCHIVE_BYTES):
+    digest = hashlib.sha256()
+    total = 0
+    with urllib.request.urlopen(url, timeout=30) as response:
+        for chunk in iter(lambda: response.read(1024 * 1024), b""):
+            total += len(chunk)
+            assert total <= max_bytes, f"Live archive exceeds {max_bytes} bytes: {url}"
+            digest.update(chunk)
+    return digest.hexdigest(), total
 
 
 def _assert_no_hardcoded_release_examples(version):
@@ -85,16 +99,24 @@ def _assert_live_pages_index(version):
     entry = matches[0]
     expected_zip = f"{build_info.ADDON_ID}-{version}.zip"
     assert entry.get("version") == version, entry
-    assert str(entry.get("archive_url") or "").endswith(expected_zip), entry
+    archive_url = str(entry.get("archive_url") or "")
+    assert archive_url.endswith(expected_zip), entry
     archive_hash = str(entry.get("archive_hash") or "")
-    assert archive_hash.startswith("sha256:") and len(archive_hash) > len("sha256:"), entry
+    expected_hash = archive_hash.removeprefix("sha256:")
+    assert archive_hash.startswith("sha256:") and re.fullmatch(r"[0-9a-fA-F]{64}", expected_hash), entry
+
+    resolved_archive_url = urllib.parse.urljoin(PAGES_INDEX_URL, archive_url)
+    actual_hash, actual_size = _download_sha256(resolved_archive_url)
+    assert actual_hash == expected_hash.lower(), (resolved_archive_url, actual_hash, archive_hash)
+    if entry.get("archive_size") is not None:
+        assert int(entry["archive_size"]) == actual_size, (resolved_archive_url, actual_size, entry)
 
 
 def main():
     version = _assert_local_release_metadata()
     if _enabled(LIVE_PAGES_ENV):
         _assert_live_pages_index(version)
-        print(f"smoke_release_consistency: live Pages index advertises {version}")
+        print(f"smoke_release_consistency: live Pages index and archive verified for {version}")
     else:
         print(f"smoke_release_consistency: local metadata ok for {version}; set {LIVE_PAGES_ENV}=1 for live Pages smoke")
 

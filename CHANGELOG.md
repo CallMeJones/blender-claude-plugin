@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Nothing yet.
+- Hardened the optional live Pages smoke so it downloads the advertised extension ZIP and verifies the repository index hash and archive size.
 
 ## 0.1.5
 

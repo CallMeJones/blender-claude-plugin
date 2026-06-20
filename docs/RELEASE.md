@@ -133,7 +133,7 @@ blender --online-mode --command extension list -s
 
 - Confirm `blender_manifest.toml` `version` matches `CHANGELOG.md`.
 - Run `python tests\smoke_release_consistency.py`.
-- After GitHub Pages deploys, optionally run `$env:BLENDER_AGENT_BRIDGE_LIVE_PAGES_SMOKE='1'; python tests\smoke_release_consistency.py` to verify the live repository index advertises the current version.
+- After GitHub Pages deploys, optionally run `$env:BLENDER_AGENT_BRIDGE_LIVE_PAGES_SMOKE='1'; python tests\smoke_release_consistency.py` to verify the live repository index advertises the current version and that its hosted ZIP matches the advertised SHA-256 hash.
 - Run `blender --command extension validate addon\claude_blender`.
 - Build the zip and SHA-256 sidecar with Blender's official extension builder.
 - Run `blender --command extension validate dist\claude_blender-<version>.zip`.

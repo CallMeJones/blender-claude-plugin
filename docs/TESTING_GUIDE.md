@@ -178,7 +178,7 @@ Pass criteria:
 - Blender validates source extension and built ZIP.
 - ZIP contains `LICENSE` and excludes private/generated artifacts.
 - `public/index.json`, `public/index.html`, ZIP, and checksum sidecar are regenerated and valid.
-- Optional live Pages smoke sets `BLENDER_AGENT_BRIDGE_LIVE_PAGES_SMOKE=1` before `tests\smoke_release_consistency.py` and verifies the deployed remote repository index advertises the current manifest version.
+- Optional live Pages smoke sets `BLENDER_AGENT_BRIDGE_LIVE_PAGES_SMOKE=1` before `tests\smoke_release_consistency.py` and verifies the deployed remote repository index advertises the current manifest version and that its hosted ZIP matches the advertised SHA-256 hash.
 
 ## Phase 4: Clean Install Smoke
 
