@@ -32,6 +32,8 @@ POLY_HAVEN_BASE_URL = "https://api.polyhaven.com"
 POLY_HAVEN_SITE_URL = "https://polyhaven.com"
 SKETCHFAB_BASE_URL = "https://api.sketchfab.com/v3"
 USER_AGENT = "BlenderAgentBridge/0.1 (+https://github.com/CallMeJones/blender-agent-bridge)"
+DOWNLOAD_RETRY_COUNT = 2
+DOWNLOAD_RETRY_BACKOFF_SECONDS = 0.5
 POLY_HAVEN_LICENSE = "CC0"
 SKETCHFAB_TOKEN_ENV_VAR = "SKETCHFAB_API_TOKEN"
 SKETCHFAB_BRIDGE_TOKEN_ENV_VAR = "BLENDER_AGENT_BRIDGE_SKETCHFAB_API_TOKEN"
@@ -248,32 +250,117 @@ def _filename_from_url(url, fallback):
     return _sanitize_slug(urllib.parse.unquote(name), fallback=fallback)
 
 
+def _expected_size_int(expected_size):
+    try:
+        return int(expected_size) if expected_size is not None else 0
+    except (TypeError, ValueError):
+        return 0
+
+
+def _cached_file_valid(path, *, expected_md5="", expected_size=None):
+    if not os.path.exists(path):
+        return False
+    size = os.path.getsize(path)
+    expected_size_value = _expected_size_int(expected_size)
+    if expected_size_value and size != expected_size_value:
+        return False
+    if expected_md5 and _md5_file(path).lower() != str(expected_md5).lower():
+        return False
+    return True
+
+
 def _download_file(url, destination, *, expected_md5="", expected_size=None, headers=None, timeout=60):
     os.makedirs(os.path.dirname(destination), exist_ok=True)
-    cached = os.path.exists(destination)
-    if cached and expected_size and os.path.getsize(destination) != int(expected_size):
-        cached = False
-    if cached and expected_md5 and _md5_file(destination).lower() != str(expected_md5).lower():
-        cached = False
-    if not cached:
+    expected_size_value = _expected_size_int(expected_size)
+    partial_path = f"{destination}.part"
+    cached = _cached_file_valid(destination, expected_md5=expected_md5, expected_size=expected_size_value or None)
+    if cached:
+        size = os.path.getsize(destination)
+        md5 = _md5_file(destination) if os.path.exists(destination) else ""
+        return {
+            "ok": True,
+            "url": str(url),
+            "path": destination,
+            "cached": True,
+            "resumed": False,
+            "attempts": 0,
+            "partial_path": partial_path,
+            "size": size,
+            "md5": md5,
+            "sha256": _sha256_file(destination),
+        }
+
+    if os.path.exists(destination):
+        try:
+            os.remove(destination)
+        except OSError:
+            pass
+    if os.path.exists(partial_path) and expected_size_value and os.path.getsize(partial_path) > expected_size_value:
+        try:
+            os.remove(partial_path)
+        except OSError:
+            pass
+
+    resumed = False
+    attempts = 0
+    http_status = 0
+    max_attempts = max(1, DOWNLOAD_RETRY_COUNT + 1)
+    for attempt in range(1, max_attempts + 1):
+        attempts = attempt
         offline_error = _online_access_error("External asset file")
         if offline_error:
             offline_error["url"] = str(url)
             offline_error["path"] = destination
+            offline_error["partial_path"] = partial_path
             return offline_error
-        request = urllib.request.Request(str(url), headers={"User-Agent": USER_AGENT, **(headers or {})})
-        with urllib.request.urlopen(request, timeout=max(1, int(timeout or 60))) as response:
-            with open(destination, "wb") as handle:
-                shutil.copyfileobj(response, handle)
+        partial_size = os.path.getsize(partial_path) if os.path.exists(partial_path) else 0
+        request_headers = {"User-Agent": USER_AGENT, **(headers or {})}
+        if partial_size and not any(str(key).lower() == "range" for key in request_headers):
+            request_headers["Range"] = f"bytes={partial_size}-"
+        try:
+            request = urllib.request.Request(str(url), headers=request_headers)
+            with urllib.request.urlopen(request, timeout=max(1, int(timeout or 60))) as response:
+                http_status = int(getattr(response, "status", 0) or response.getcode() or 0)
+                if partial_size and http_status == 206:
+                    mode = "ab"
+                    resumed = True
+                else:
+                    mode = "wb"
+                    if partial_size and http_status == 200:
+                        resumed = False
+                with open(partial_path, mode) as handle:
+                    shutil.copyfileobj(response, handle)
+            os.replace(partial_path, destination)
+            break
+        except Exception as exc:
+            if attempt >= max_attempts:
+                return {
+                    "ok": False,
+                    "message": f"Download failed for {destination}: {type(exc).__name__}: {exc}",
+                    "url": str(url),
+                    "path": destination,
+                    "partial_path": partial_path,
+                    "partial_size": os.path.getsize(partial_path) if os.path.exists(partial_path) else 0,
+                    "attempts": attempts,
+                    "resumed": resumed,
+                    "http_status": http_status,
+                    "error_type": type(exc).__name__,
+                }
+            time.sleep(DOWNLOAD_RETRY_BACKOFF_SECONDS * attempt)
+
     size = os.path.getsize(destination)
     md5 = _md5_file(destination) if os.path.exists(destination) else ""
-    if expected_size and size != int(expected_size):
+    if expected_size_value and size != expected_size_value:
         return {
             "ok": False,
             "message": f"Downloaded size mismatch for {destination}",
             "path": destination,
-            "expected_size": int(expected_size),
+            "expected_size": expected_size_value,
             "size": size,
+            "partial_path": partial_path,
+            "attempts": attempts,
+            "resumed": resumed,
+            "http_status": http_status,
         }
     if expected_md5 and md5.lower() != str(expected_md5).lower():
         return {
@@ -282,12 +369,20 @@ def _download_file(url, destination, *, expected_md5="", expected_size=None, hea
             "path": destination,
             "expected_md5": str(expected_md5),
             "md5": md5,
+            "partial_path": partial_path,
+            "attempts": attempts,
+            "resumed": resumed,
+            "http_status": http_status,
         }
     return {
         "ok": True,
         "url": str(url),
         "path": destination,
-        "cached": cached,
+        "cached": False,
+        "resumed": resumed,
+        "attempts": attempts,
+        "partial_path": partial_path,
+        "http_status": http_status,
         "size": size,
         "md5": md5,
         "sha256": _sha256_file(destination),

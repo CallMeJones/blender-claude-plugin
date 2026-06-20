@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import tempfile
 import sys
+import hashlib
 import urllib.parse
 import zipfile
 
@@ -161,6 +162,33 @@ class _FakeOfflineBpy:
     app = _FakeOfflineApp()
 
 
+class _FakeDownloadResponse:
+    def __init__(self, body, status):
+        self._body = bytes(body)
+        self._offset = 0
+        self.status = int(status)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, _exc_type, _exc, _tb):
+        return False
+
+    def getcode(self):
+        return self.status
+
+    def read(self, size=-1):
+        if size is None or size < 0:
+            size = len(self._body) - self._offset
+        chunk = self._body[self._offset : self._offset + size]
+        self._offset += len(chunk)
+        return chunk
+
+
+def _md5_bytes(value):
+    return hashlib.md5(value).hexdigest()
+
+
 def main():
     original_fetch_json = external_assets._fetch_json
     original_fetch_json_with_headers = external_assets._fetch_json_with_headers
@@ -293,7 +321,79 @@ def main():
         assert offline_download["error_type"] == "online_access_disabled", offline_download
         assert offline_download["online_access_overridden"] is True, offline_download
         external_assets.bpy = original_bpy
-        external_assets._download_file = _fake_download_file
+
+        original_urlopen = external_assets.urllib.request.urlopen
+        original_backoff = external_assets.DOWNLOAD_RETRY_BACKOFF_SECONDS
+        try:
+            external_assets.DOWNLOAD_RETRY_BACKOFF_SECONDS = 0
+            resume_ranges = []
+
+            def _resume_urlopen(request, *, timeout=60):
+                resume_ranges.append(dict(request.header_items()).get("Range", ""))
+                return _FakeDownloadResponse(b"world", 206)
+
+            external_assets.urllib.request.urlopen = _resume_urlopen
+            resume_path = os.path.join(cache_dir, "resume.bin")
+            with open(f"{resume_path}.part", "wb") as handle:
+                handle.write(b"hello ")
+            resumed = external_assets._download_file(
+                "https://download.example.invalid/resume.bin",
+                resume_path,
+                expected_md5=_md5_bytes(b"hello world"),
+                expected_size=len(b"hello world"),
+            )
+            assert resumed["ok"] is True, resumed
+            assert resumed["resumed"] is True, resumed
+            assert resumed["attempts"] == 1, resumed
+            assert resume_ranges == ["bytes=6-"], resume_ranges
+            with open(resume_path, "rb") as handle:
+                assert handle.read() == b"hello world", resumed
+
+            restart_ranges = []
+
+            def _restart_urlopen(request, *, timeout=60):
+                restart_ranges.append(dict(request.header_items()).get("Range", ""))
+                return _FakeDownloadResponse(b"fresh", 200)
+
+            external_assets.urllib.request.urlopen = _restart_urlopen
+            restart_path = os.path.join(cache_dir, "restart.bin")
+            with open(f"{restart_path}.part", "wb") as handle:
+                handle.write(b"stale")
+            restarted = external_assets._download_file(
+                "https://download.example.invalid/restart.bin",
+                restart_path,
+                expected_md5=_md5_bytes(b"fresh"),
+                expected_size=len(b"fresh"),
+            )
+            assert restarted["ok"] is True, restarted
+            assert restarted["resumed"] is False, restarted
+            assert restart_ranges == ["bytes=5-"], restart_ranges
+            with open(restart_path, "rb") as handle:
+                assert handle.read() == b"fresh", restarted
+
+            retry_calls = []
+
+            def _retry_urlopen(request, *, timeout=60):
+                retry_calls.append(dict(request.header_items()).get("Range", ""))
+                if len(retry_calls) == 1:
+                    raise TimeoutError("temporary smoke timeout")
+                return _FakeDownloadResponse(b"retry", 200)
+
+            external_assets.urllib.request.urlopen = _retry_urlopen
+            retry_path = os.path.join(cache_dir, "retry.bin")
+            retried = external_assets._download_file(
+                "https://download.example.invalid/retry.bin",
+                retry_path,
+                expected_md5=_md5_bytes(b"retry"),
+                expected_size=len(b"retry"),
+            )
+            assert retried["ok"] is True, retried
+            assert retried["attempts"] == 2, retried
+            assert retry_calls == ["", ""], retry_calls
+        finally:
+            external_assets.urllib.request.urlopen = original_urlopen
+            external_assets.DOWNLOAD_RETRY_BACKOFF_SECONDS = original_backoff
+            external_assets._download_file = _fake_download_file
 
         tool_names = {tool["name"] for tool in agent_tools.blender_tool_definitions()}
         for name in (
