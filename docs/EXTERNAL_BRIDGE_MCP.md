@@ -19,7 +19,7 @@ The add-on owns all Blender reads/writes. The MCP server is a small stdlib Pytho
 
 ## Start The Bridge
 
-1. Install and enable the latest `claude_blender-0.1.1.zip`.
+1. Install and enable the latest `claude_blender-0.1.2.zip`.
 2. Open the add-on sidebar in the 3D View.
 3. In `External Bridge`, press `Start`.
 4. Optional: set `Bridge Token` in add-on preferences before starting.
@@ -57,6 +57,47 @@ If you set a bridge token, the copied config includes:
 ```
 
 The copied config also includes safe metadata in the MCP server `env` block, such as `CLAUDE_BLENDER_ADDON_VERSION`, `CLAUDE_BLENDER_ADDON_SOURCE_HASH`, `CLAUDE_BLENDER_BRIDGE_VERSION`, `CLAUDE_BLENDER_MCP_SERVER_VERSION`, `CLAUDE_BLENDER_MCP_CONFIG_VERSION`, and a short `CLAUDE_BLENDER_MCP_CONFIG_NOTE`. These fields behave like a comment for humans while remaining valid JSON for stricter clients.
+
+## Client Env Auth
+
+For Sketchfab downloads today, put the Sketchfab API token in the MCP server environment. OAuth is a future improvement; the current supported path is `SKETCHFAB_API_TOKEN`, with `BLENDER_AGENT_BRIDGE_SKETCHFAB_API_TOKEN` as a bridge-specific alias.
+
+Claude Desktop-style JSON:
+
+```json
+{
+  "mcpServers": {
+    "blender": {
+      "command": "python",
+      "args": [
+        "C:/path/to/claude_blender/mcp_server.py",
+        "--bridge-url",
+        "http://127.0.0.1:8765"
+      ],
+      "env": {
+        "SKETCHFAB_API_TOKEN": "your-sketchfab-api-token"
+      }
+    }
+  }
+}
+```
+
+Codex-style TOML:
+
+```toml
+[mcp_servers.blender]
+command = "python"
+args = ["C:/path/to/claude_blender/mcp_server.py", "--bridge-url", "http://127.0.0.1:8765"]
+
+[mcp_servers.blender.env]
+SKETCHFAB_API_TOKEN = "your-sketchfab-api-token"
+```
+
+The bridge-specific alias `BLENDER_AGENT_BRIDGE_SKETCHFAB_API_TOKEN` is also accepted.
+
+When a Sketchfab download/import is called through MCP, `mcp_server.py` resolves those environment variables in the Claude/Codex-launched MCP process and forwards the credential to Blender as a redacted per-call tool argument. This is deliberate: Blender itself usually does not inherit the MCP client's environment. For direct HTTP bridge calls that bypass MCP, put the credential in Blender's process environment or pass it as a per-call argument.
+
+Use `blender_bridge_status` to check `mcp_external_asset_auth.sketchfab` and confirm whether the running MCP process actually inherited Sketchfab API-token auth. Use `get_external_asset_cache_diagnostics` to inspect cached assets and the Blender-process auth view.
 
 ## MCP Client Refresh
 
@@ -124,7 +165,11 @@ Set `BLENDER_MCP_FULL_TOOL_LIST=1` in the MCP server environment to expose every
 
 `tools/list`, `resources/list`, `resources/templates/list`, and `prompts/list` support cursor pagination. Tool definitions include `inputSchema`, `outputSchema`, and risk/permission annotations derived from the bridge contract.
 
+Simulation tools are exposed in compact MCP mode so clients do not have to discover them through the generic invoke wrapper. `stage_persistent_simulation_bake` carries machine-readable annotations: `requiresExplicitOneTimeApproval=true`, `trustWindowAutoRunAllowed=false`, `approvalPolicy`, and `recoveryHint`. Its output schema also includes `requires_explicit_one_time_approval`, `trust_window_auto_run_allowed`, `user_action_required`, and `recommended_next_step`. Clients should treat that response as a staged approval state, not as a long-running bake or bridge hang.
+
 Project file tools are human-in-the-loop. For `save_blend_file` save-as/save-copy, `open_blend_file`, and `create_new_blender_project`, clients must ask the user for the target path or use a file picker and set `user_confirmed_path=true`; agents must not invent durable paths. Saving the already-bound active `.blend` may omit `filepath`. `autosave_current_blend_file` accepts no filepath and saves only the already-bound active `.blend` in place.
+
+Recovery paths have the same standard: do not tell the user to open a checkpoint, autosave, or backup `.blend` path unless the client has just verified that exact path exists and is restorable through returned checkpoint metadata, diagnostics, or a filesystem check. If verification is unavailable, report that the path is unverified and ask the user to choose the file instead of inventing one.
 
 `blender_bridge_status` also reports the current external script trust snapshot, including whether tokenless external script runs are allowed, seconds remaining, the runtime expiry timestamp, whether saved scene trust state is stale, and source-hash match/mismatch diagnostics. Some MCP clients cache callable tools aggressively; if a newly added Blender tool is missing, restart or refresh the MCP client after copying the latest config.
 
@@ -184,9 +229,11 @@ Current resources:
 
 `start_render_job` is the long-render path for high-resolution animation renders, frame sequences, MP4 quality checks, 1080p/4K previews, and anything likely to exceed the MCP request timeout. It saves a temporary copy of the current `.blend`, starts a background Blender process, and returns a `job_id`, rough estimate, and polling interval immediately. With `quality=auto`, final renders keep final-quality defaults, while playblast/preview/review/draft job names or notes default to a low-resolution preview profile unless the caller explicitly passes `quality`, `resolution_x`, `resolution_y`, or `samples`. Poll `get_render_job_status` until the job reaches `completed`, `failed`, or `cancelled`; status updates include elapsed time, frame rate when frames are available, estimated remaining time, `poll_after_seconds`, frame counts, progress, output paths, log tails, and newest frame resource URI. Logs are available at `blender://render-jobs/{job_id}/log`; exact frames are available at `blender://render-jobs/{job_id}/frames/{frame}`. After a PNG sequence completes, call `assemble_render_job_video` to start a background MP4 assembly pass, then poll `get_render_job_status` again and call `validate_render_job_output` before reporting success. MP4 output is exposed through `blender://render-jobs/{job_id}/video` when small enough for MCP, and always reports a local path in metadata. Use `cancel_render_job` when a tracked job should stop. `render_scene_thumbnail` refuses large synchronous stills by default and returns `recommended_tool: start_render_job`; pass `allow_blocking_render=true` only for an intentional one-off blocking still. `draft_script` warns clients to use this path first when a generated script appears to be a long render or playblast job.
 
+Persistent simulation/cache bakes are separate from render jobs. Before baking, inspect with `get_simulation_details` or `inspect_simulation_bake`, then use `stage_persistent_simulation_bake`. Scripts containing `bpy.ops.fluid.*` or `bpy.ops.ptcache.*` bake/free operators are high risk and require explicit one-time user approval; a session-wide external script trust window must not auto-run them. Prefer small bounded frame ranges, avoid clearing existing caches unless the user explicitly accepts that data loss, and verify checkpoint metadata before asking the user to recover from a checkpoint.
+
 Official Blender Lab parity helpers are exposed as direct tools:
 
-- `get_blend_file_diagnostics` reports save path state, backup files, missing external file paths, linked libraries, and data-block usage summaries.
+- `get_blend_file_diagnostics` reports save path state, backup files, verified script checkpoint metadata, missing external file paths, linked libraries, and data-block usage summaries.
 - `get_workspace_layout` returns workspace/window/screen/area JSON for UI diagnostics.
 - `jump_to_workspace` switches the interactive Blender UI to a named workspace and fails soft in background mode.
 - `set_viewport_view` switches the first interactive 3D viewport to an axis, camera, or user view and can frame a named object.
@@ -217,7 +264,7 @@ MCP tools are model-controlled, so the external client must make tool use visibl
 - Live helper tools mutate the scene through preview rollback.
 - Generated arbitrary Python is normally staged with `draft_script` and requires approval inside Blender.
 - External `run_approved_script` calls normally include a one-time token minted by the Blender sidebar's `Approve External Run` action. Tokens are short-lived, bound to the current pending script text, and consumed after one call.
-- For iterative sessions, the Blender sidebar can also grant external script trust from presets such as 15 minutes, 1 hour, 4 hours, or the current Blender session. While active, `draft_script` automatically runs scripts after staging if static checks pass; if a static-check-passing script is already pending when trust is granted, Blender runs it immediately. External clients may still call `run_approved_script` without `approval_token`, or with an empty token string, for already staged scripts. Blender reruns static checks, refuses blocked scripts, checkpoints when enabled, and records the call in the audit log. Use `Revoke Trust` to end the window early. Trust grants are runtime-only and are cleared on add-on reload, file load, and bridge start.
+- For iterative sessions, the Blender sidebar can also grant external script trust from presets such as 15 minutes, 1 hour, 4 hours, or the current Blender session. While active, `draft_script` automatically runs scripts after staging if static checks pass; if a static-check-passing script is already pending when trust is granted, Blender runs it immediately. External clients may still call `run_approved_script` without `approval_token`, or with an empty token string, for already staged scripts. Blender reruns static checks, refuses blocked scripts, checkpoints when enabled, and records the call in the audit log. Persistent simulation/cache bake and free operators are excluded from this broad trust path and require a fresh one-time approval. Use `Revoke Trust` to end the window early. Trust grants are runtime-only and are cleared on add-on reload, file load, and bridge start.
 - The bridge is off until started and binds to localhost only.
 - Optional bearer token auth is available through add-on preferences.
 - MCP and bridge tool calls are recorded in a local JSONL audit log in Blender's extension user-data directory by default, with `~/.claude_blender/audit.jsonl` kept as a non-extension runtime fallback. Code/token-like arguments are redacted.

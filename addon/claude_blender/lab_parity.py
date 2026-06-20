@@ -11,7 +11,7 @@ import uuid
 
 import bpy
 
-from . import autosave, inspection_render, playblast_capture, render_jobs, viewport_capture
+from . import autosave, inspection_render, playblast_capture, render_jobs, script_runner, viewport_capture
 
 
 LATEST_RENDER_THUMBNAIL_URI = "blender://render-thumbnails/latest"
@@ -517,6 +517,19 @@ def _backup_files(filepath, max_items):
     return backups
 
 
+def _script_checkpoint_diagnostics(context):
+    state = getattr(getattr(context, "scene", None), "claude_blender", None)
+    last_path = getattr(state, "last_checkpoint_path", "") if state else ""
+    restored_path = getattr(state, "last_checkpoint_restored_path", "") if state else ""
+    return {
+        "last_checkpoint_status": getattr(state, "last_checkpoint_status", "") if state else "",
+        "last_checkpoint": script_runner.checkpoint_metadata(context, last_path),
+        "last_restored_status": getattr(state, "last_checkpoint_restored_status", "") if state else "",
+        "last_restored": script_runner.checkpoint_metadata(context, restored_path),
+        "path_policy": "Only report checkpoint paths that this metadata marks exists=true and restorable=true.",
+    }
+
+
 def get_blend_file_diagnostics(context, *, max_items=50):
     max_items = max(1, min(200, int(max_items or 50)))
     filepath = getattr(bpy.data, "filepath", "") or ""
@@ -552,6 +565,7 @@ def get_blend_file_diagnostics(context, *, max_items=50):
             ),
             "backup_files": _backup_files(absolute_filepath, max_items),
         },
+        "script_checkpoints": _script_checkpoint_diagnostics(context),
         "autosave": autosave.autosave_status(context),
         "linked_libraries": libraries,
         "linked_library_count": len(libraries),

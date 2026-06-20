@@ -9,7 +9,7 @@ From the repository root:
 ```powershell
 blender --command extension validate addon\claude_blender
 python scripts\build_extension_zip.py --blender blender
-blender --command extension validate dist\claude_blender-0.1.1.zip
+blender --command extension validate dist\claude_blender-0.1.2.zip
 ```
 
 The script copies a filtered source tree, calls Blender's official extension builder, and writes:
@@ -48,7 +48,7 @@ GitHub Pages must be enabled for this repository and configured to deploy from G
 
 The `Build, smoke, release` workflow builds the extension ZIP on pushes, pull requests, manual dispatches, and `v*` tags. Every successful run uploads `dist/*.zip` and `dist/*.sha256` as workflow artifacts. It also uploads the generated static extension repository artifact containing `public/index.json`, `public/index.html`, the ZIP, and the checksum sidecar.
 
-When the ref is a tag such as `v0.1.1`, the workflow attaches `dist/*.zip` and `dist/*.sha256` to the GitHub Release.
+When the ref is a tag such as `v0.1.2`, the workflow attaches `dist/*.zip` and `dist/*.sha256` to the GitHub Release.
 
 The workflow also builds a static extension repository in `public/` and deploys it to GitHub Pages from `main` on non-PR runs. Tag runs publish release assets but do not redeploy Pages. Users can add this remote repository URL in Blender:
 
@@ -59,8 +59,8 @@ https://callmejones.github.io/blender-agent-bridge/index.json
 Recommended user-facing release flow:
 
 ```powershell
-git tag v0.1.1
-git push origin v0.1.1
+git tag v0.1.2
+git push origin v0.1.2
 ```
 
 After the workflow completes, users can either install through the remote repository URL above or download `claude_blender-<version>.zip` from the GitHub Release and install it in Blender with `Edit > Preferences > Get Extensions > Install from Disk`. Tell users not to install GitHub's generated "Source code" ZIP, because it is the repository checkout and not the packaged Blender extension.

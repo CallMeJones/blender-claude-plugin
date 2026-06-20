@@ -380,7 +380,7 @@ def _validate_current_pending_script_for_external_run(context, state):
         state.status = state.pending_script_status
         clear_external_script_approval(state=state, status="External approval blocked by static checks")
         return {"ok": False, "message": "Script blocked by static checks", "analysis": analysis}
-    return {"ok": True, "message": "Pending script accepted", "text_name": text_name, "source": source}
+    return {"ok": True, "message": "Pending script accepted", "text_name": text_name, "source": source, "analysis": analysis}
 
 
 def validate_external_script_approval(context, approval_token):
@@ -394,6 +394,15 @@ def validate_external_script_approval(context, approval_token):
             accepted = _validate_current_pending_script_for_external_run(context, state)
             if not accepted.get("ok"):
                 return accepted
+            analysis = accepted.get("analysis") or {}
+            if analysis.get("explicit_approval_required"):
+                return _external_approval_error(
+                    state,
+                    (
+                        "Pending script requires explicit one-time user approval; "
+                        "external script trust cannot auto-run persistent simulation/cache bake or free operators"
+                    ),
+                )
             return {
                 "ok": True,
                 "message": "External trusted window accepted",
@@ -552,6 +561,7 @@ def _metadata_text(*, intent, expected_changes, risk_level, target_objects, anal
         f"Declared risk: {risk_level or 'unspecified'}",
         f"Detected risk: {analysis.get('risk_level', 'unknown')}",
         f"Checkpoint recommended: {'yes' if analysis.get('checkpoint_recommended') else 'no'}",
+        f"External trust auto-run: {'yes' if analysis.get('trust_window_allowed', analysis.get('ok')) else 'no'}",
         f"Targets: {', '.join(target_objects) if target_objects else 'unspecified'}",
         "",
         "Expected changes:",
@@ -564,6 +574,8 @@ def _metadata_text(*, intent, expected_changes, risk_level, target_objects, anal
         lines.append(f"- {issue}")
     for warning in analysis.get("warnings", []):
         lines.append(f"- Warning: {warning}")
+    for reason in analysis.get("explicit_approval_reasons", []):
+        lines.append(f"- Explicit approval required: {reason}")
     for reason in analysis.get("risk_reasons", [])[:12]:
         lines.append(f"- Risk: {reason}")
     return "\n".join(lines)

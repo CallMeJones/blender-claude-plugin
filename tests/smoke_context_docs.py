@@ -18,7 +18,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(ROOT, "addon"))
 
 import claude_blender  # noqa: E402
-from claude_blender import agent_tools, bridge_protocol, context_budget, context_bundle, docs_index, inspection_render, lab_parity, playblast_capture, tool_dispatcher, viewport_capture  # noqa: E402
+from claude_blender import agent_tools, bridge_protocol, context_budget, context_bundle, docs_index, inspection_render, lab_parity, playblast_capture, tool_dispatcher, ui, viewport_capture  # noqa: E402
 
 
 class _FakeOfflineApp:
@@ -34,6 +34,15 @@ def main():
     cache_dir = tempfile.mkdtemp(prefix="claude-blender-docs-")
     try:
         claude_blender.register()
+
+        if ui._docs_timer_is_registered():
+            bpy.app.timers.unregister(ui._process_docs_results)
+        ui._docs_timer_registered = True
+        assert not ui._docs_timer_is_registered()
+        ui._ensure_docs_timer_after_load(None)
+        assert ui._docs_timer_is_registered()
+        bpy.app.timers.unregister(ui._process_docs_results)
+        ui._docs_timer_registered = False
 
         original_docs_bpy = docs_index.bpy
         docs_index.bpy = _FakeOfflineBpy()

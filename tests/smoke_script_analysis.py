@@ -79,6 +79,31 @@ def main():
     assert destructive["risk_level"] == "high", destructive
     assert destructive["warnings"], destructive
 
+    persistent_bake = script_analysis.analyze_script("import bpy\nbpy.ops.fluid.bake_all()\nbpy.ops.ptcache.free_bake_all()")
+    assert persistent_bake["ok"], persistent_bake
+    assert persistent_bake["risk_level"] == "high", persistent_bake
+    assert persistent_bake["explicit_approval_required"], persistent_bake
+    assert not persistent_bake["trust_window_allowed"], persistent_bake
+    assert any("explicit_approval_call:bpy.ops.fluid.bake_all" == reason for reason in persistent_bake["risk_reasons"]), persistent_bake
+
+    aliased_bake = script_analysis.analyze_script("import bpy\nops = bpy.ops\nops.ptcache.bake_all(bake=True)")
+    assert aliased_bake["explicit_approval_required"], aliased_bake
+    assert not aliased_bake["trust_window_allowed"], aliased_bake
+
+    reflected_bake = script_analysis.analyze_script("import bpy\ngetattr(bpy.ops.ptcache, 'bake_all')(bake=True)")
+    assert reflected_bake["explicit_approval_required"], reflected_bake
+    assert not reflected_bake["trust_window_allowed"], reflected_bake
+
+    reflected_namespace_bake = script_analysis.analyze_script("import bpy\ngetattr(bpy.ops, 'ptcache').bake_all(bake=True)")
+    assert reflected_namespace_bake["explicit_approval_required"], reflected_namespace_bake
+    assert not reflected_namespace_bake["trust_window_allowed"], reflected_namespace_bake
+
+    nested_reflected_bake = script_analysis.analyze_script(
+        "import bpy\ncache = 'ptcache'\nbake = 'bake_all'\ngetattr(getattr(bpy.ops, cache), bake)(bake=True)"
+    )
+    assert nested_reflected_bake["explicit_approval_required"], nested_reflected_bake
+    assert not nested_reflected_bake["trust_window_allowed"], nested_reflected_bake
+
     mutating = script_analysis.analyze_script(
         "import bpy\n"
         "mesh = bpy.data.meshes.new('Triangle')\n"

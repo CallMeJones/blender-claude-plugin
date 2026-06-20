@@ -47,6 +47,10 @@ class FakeBridgeHandler(BaseHTTPRequestHandler):
                     "bridge_version": bridge_protocol.BRIDGE_VERSION,
                     "addon_version": build_info.ADDON_VERSION,
                     "addon_source_hash": diagnostics["addon_source_hash"],
+                    "addon_loaded_source_hash": diagnostics["addon_loaded_source_hash"],
+                    "addon_runtime_source_stale": diagnostics["addon_runtime_source_stale"],
+                    "addon_runtime_source_status": diagnostics["addon_runtime_source_status"],
+                    "addon_runtime_source_message": diagnostics["addon_runtime_source_message"],
                     "expected_addon_source_hash": diagnostics["expected_addon_source_hash"],
                     "addon_source_hash_match": diagnostics["addon_source_hash_match"],
                     "addon_source_hash_status": diagnostics["addon_source_hash_status"],
@@ -627,8 +631,13 @@ def _assert_compact_tools_visible(proc):
     assert "addon_version" in status_properties, status_tool
     assert "mcp_server_version" in status_properties, status_tool
     assert "mcp_config_version" in status_properties, status_tool
+    assert "mcp_external_asset_auth" in status_properties, status_tool
     assert "build_diagnostics" in status_properties, status_tool
     assert "addon_source_hash" in status_properties, status_tool
+    assert "addon_loaded_source_hash" in status_properties, status_tool
+    assert "addon_runtime_source_stale" in status_properties, status_tool
+    assert "addon_runtime_source_status" in status_properties, status_tool
+    assert "addon_runtime_source_message" in status_properties, status_tool
     assert "mcp_server_source_hash" in status_properties, status_tool
     assert "addon_mcp_source_hash_match" in status_properties, status_tool
     assert "source_hash_status" in status_properties, status_tool
@@ -656,6 +665,13 @@ def _assert_compact_tools_visible(proc):
     task_tool = next(tool for tool in listed["result"]["tools"] if tool["name"] == "run_animation_task")
     assert task_tool["annotations"]["longRunningHint"] is True, task_tool
     assert task_tool["annotations"]["timeoutRecovery"]["resource_tool"] == "get_visual_evidence_resources", task_tool
+    bake_tool = next(tool for tool in listed["result"]["tools"] if tool["name"] == "stage_persistent_simulation_bake")
+    assert bake_tool["annotations"]["requiresApproval"] is True, bake_tool
+    assert bake_tool["annotations"]["requiresExplicitOneTimeApproval"] is True, bake_tool
+    assert bake_tool["annotations"]["trustWindowAutoRunAllowed"] is False, bake_tool
+    assert "one-time" in bake_tool["annotations"]["approvalPolicy"], bake_tool
+    assert "get_blend_file_diagnostics" in bake_tool["annotations"]["recoveryHint"], bake_tool
+    assert "requires_explicit_one_time_approval" in bake_tool["outputSchema"]["properties"], bake_tool
     assemble_tool = next(tool for tool in listed["result"]["tools"] if tool["name"] == "assemble_render_job_video")
     assert assemble_tool["inputSchema"]["required"] == ["job_id"], assemble_tool
     validate_tool = next(tool for tool in listed["result"]["tools"] if tool["name"] == "validate_render_job_output")
@@ -706,6 +722,8 @@ def _assert_legacy_status_hashes_are_unknown():
 
     status = mcp_server.BlenderMCPServer(LegacyBridge())._augment_bridge_status({"ok": True})
     assert status["mcp_server_source_hash"] == build_info.source_tree_hash(), status
+    assert status["addon_runtime_source_status"] == "unknown", status
+    assert status["addon_runtime_source_stale"] is False, status
     assert status["addon_mcp_source_hash_match"] is None, status
     assert status["source_hash_status"] == "unknown", status
 
@@ -930,6 +948,9 @@ def main():
         assert status_content["mcp_config_version"] == build_info.MCP_CONFIG_VERSION, status_call
         assert build_info.ADDON_NAME in status_content["build_diagnostics"], status_call
         assert status_content["addon_source_hash"] == build_info.source_tree_hash(), status_call
+        assert status_content["addon_loaded_source_hash"] == build_info.LOADED_SOURCE_HASH, status_call
+        assert status_content["addon_runtime_source_stale"] is False, status_call
+        assert status_content["addon_runtime_source_status"] == "current", status_call
         assert status_content["mcp_server_source_hash"] == build_info.source_tree_hash(), status_call
         assert status_content["addon_mcp_source_hash_match"] is True, status_call
         assert status_content["source_hash_status"] == "match", status_call
@@ -1137,7 +1158,41 @@ def main():
         category_names = {
             item["name"] for item in catalog_categories["result"]["structuredContent"]["facets"]["categories"]
         }
-        assert {"inspect", "script", "transform"}.issubset(category_names), catalog_categories
+        assert {"inspect", "script", "simulation", "transform"}.issubset(category_names), catalog_categories
+
+        bake_catalog_schema = _send(
+            proc,
+            {
+                "jsonrpc": "2.0",
+                "id": 27,
+                "method": "tools/call",
+                "params": {
+                    "name": "blender_tool_catalog",
+                    "arguments": {"action": "schema", "name": "stage_persistent_simulation_bake"},
+                },
+            },
+        )
+        bake_catalog_tool = bake_catalog_schema["result"]["structuredContent"]["tool"]
+        assert bake_catalog_tool["annotations"]["requiresExplicitOneTimeApproval"] is True, bake_catalog_schema
+        assert bake_catalog_tool["annotations"]["trustWindowAutoRunAllowed"] is False, bake_catalog_schema
+        assert "requires_explicit_one_time_approval" in bake_catalog_tool["outputSchema"]["properties"], bake_catalog_schema
+
+        simulation_catalog_search = _send(
+            proc,
+            {
+                "jsonrpc": "2.0",
+                "id": 28,
+                "method": "tools/call",
+                "params": {
+                    "name": "blender_tool_catalog",
+                    "arguments": {"action": "search", "query": "persistent simulation bake", "limit": 5},
+                },
+            },
+        )
+        simulation_catalog_tools = simulation_catalog_search["result"]["structuredContent"]["tools"]
+        bake_summary = next(tool for tool in simulation_catalog_tools if tool["name"] == "stage_persistent_simulation_bake")
+        assert bake_summary["requires_explicit_one_time_approval"] is True, simulation_catalog_search
+        assert bake_summary["trust_window_auto_run_allowed"] is False, simulation_catalog_search
 
         schema = _send(
             proc,

@@ -331,6 +331,8 @@ def main():
         assert staged_bake["auto_ran"] is False, staged_bake
         assert staged_bake["bake_operator_scope"] == "scene_wide_ptcache_bake_all", staged_bake
         assert "scene-wide" in staged_bake["scope_warning"], staged_bake
+        assert staged_bake["staged"]["analysis"]["explicit_approval_required"], staged_bake
+        assert not staged_bake["staged"]["analysis"]["trust_window_allowed"], staged_bake
         script_text = bpy.data.texts[staged_bake["staged"]["text_datablock"]].as_string()
         assert "bpy.ops.ptcache.bake_all" in script_text, staged_bake
         assert "scope_warning" in script_text, staged_bake

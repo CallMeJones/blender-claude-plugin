@@ -8,6 +8,7 @@ import queue
 import threading
 
 import bpy
+from bpy.app.handlers import persistent
 
 from . import (
     bridge_server,
@@ -131,11 +132,50 @@ def _process_docs_results():
     return 0.2
 
 
+def _docs_timer_is_registered():
+    try:
+        return bool(bpy.app.timers.is_registered(_process_docs_results))
+    except Exception:
+        return bool(_docs_timer_registered)
+
+
+def _register_docs_timer():
+    try:
+        bpy.app.timers.register(_process_docs_results, first_interval=0.2, persistent=True)
+    except TypeError:
+        bpy.app.timers.register(_process_docs_results, first_interval=0.2)
+
+
 def _ensure_docs_timer():
     global _docs_timer_registered
-    if not _docs_timer_registered:
-        bpy.app.timers.register(_process_docs_results, first_interval=0.2)
+    if _docs_timer_is_registered():
         _docs_timer_registered = True
+        return
+    _register_docs_timer()
+    _docs_timer_registered = True
+
+
+@persistent
+def _ensure_docs_timer_after_load(_dummy):
+    global _docs_timer_registered
+    has_building_scene = any(
+        hasattr(scene, "claude_blender") and scene.claude_blender.docs_cache_building
+        for scene in bpy.data.scenes
+    )
+    if _docs_timer_registered or not _docs_results.empty() or has_building_scene:
+        if not _docs_timer_is_registered():
+            _docs_timer_registered = False
+        _ensure_docs_timer()
+
+
+def _remove_docs_timer_load_handler():
+    handlers = bpy.app.handlers.load_post
+    for handler in list(handlers):
+        if (
+            getattr(handler, "__name__", "") == "_ensure_docs_timer_after_load"
+            and str(getattr(handler, "__module__", "")).endswith(".ui")
+        ):
+            handlers.remove(handler)
 
 
 def _update_context_plan_state(state, metadata):
@@ -742,11 +782,19 @@ classes = (
 
 
 def register():
+    _remove_docs_timer_load_handler()
+    bpy.app.handlers.load_post.append(_ensure_docs_timer_after_load)
     for cls in classes:
         bpy.utils.register_class(cls)
 
 
 def unregister():
+    _remove_docs_timer_load_handler()
+    try:
+        if _docs_timer_is_registered():
+            bpy.app.timers.unregister(_process_docs_results)
+    except Exception:
+        pass
     for cls in reversed(classes):
         try:
             bpy.utils.unregister_class(cls)

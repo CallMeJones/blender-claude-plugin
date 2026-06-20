@@ -14,7 +14,7 @@ https://callmejones.github.io/blender-agent-bridge/index.json
 
 In Blender:
 
-1. Install Blender `5.1.0` or newer.
+1. Install Blender `5.0.0` or newer.
 2. Open `Edit > Preferences > Get Extensions`.
 3. Enable online access if Blender asks for it.
 4. Add a remote repository named `Blender Agent Bridge`.
@@ -44,8 +44,8 @@ Do not install GitHub's generated `Source code` ZIP. It is the repository checko
 On Windows, verify a downloaded ZIP with:
 
 ```powershell
-Get-FileHash .\claude_blender-0.1.1.zip -Algorithm SHA256
-Get-Content .\claude_blender-0.1.1.zip.sha256
+Get-FileHash .\claude_blender-0.1.2.zip -Algorithm SHA256
+Get-Content .\claude_blender-0.1.2.zip.sha256
 ```
 
 The hash printed by `Get-FileHash` should match the first value in the `.sha256` file.
@@ -91,7 +91,7 @@ Local release build:
 ```powershell
 blender --command extension validate addon\claude_blender
 python scripts\build_extension_zip.py --blender blender
-blender --command extension validate dist\claude_blender-0.1.1.zip
+blender --command extension validate dist\claude_blender-0.1.2.zip
 python tests\smoke_build_extension_zip.py
 python tests\smoke_extension_repository.py
 python scripts\build_extension_repository.py --build-zip --blender blender --repo-dir public
@@ -100,8 +100,8 @@ python scripts\build_extension_repository.py --build-zip --blender blender --rep
 Publish a tagged GitHub release:
 
 ```powershell
-git tag v0.1.1
-git push origin v0.1.1
+git tag v0.1.2
+git push origin v0.1.2
 ```
 
 The GitHub workflow uploads the packaged ZIP and `.sha256` as release assets. Pushes to `main` build the same static extension repository into `public/` and deploy it to GitHub Pages when Pages is configured to use GitHub Actions.

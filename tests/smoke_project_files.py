@@ -15,7 +15,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(ROOT, "addon"))
 
 import claude_blender  # noqa: E402
-from claude_blender import agent_tools, bridge_protocol, tool_dispatcher  # noqa: E402
+from claude_blender import agent_tools, autosave, bridge_protocol, tool_dispatcher  # noqa: E402
 
 
 def _execute(context, name, args=None):
@@ -31,6 +31,11 @@ def main():
         for name in ("save_blend_file", "open_blend_file", "create_new_blender_project", "autosave_current_blend_file"):
             assert name in tool_names, name
             assert name in bridge_protocol.TOOL_CONTRACTS, name
+        assert autosave._timer_is_registered()
+        bpy.app.timers.unregister(autosave._timer_callback)
+        assert not autosave._timer_is_registered()
+        autosave._ensure_timer_after_load(None)
+        assert autosave._timer_is_registered()
 
         autosave_unbound = _execute(bpy.context, "autosave_current_blend_file", {"force": True, "reason": "unbound smoke"})
         assert autosave_unbound["ok"] is False, autosave_unbound
@@ -58,6 +63,10 @@ def main():
         assert diagnostics["autosave"]["active_blend_bound"] is True, diagnostics
         assert diagnostics["file"]["can_save_current"] is True, diagnostics
         assert "needs_save" in diagnostics["file"], diagnostics
+        assert "script_checkpoints" in diagnostics, diagnostics
+        assert "last_checkpoint" in diagnostics["script_checkpoints"], diagnostics
+        assert diagnostics["script_checkpoints"]["last_checkpoint"]["exists"] is False, diagnostics
+        assert "exists=true" in diagnostics["script_checkpoints"]["path_policy"], diagnostics
 
         copy_path = os.path.join(work_dir, "copy.blend")
         copy_without_user_path = _execute(bpy.context, "save_blend_file", {"filepath": copy_path, "copy": True})
@@ -109,6 +118,7 @@ def main():
         assert opened["checkpoint"]["ok"] is True, opened
         assert os.path.isfile(opened["checkpoint"]["path"]), opened
         assert bpy.data.filepath == copy_path, opened
+        assert autosave._timer_is_registered()
 
         new_refused = _execute(
             bpy.context,
@@ -143,6 +153,7 @@ def main():
         assert created["project_name"] == "Smoke Project", created
         assert os.path.isfile(created["path"]), created
         assert bpy.data.filepath == created["path"], created
+        assert autosave._timer_is_registered()
         for folder in ("assets", "refs", "renders", "exports"):
             assert os.path.isdir(os.path.join(created["project_dir"], folder)), created
         assert created["diagnostics"]["file"]["is_saved"] is True, created

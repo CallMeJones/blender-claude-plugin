@@ -148,14 +148,14 @@ Build and validate the extension ZIP from the repository root:
 ```powershell
 blender --command extension validate addon\claude_blender
 python scripts\build_extension_zip.py --blender blender
-blender --command extension validate dist\claude_blender-0.1.1.zip
+blender --command extension validate dist\claude_blender-0.1.2.zip
 ```
 
 The build writes:
 
 ```text
-dist/claude_blender-0.1.1.zip
-dist/claude_blender-0.1.1.zip.sha256
+dist/claude_blender-0.1.2.zip
+dist/claude_blender-0.1.2.zip.sha256
 ```
 
 For day-to-day development on Windows, link the checkout into Blender's user extension repository:

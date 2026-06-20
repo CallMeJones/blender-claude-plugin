@@ -19,6 +19,8 @@ sys.path.insert(0, os.path.join(ROOT, "addon"))
 import claude_blender  # noqa: E402
 from claude_blender import external_assets, live_preview, tool_dispatcher  # noqa: E402
 
+observed_timeouts = []
+
 
 def _make_png(path):
     image = bpy.data.images.new("ExternalAssetSmokePixel", width=1, height=1, alpha=True)
@@ -92,6 +94,7 @@ def _fake_fetch_json(url, *, timeout=15):
 
 
 def _fake_fetch_json_with_headers(url, *, headers=None, timeout=15):
+    observed_timeouts.append(("fetch_json_with_headers", timeout))
     path = urllib.parse.urlparse(url).path
     if path == "/v3/models/sketchfab_one/download":
         assert headers and headers.get("Authorization") == "Token smoke-token", headers
@@ -100,6 +103,7 @@ def _fake_fetch_json_with_headers(url, *, headers=None, timeout=15):
 
 
 def _fake_download_file(url, destination, *, expected_md5="", expected_size=None, headers=None, timeout=60):
+    observed_timeouts.append(("download_file", timeout))
     os.makedirs(os.path.dirname(destination), exist_ok=True)
     if str(destination).lower().endswith(".zip"):
         with zipfile.ZipFile(destination, "w") as archive:
@@ -197,10 +201,11 @@ def main():
         sketchfab = _execute(
             bpy.context,
             "import_sketchfab_model",
-            {"uid": "sketchfab_one", "api_token": "smoke-token", "cache_dir": cache_dir},
+            {"uid": "sketchfab_one", "api_token": "smoke-token", "cache_dir": cache_dir, "timeout": 999},
         )
         assert sketchfab["ok"] is True, sketchfab
         assert "SmokeImportedModel" in sketchfab["imported_objects"], sketchfab
+        assert observed_timeouts[-2:] == [("fetch_json_with_headers", 300), ("download_file", 300)], observed_timeouts
         assert live_preview.revert(bpy.context)["ok"] is True
 
         diagnostics = _execute(bpy.context, "get_external_asset_cache_diagnostics", {"cache_dir": cache_dir})

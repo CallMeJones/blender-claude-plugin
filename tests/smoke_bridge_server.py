@@ -136,7 +136,18 @@ def main():
         assert health["ok"], health
         assert health["scene"] == bpy.context.scene.name
         assert health["addon_source_hash"] == build_info.source_tree_hash(), health
+        assert health["addon_loaded_source_hash"] == build_info.LOADED_SOURCE_HASH, health
+        assert health["addon_runtime_source_stale"] is False, health
+        assert health["addon_runtime_source_status"] == "current", health
         assert "Source " in health["build_diagnostics"], health
+
+        assert bridge_server._process_timer_is_registered()
+        bpy.app.timers.unregister(bridge_server._process_requests)
+        bridge_server._timer_registered = True
+        assert not bpy.app.timers.is_registered(bridge_server._process_requests)
+        bridge_server._ensure_timer_after_load(None)
+        assert bridge_server._process_timer_is_registered()
+
         bridge_server._begin_active_operation("capture_animation_playblast", {"max_frames": 12}, 120)
         try:
             busy_health = _get(base + "/health")
@@ -149,6 +160,12 @@ def main():
             assert "recover" in busy_health["message"], busy_health
         finally:
             bridge_server._finish_active_operation("capture_animation_playblast", ok=True, message="synthetic done")
+        with bridge_server._operation_lock:
+            bridge_server._last_operation["started_monotonic"] = 10.0
+            bridge_server._last_operation["completed_monotonic"] = 12.0
+        last_operation = bridge_server._last_operation_status()
+        assert last_operation["elapsed_seconds"] == 2, last_operation
+        assert last_operation["timeout_exceeded"] is False, last_operation
         timeout_payload = bridge_server._timeout_payload("capture_animation_playblast", 120)["result"]
         assert timeout_payload["recoverable"] is True, timeout_payload
         assert timeout_payload["request_may_still_be_running"] is True, timeout_payload
@@ -192,6 +209,8 @@ def main():
         status_resource = json.loads(resource["text"])
         assert status_resource["scene"] == bpy.context.scene.name
         assert status_resource["addon_source_hash"] == build_info.source_tree_hash(), status_resource
+        assert status_resource["addon_loaded_source_hash"] == build_info.LOADED_SOURCE_HASH, status_resource
+        assert status_resource["addon_runtime_source_stale"] is False, status_resource
         assert "blender://tools/catalog" in uris, resources
         assert "blender://tools/contracts" not in uris, resources
         assert "blender://audit/summary" in uris, resources

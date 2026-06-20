@@ -53,6 +53,20 @@ HIGH_RISK_CALLS = {
     "bpy.ops.outliner.orphans_purge",
 }
 
+EXPLICIT_APPROVAL_OPERATOR_PREFIXES = (
+    "bpy.ops.fluid.bake",
+    "bpy.ops.fluid.free",
+    "bpy.ops.ptcache.bake",
+    "bpy.ops.ptcache.free",
+)
+
+EXPLICIT_APPROVAL_OPERATOR_SEGMENTS = (
+    ".fluid.bake",
+    ".fluid.free",
+    ".ptcache.bake",
+    ".ptcache.free",
+)
+
 MUTATION_HINTS = {
     "animation_data_create",
     "clear",
@@ -171,9 +185,44 @@ def _risk_max(*levels):
     return selected
 
 
+def _requires_explicit_approval(call_name):
+    normalized = f".{call_name}"
+    return any(call_name.startswith(prefix) for prefix in EXPLICIT_APPROVAL_OPERATOR_PREFIXES) or any(
+        segment in normalized for segment in EXPLICIT_APPROVAL_OPERATOR_SEGMENTS
+    )
+
+
+def _resolved_getattr_name(node, constant_names):
+    if not isinstance(node, ast.Call):
+        return ""
+    if _call_name(node.func) != "getattr" or len(node.args) < 2:
+        return ""
+    target = _approval_reference_name(node.args[0], constant_names)
+    attr = _resolved_string(node.args[1], constant_names)
+    if target and attr:
+        return f"{target}.{attr}"
+    return ""
+
+
+def _approval_reference_name(node, constant_names):
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        parent = _approval_reference_name(node.value, constant_names)
+        return f"{parent}.{node.attr}" if parent else node.attr
+    if isinstance(node, ast.Call):
+        return _resolved_getattr_name(node, constant_names)
+    return ""
+
+
+def _approval_call_name(node, constant_names):
+    return _approval_reference_name(node, constant_names) or _call_name(node)
+
+
 def analyze_script(source):
     blocks = []
     warnings = []
+    explicit_approval_reasons = []
     risk_reasons = []
     risk_level = "low"
     try:
@@ -187,6 +236,9 @@ def analyze_script(source):
             "risk_level": "blocked",
             "risk_reasons": ["syntax_error"],
             "checkpoint_recommended": True,
+            "explicit_approval_required": False,
+            "explicit_approval_reasons": [],
+            "trust_window_allowed": False,
         }
     if len(source) > MAX_SCRIPT_CHARS:
         blocks.append(f"Script is too large: {len(source)} chars > {MAX_SCRIPT_CHARS}")
@@ -237,6 +289,7 @@ def analyze_script(source):
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
             call_name = _call_name(node.func)
+            approval_call_name = _approval_call_name(node.func, constant_names)
             root_name = call_name.split(".")[0]
             attr_name = call_name.split(".")[-1]
             reflected_builtin = _builtin_reflection_name(node, builtin_module_aliases, constant_names)
@@ -256,6 +309,15 @@ def analyze_script(source):
             if call_name in {"bpy.ops.wm.save_as_mainfile", "bpy.ops.wm.open_mainfile", "bpy.ops.wm.quit_blender"}:
                 blocks.append(f"Line {_line(node)} blocked Blender file/window operation: {call_name}")
                 risk_reasons.append(f"blocked_blender_file_op:{call_name}")
+            if _requires_explicit_approval(approval_call_name):
+                reason = (
+                    f"Line {_line(node)} persistent simulation/cache operator requires explicit "
+                    f"one-time user approval and cannot auto-run under external script trust: {approval_call_name}"
+                )
+                warnings.append(reason)
+                explicit_approval_reasons.append(reason)
+                risk_level = _risk_max(risk_level, "high")
+                risk_reasons.append(f"explicit_approval_call:{approval_call_name}")
             if attr_name in WARNING_ATTRS or call_name in HIGH_RISK_CALLS:
                 warnings.append(f"Line {_line(node)} risky call: {call_name}")
                 risk_level = _risk_max(risk_level, "high")
@@ -286,4 +348,7 @@ def analyze_script(source):
         "risk_level": risk_level,
         "risk_reasons": risk_reasons,
         "checkpoint_recommended": risk_level in {"medium", "high", "blocked"},
+        "explicit_approval_required": bool(explicit_approval_reasons),
+        "explicit_approval_reasons": explicit_approval_reasons,
+        "trust_window_allowed": bool(not blocks and not explicit_approval_reasons),
     }

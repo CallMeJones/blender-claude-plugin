@@ -1588,7 +1588,7 @@ def stage_persistent_simulation_bake(context, args):
     )
     result = {
         "ok": bool(staged.get("ok")),
-        "message": "Persistent simulation bake script staged for approval",
+        "message": "Persistent simulation bake script staged for explicit approval",
         "inspection": sample,
         "staged": staged,
         "frame_range": [frame_start, frame_end],
@@ -1598,12 +1598,32 @@ def stage_persistent_simulation_bake(context, args):
         "clear_existing": clear_existing,
         "include_scene_rigid_body_world": include_world,
         "requires_user_approval": bool(staged.get("requires_user_approval", True)),
+        "requires_explicit_one_time_approval": True,
+        "trust_window_auto_run_allowed": False,
+        "approval_policy": (
+            "Persistent simulation/cache bake and free operators require a fresh one-time user approval; "
+            "session-wide external script trust cannot auto-run them."
+        ),
+        "user_action_required": "Approve the staged script with a one-time external run approval in Blender before baking.",
+        "recommended_next_step": "Wait for explicit user approval; do not poll bridge recovery or rerun the bake yet.",
         "auto_run_attempted": False,
         "auto_ran": False,
     }
     if not staged.get("ok") or staged.get("analysis", {}).get("blocked"):
         return result
+    analysis = staged.get("analysis") or {}
     if bool(args.get("auto_run_if_trusted", True)) and script_runner.external_script_trust_active(context):
+        if analysis.get("explicit_approval_required"):
+            result.update(
+                {
+                    "message": "Persistent simulation bake script staged; explicit one-time approval is required",
+                    "auto_run_attempted": False,
+                    "auto_ran": False,
+                    "auto_run_skipped_reason": "explicit_approval_required",
+                    "requires_user_approval": True,
+                }
+            )
+            return result
         prefs = preferences.get_preferences(context)
         run_result = script_runner.run_externally_approved_script(
             context,
@@ -2941,7 +2961,7 @@ def download_sketchfab_model(context, args):
         token_env_var=str(args.get("token_env_var") or external_assets.SKETCHFAB_TOKEN_ENV_VAR),
         model_password=str(args.get("model_password") or ""),
         cache_dir=str(args.get("cache_dir") or ""),
-        timeout=_bounded_int(args.get("timeout"), 120, minimum=1, maximum=600),
+        timeout=_bounded_int(args.get("timeout"), 120, minimum=1, maximum=300),
     )
 
 
@@ -2953,7 +2973,7 @@ def import_sketchfab_model(context, args):
         token_env_var=str(args.get("token_env_var") or external_assets.SKETCHFAB_TOKEN_ENV_VAR),
         model_password=str(args.get("model_password") or ""),
         cache_dir=str(args.get("cache_dir") or ""),
-        timeout=_bounded_int(args.get("timeout"), 120, minimum=1, maximum=600),
+        timeout=_bounded_int(args.get("timeout"), 120, minimum=1, maximum=300),
         label=args.get("label", "Import Sketchfab model"),
     )
 

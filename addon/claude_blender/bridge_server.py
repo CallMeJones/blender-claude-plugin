@@ -13,6 +13,7 @@ from collections import Counter
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import bpy
+from bpy.app.handlers import persistent
 
 from . import (
     audit_log,
@@ -162,7 +163,9 @@ def _operation_snapshot(operation):
     if not isinstance(operation, dict) or not operation:
         return {}
     started_monotonic = float(operation.get("started_monotonic", 0.0) or 0.0)
-    elapsed = max(0.0, time.monotonic() - started_monotonic) if started_monotonic else 0.0
+    completed_monotonic = float(operation.get("completed_monotonic", 0.0) or 0.0)
+    elapsed_until = completed_monotonic if completed_monotonic else time.monotonic()
+    elapsed = max(0.0, elapsed_until - started_monotonic) if started_monotonic else 0.0
     timeout_seconds = int(operation.get("timeout_seconds", 0) or 0)
     snapshot = {
         "tool": str(operation.get("tool") or ""),
@@ -222,6 +225,7 @@ def _finish_active_operation(name, *, ok=False, message=""):
         if operation.get("tool") != str(name or ""):
             return
         operation["completed_at"] = time.time()
+        operation["completed_monotonic"] = time.monotonic()
         operation["ok"] = bool(ok)
         operation["message"] = str(message or "")
         _last_operation = operation
@@ -243,6 +247,10 @@ def _busy_scene_status(message=""):
         "addon_version": diagnostics["addon_version"],
         "addon_path": diagnostics["addon_path"],
         "addon_source_hash": diagnostics["addon_source_hash"],
+        "addon_loaded_source_hash": diagnostics["addon_loaded_source_hash"],
+        "addon_runtime_source_stale": diagnostics["addon_runtime_source_stale"],
+        "addon_runtime_source_status": diagnostics["addon_runtime_source_status"],
+        "addon_runtime_source_message": diagnostics["addon_runtime_source_message"],
         "expected_addon_source_hash": diagnostics["expected_addon_source_hash"],
         "addon_source_hash_match": diagnostics["addon_source_hash_match"],
         "addon_source_hash_status": diagnostics["addon_source_hash_status"],
@@ -292,6 +300,10 @@ def _scene_status():
         "addon_version": diagnostics["addon_version"],
         "addon_path": diagnostics["addon_path"],
         "addon_source_hash": diagnostics["addon_source_hash"],
+        "addon_loaded_source_hash": diagnostics["addon_loaded_source_hash"],
+        "addon_runtime_source_stale": diagnostics["addon_runtime_source_stale"],
+        "addon_runtime_source_status": diagnostics["addon_runtime_source_status"],
+        "addon_runtime_source_message": diagnostics["addon_runtime_source_message"],
         "expected_addon_source_hash": diagnostics["expected_addon_source_hash"],
         "addon_source_hash_match": diagnostics["addon_source_hash_match"],
         "addon_source_hash_status": diagnostics["addon_source_hash_status"],
@@ -790,11 +802,49 @@ def _process_requests():
     return None
 
 
+def _process_timer_is_registered():
+    is_registered = getattr(bpy.app.timers, "is_registered", None)
+    if not is_registered:
+        return bool(_timer_registered)
+    try:
+        return bool(is_registered(_process_requests))
+    except Exception:
+        return bool(_timer_registered)
+
+
+def _register_process_timer():
+    try:
+        bpy.app.timers.register(_process_requests, first_interval=0.05, persistent=True)
+    except TypeError:
+        bpy.app.timers.register(_process_requests, first_interval=0.05)
+
+
 def _ensure_timer():
     global _timer_registered
-    if not _timer_registered:
-        bpy.app.timers.register(_process_requests, first_interval=0.05)
+    if _process_timer_is_registered():
         _timer_registered = True
+        return
+    _register_process_timer()
+    _timer_registered = True
+
+
+@persistent
+def _ensure_timer_after_load(_dummy):
+    global _timer_registered
+    if is_running() or not _requests.empty():
+        if not _process_timer_is_registered():
+            _timer_registered = False
+        _ensure_timer()
+
+
+def _remove_timer_load_handler():
+    handlers = bpy.app.handlers.load_post
+    for handler in list(handlers):
+        if (
+            getattr(handler, "__name__", "") == "_ensure_timer_after_load"
+            and str(getattr(handler, "__module__", "")).endswith(".bridge_server")
+        ):
+            handlers.remove(handler)
 
 
 class _BridgeHandler(BaseHTTPRequestHandler):
@@ -1008,8 +1058,10 @@ def _set_scene_bridge_state(*, running, url, status):
 
 
 def register():
-    pass
+    _remove_timer_load_handler()
+    bpy.app.handlers.load_post.append(_ensure_timer_after_load)
 
 
 def unregister():
+    _remove_timer_load_handler()
     stop_bridge()

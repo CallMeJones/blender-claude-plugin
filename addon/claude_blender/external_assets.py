@@ -35,7 +35,8 @@ USER_AGENT = "BlenderAgentBridge/0.1 (+https://github.com/CallMeJones/blender-ag
 POLY_HAVEN_LICENSE = "CC0"
 SKETCHFAB_TOKEN_ENV_VAR = "SKETCHFAB_API_TOKEN"
 SKETCHFAB_BRIDGE_TOKEN_ENV_VAR = "BLENDER_AGENT_BRIDGE_SKETCHFAB_API_TOKEN"
-SKETCHFAB_ALLOWED_TOKEN_ENV_VARS = frozenset({SKETCHFAB_TOKEN_ENV_VAR, SKETCHFAB_BRIDGE_TOKEN_ENV_VAR})
+SKETCHFAB_API_TOKEN_ENV_VARS = (SKETCHFAB_TOKEN_ENV_VAR, SKETCHFAB_BRIDGE_TOKEN_ENV_VAR)
+SKETCHFAB_ALLOWED_TOKEN_ENV_VARS = frozenset(SKETCHFAB_API_TOKEN_ENV_VARS)
 
 
 def _bounded_limit(value, default=20, *, maximum=50):
@@ -44,6 +45,78 @@ def _bounded_limit(value, default=20, *, maximum=50):
     except (TypeError, ValueError):
         result = int(default)
     return max(1, min(int(maximum), result))
+
+
+def _auth_env_candidates(preferred, *, defaults, allowed):
+    preferred = str(preferred or "").strip()
+    if preferred:
+        if preferred not in allowed:
+            return [], preferred
+        candidates = [preferred]
+        if preferred == defaults[0]:
+            candidates.extend(name for name in defaults[1:] if name not in candidates)
+        return candidates, ""
+    return list(defaults), ""
+
+
+def _first_env_token(preferred, *, defaults, allowed, environ=None):
+    candidates, blocked = _auth_env_candidates(preferred, defaults=defaults, allowed=allowed)
+    if blocked:
+        return "", "", blocked, candidates
+    source = environ if environ is not None else os.environ
+    for name in candidates:
+        value = str(source.get(name, "") or "").strip()
+        if value:
+            return value, name, "", candidates
+    return "", "", "", candidates
+
+
+def _present_auth_env_names(environ=None):
+    source = environ if environ is not None else os.environ
+    return [
+        name
+        for name in SKETCHFAB_API_TOKEN_ENV_VARS
+        if str(source.get(name, "") or "").strip()
+    ]
+
+
+def sketchfab_auth_diagnostics(environ=None):
+    """Report Sketchfab auth availability without exposing credential values."""
+
+    configured = _present_auth_env_names(environ=environ)
+    api_token_configured = any(name in configured for name in SKETCHFAB_API_TOKEN_ENV_VARS)
+    return {
+        "provider": "sketchfab",
+        "auth_method": "api_token",
+        "ready": bool(api_token_configured),
+        "api_token_configured": bool(api_token_configured),
+        "configured_env_vars": configured,
+        "api_token_env_vars": list(SKETCHFAB_API_TOKEN_ENV_VARS),
+        "message": (
+            "Sketchfab API token is configured."
+            if api_token_configured
+            else "No Sketchfab API token env var is configured."
+        ),
+    }
+
+
+def sketchfab_auth_arguments_from_env(arguments, *, environ=None):
+    """Copy arguments and inject MCP-process env credentials for bridge calls."""
+
+    result = dict(arguments or {})
+    if str(result.get("api_token") or "").strip():
+        return result
+    api_token, _api_env, blocked, _candidates = _first_env_token(
+        result.get("token_env_var") or SKETCHFAB_TOKEN_ENV_VAR,
+        defaults=SKETCHFAB_API_TOKEN_ENV_VARS,
+        allowed=SKETCHFAB_ALLOWED_TOKEN_ENV_VARS,
+        environ=environ,
+    )
+    if blocked:
+        return result
+    if api_token:
+        result["api_token"] = api_token
+    return result
 
 
 def _default_cache_dir():
@@ -1044,21 +1117,33 @@ def import_poly_haven_asset(
     return {"ok": False, "message": f"Unsupported Poly Haven import type: {resolved_type}", "manifest": manifest}
 
 
-def _auth_header_from_token(api_token="", *, token_env_var=SKETCHFAB_TOKEN_ENV_VAR):
-    token = str(api_token or "").strip()
-    source = "argument" if token else ""
-    env_name = str(token_env_var or SKETCHFAB_TOKEN_ENV_VAR).strip()
-    if not token and env_name:
-        if env_name not in SKETCHFAB_ALLOWED_TOKEN_ENV_VARS:
-            return "", f"blocked_env:{env_name}"
-        token = os.environ.get(env_name, "").strip()
-        source = f"env:{env_name}" if token else ""
-    if not token:
-        return "", ""
+def _api_token_authorization_header(token):
+    token = str(token or "").strip()
     lowered = token.lower()
     if lowered.startswith("token ") or lowered.startswith("bearer "):
-        return token, source
-    return f"Token {token}", source
+        return token
+    return f"Token {token}"
+
+
+def _auth_header_from_token(
+    api_token="",
+    *,
+    token_env_var=SKETCHFAB_TOKEN_ENV_VAR,
+):
+    token = str(api_token or "").strip()
+    if token:
+        return _api_token_authorization_header(token), "argument"
+
+    token, env_name, blocked, _candidates = _first_env_token(
+        token_env_var,
+        defaults=SKETCHFAB_API_TOKEN_ENV_VARS,
+        allowed=SKETCHFAB_ALLOWED_TOKEN_ENV_VARS,
+    )
+    if blocked:
+        return "", f"blocked_env:{blocked}"
+    if token:
+        return _api_token_authorization_header(token), f"env:{env_name}"
+    return "", ""
 
 
 def get_sketchfab_model_download_info(
@@ -1072,7 +1157,10 @@ def get_sketchfab_model_download_info(
     uid = str(uid or "").strip()
     if not uid:
         return {"ok": False, "message": "uid is required"}
-    authorization, auth_source = _auth_header_from_token(api_token, token_env_var=token_env_var)
+    authorization, auth_source = _auth_header_from_token(
+        api_token,
+        token_env_var=token_env_var,
+    )
     if auth_source.startswith("blocked_env:"):
         return {
             "ok": False,
@@ -1082,14 +1170,24 @@ def get_sketchfab_model_download_info(
             "auth_required": True,
             "blocked_token_env_var": auth_source.replace("blocked_env:", "", 1),
             "allowed_token_env_vars": sorted(SKETCHFAB_ALLOWED_TOKEN_ENV_VARS),
+            "allowed_api_token_env_vars": sorted(SKETCHFAB_ALLOWED_TOKEN_ENV_VARS),
+            "auth_method": "api_token",
+            "configured_auth_env_vars": _present_auth_env_names(),
         }
     if not authorization:
         return {
             "ok": False,
-            "message": "Sketchfab download requires an API token via api_token or SKETCHFAB_API_TOKEN",
+            "message": (
+                "Sketchfab download requires an API token via api_token, SKETCHFAB_API_TOKEN, "
+                "or BLENDER_AGENT_BRIDGE_SKETCHFAB_API_TOKEN."
+            ),
             "provider": "sketchfab",
             "uid": uid,
             "auth_required": True,
+            "auth_method": "api_token",
+            "allowed_api_token_env_vars": sorted(SKETCHFAB_ALLOWED_TOKEN_ENV_VARS),
+            "allowed_token_env_vars": sorted(SKETCHFAB_ALLOWED_TOKEN_ENV_VARS),
+            "configured_auth_env_vars": _present_auth_env_names(),
         }
     headers = {"Authorization": authorization}
     if model_password:
@@ -1106,6 +1204,7 @@ def get_sketchfab_model_download_info(
             "source_url": url,
             "error_type": type(exc).__name__,
             "auth_source": auth_source,
+            "auth_method": "api_token",
         }
     gltf = payload.get("gltf") if isinstance(payload, dict) else {}
     download_url = str((gltf or {}).get("url") or "")
@@ -1117,6 +1216,7 @@ def get_sketchfab_model_download_info(
             "uid": uid,
             "source_url": url,
             "auth_source": auth_source,
+            "auth_method": "api_token",
             "raw_response_keys": sorted(payload.keys()) if isinstance(payload, dict) else [],
         }
     return {
@@ -1128,6 +1228,7 @@ def get_sketchfab_model_download_info(
         "download_url": download_url,
         "expires": int((gltf or {}).get("expires") or 0),
         "auth_source": auth_source,
+        "auth_method": "api_token",
     }
 
 
@@ -1190,6 +1291,7 @@ def download_sketchfab_model(
                 "downloaded_files": [download],
                 "message": download.get("message", "Sketchfab archive download failed"),
                 "auth_source": info.get("auth_source", ""),
+                "auth_method": info.get("auth_method", ""),
             },
         )
         return manifest
@@ -1206,6 +1308,7 @@ def download_sketchfab_model(
                 "downloaded_files": [download],
                 "message": extract.get("message", "Sketchfab archive extraction failed"),
                 "auth_source": info.get("auth_source", ""),
+                "auth_method": info.get("auth_method", ""),
             },
         )
         return manifest
@@ -1223,6 +1326,7 @@ def download_sketchfab_model(
             "import_file": import_file,
             "license": "see_sketchfab_model_page",
             "auth_source": info.get("auth_source", ""),
+            "auth_method": info.get("auth_method", ""),
             "import_status": "not_imported",
         },
     )
@@ -1307,6 +1411,9 @@ def external_asset_cache_diagnostics(*, cache_dir="", max_assets=50):
         "ok": True,
         "message": "External asset cache diagnostics collected",
         "cache_dir": root,
+        "auth": {
+            "sketchfab": sketchfab_auth_diagnostics(),
+        },
         "asset_count": len(manifests),
         "returned_asset_count": len(assets),
         "imported_asset_count": imported_count,

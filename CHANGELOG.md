@@ -4,6 +4,13 @@
 
 - Nothing yet.
 
+## 0.1.2
+
+- Fixed Sketchfab download/import auth for MCP clients by forwarding `SKETCHFAB_API_TOKEN` / `BLENDER_AGENT_BRIDGE_SKETCHFAB_API_TOKEN` from the Claude/Codex MCP server environment into Blender as redacted per-call arguments.
+- Added MCP status diagnostics for Sketchfab external-asset auth so stale client environments are visible through `blender_bridge_status`.
+- Kept Sketchfab OAuth deferred; the public auth path for this release remains API-token based.
+- Lowered the declared minimum Blender version to `5.0.0` for Blender 5.x compatibility.
+
 ## 0.1.1
 
 - Added human-in-the-loop `.blend` lifecycle path policy: save-as/save-copy, open, and new-project operations require a user-confirmed path.

@@ -12,18 +12,19 @@ import urllib.parse
 import urllib.request
 
 try:
-    from . import agent_tools, audit_log, bridge_protocol, build_info
+    from . import agent_tools, audit_log, bridge_protocol, build_info, external_assets
 except ImportError:  # Allows direct execution as addon/claude_blender/mcp_server.py.
     package_parent = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     if package_parent not in sys.path:
         sys.path.insert(0, package_parent)
     try:
-        from claude_blender import agent_tools, audit_log, bridge_protocol, build_info
+        from claude_blender import agent_tools, audit_log, bridge_protocol, build_info, external_assets
     except ImportError:
         import agent_tools
         import audit_log
         import build_info
         import bridge_protocol
+        import external_assets
 
 
 def _env_float(name, default):
@@ -44,11 +45,15 @@ FULL_TOOL_LIST_ENV = "BLENDER_MCP_FULL_TOOL_LIST"
 DEFAULT_BRIDGE_MAIN_THREAD_TIMEOUT_SECONDS = max(10.0, _env_float("BLENDER_AGENT_BRIDGE_REQUEST_TIMEOUT", "90"))
 BRIDGE_MAIN_THREAD_TIMEOUT_GRACE_SECONDS = 10.0
 MCP_TIMEOUT_GRACE_SECONDS = 15.0
+SKETCHFAB_AUTH_FORWARD_TOOLS = {"download_sketchfab_model", "import_sketchfab_model"}
 COMPACT_DIRECT_TOOL_NAMES = (
     "list_scene_objects",
     "plan_animation_workflow",
     "run_animation_workflow",
     "run_animation_task",
+    "get_simulation_details",
+    "inspect_simulation_bake",
+    "stage_persistent_simulation_bake",
     "start_render_job",
     "get_render_job_status",
     "cancel_render_job",
@@ -173,6 +178,10 @@ STATUS_OUTPUT_SCHEMA = {
         "addon_version": {"type": "string"},
         "addon_path": {"type": "string"},
         "addon_source_hash": {"type": "string"},
+        "addon_loaded_source_hash": {"type": "string"},
+        "addon_runtime_source_stale": {"type": "boolean"},
+        "addon_runtime_source_status": {"type": "string"},
+        "addon_runtime_source_message": {"type": "string"},
         "expected_addon_source_hash": {"type": "string"},
         "addon_source_hash_match": {"type": ["boolean", "null"]},
         "addon_source_hash_status": {"type": "string"},
@@ -202,6 +211,7 @@ STATUS_OUTPUT_SCHEMA = {
         "external_script_trust_can_run_without_token": {"type": "boolean"},
         "external_script_trust_session": {"type": "boolean"},
         "external_script_trust_stale_scene_state": {"type": "boolean"},
+        "mcp_external_asset_auth": {"type": "object"},
         "mcp_client_refresh_hint": {"type": "string"},
     },
     "required": ["ok"],
@@ -745,6 +755,8 @@ def _tool_search_text(tool):
         category,
         TOOL_CATEGORY_LABELS.get(category, ""),
         annotations.get("riskLevel", ""),
+        annotations.get("approvalPolicy", ""),
+        annotations.get("recoveryHint", ""),
         " ".join(str(item) for item in annotations.get("permissions", []) or []),
         " ".join(str(item) for item in properties),
     ]
@@ -845,6 +857,10 @@ def _tool_summary(tool, *, include_schema=True):
         "human_in_loop_required": bool(annotations.get("humanInLoopRequired", False)),
         "requires_user_path": bool(annotations.get("requiresUserPath", False)),
         "path_policy": str(annotations.get("pathPolicy", "") or ""),
+        "requires_explicit_one_time_approval": bool(annotations.get("requiresExplicitOneTimeApproval", False)),
+        "trust_window_auto_run_allowed": bool(annotations.get("trustWindowAutoRunAllowed", True)),
+        "approval_policy": str(annotations.get("approvalPolicy", "") or ""),
+        "recovery_hint": str(annotations.get("recoveryHint", "") or ""),
     }
     if include_schema:
         summary["input_schema"] = tool.get("inputSchema") or {}
@@ -1170,7 +1186,9 @@ class BlenderMCPServer:
                 "tool surface; use search_blender_tools, get_blender_tool_schema, and invoke_blender_tool for the full "
                 "Blender helper catalog. Mutating tools affect the live scene and may leave preview changes pending. "
                 "If a bridge_timeout occurs, treat it as recoverable: wait the returned poll_after_seconds, call "
-                "blender_bridge_status, then inspect visual evidence resources or audit logs before rerunning work."
+                "blender_bridge_status, then inspect visual evidence resources or audit logs before rerunning work. "
+                "Session-wide external script trust cannot auto-run persistent simulation/cache bake or free operators; "
+                "stage those scripts for explicit one-time user approval."
             ),
         }
 
@@ -1249,6 +1267,11 @@ class BlenderMCPServer:
                 return tool
         return None
 
+    def _bridge_tool_arguments(self, name, arguments):
+        if name in SKETCHFAB_AUTH_FORWARD_TOOLS:
+            return external_assets.sketchfab_auth_arguments_from_env(arguments)
+        return arguments
+
     def tools_list(self, params=None):
         return _page_items(self._load_tools(), params, "tools")
 
@@ -1271,14 +1294,15 @@ class BlenderMCPServer:
             result = _tool_error(f"Unknown tool: {name}", code="unknown_tool")
             _audit_tool_call(name, arguments, result)
             return result
-        validation_errors = _validate_schema(arguments, tool.get("inputSchema") or {"type": "object"})
+        call_arguments = self._bridge_tool_arguments(name, arguments)
+        validation_errors = _validate_schema(call_arguments, tool.get("inputSchema") or {"type": "object"})
         if validation_errors:
             result = _tool_error(
                 "Tool arguments failed schema validation",
                 code="invalid_arguments",
                 data={"errors": validation_errors},
             )
-            _audit_tool_call(name, arguments, result, tool=tool)
+            _audit_tool_call(name, call_arguments, result, tool=tool)
             return result
         if name == "blender_bridge_status":
             status = self._bridge_status()
@@ -1308,22 +1332,22 @@ class BlenderMCPServer:
         try:
             response = self.bridge.post(
                 "/tool",
-                {"name": name, "arguments": arguments},
+                {"name": name, "arguments": call_arguments},
                 timeout=_bridge_timeout_for_tool(name),
             )
         except BridgeTimeoutError as exc:
             result = _tool_error(str(exc), code="bridge_timeout", data=getattr(exc, "data", {}))
-            _audit_tool_call(name, arguments, result, tool=tool)
+            _audit_tool_call(name, call_arguments, result, tool=tool)
             return result
         except Exception as exc:
             result = _tool_error(str(exc), code="bridge_unavailable")
-            _audit_tool_call(name, arguments, result, tool=tool)
+            _audit_tool_call(name, call_arguments, result, tool=tool)
             return result
         result = response.get("result", response)
         ok = bool(response.get("ok", True)) and bool(result.get("ok", True) if isinstance(result, dict) else True)
         text = json.dumps(result, indent=2, sort_keys=True, default=str)
         tool_result = _tool_result(text, result if isinstance(result, dict) else {"text": text}, is_error=not ok)
-        _audit_tool_call(name, arguments, tool_result, tool=tool)
+        _audit_tool_call(name, call_arguments, tool_result, tool=tool)
         return tool_result
 
     def _search_catalog(self, arguments):
@@ -1405,6 +1429,7 @@ class BlenderMCPServer:
         target_tool = self._full_tool_definition(target_name)
         if target_tool is None:
             return _tool_error(f"Unknown Blender tool: {target_name}", code="unknown_tool")
+        target_args = self._bridge_tool_arguments(target_name, target_args)
         validation_errors = _validate_schema(target_args, target_tool.get("inputSchema") or {"type": "object"})
         if validation_errors:
             return _tool_error(
@@ -1450,7 +1475,21 @@ class BlenderMCPServer:
         mcp_source_hash = build_info.source_tree_hash()
         addon_source_hash = str(status.get("addon_source_hash") or "").strip()
         config_source_hash = build_info.expected_source_hash_from_env()
+        if "addon_loaded_source_hash" not in status:
+            status["addon_loaded_source_hash"] = ""
+            status["addon_runtime_source_stale"] = False
+            status["addon_runtime_source_status"] = "unknown"
+            status["addon_runtime_source_message"] = (
+                "Bridge did not report loaded-source diagnostics; reload or update the add-on for runtime staleness checks."
+            )
         status["mcp_server_source_hash"] = mcp_source_hash
+        status["mcp_external_asset_auth"] = {
+            "sketchfab": external_assets.sketchfab_auth_diagnostics(),
+            "note": (
+                "These credentials are checked in the MCP server process. "
+                "For Sketchfab bridge calls, the MCP server forwards API token values to Blender as redacted tool arguments."
+            ),
+        }
         status["addon_mcp_source_hash_match"] = (
             None if not addon_source_hash else addon_source_hash == mcp_source_hash
         )

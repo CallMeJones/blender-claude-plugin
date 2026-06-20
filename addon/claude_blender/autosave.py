@@ -6,6 +6,7 @@ import os
 import time
 
 import bpy
+from bpy.app.handlers import persistent
 
 from . import preferences
 
@@ -218,17 +219,54 @@ def _timer_callback():
     return float(_interval_seconds(bpy.context))
 
 
-def register():
+def _timer_is_registered():
     try:
-        if not bpy.app.timers.is_registered(_timer_callback):
-            bpy.app.timers.register(_timer_callback, first_interval=float(_interval_seconds(bpy.context)))
+        return bool(bpy.app.timers.is_registered(_timer_callback))
+    except Exception:
+        return False
+
+
+def _register_timer():
+    try:
+        bpy.app.timers.register(_timer_callback, first_interval=float(_interval_seconds(bpy.context)), persistent=True)
+    except TypeError:
+        bpy.app.timers.register(_timer_callback, first_interval=float(_interval_seconds(bpy.context)))
+
+
+def _ensure_timer():
+    if _timer_is_registered():
+        return
+    try:
+        _register_timer()
     except Exception:
         pass
 
 
+@persistent
+def _ensure_timer_after_load(_dummy):
+    _ensure_timer()
+
+
+def _remove_timer_load_handler():
+    handlers = bpy.app.handlers.load_post
+    for handler in list(handlers):
+        if (
+            getattr(handler, "__name__", "") == "_ensure_timer_after_load"
+            and str(getattr(handler, "__module__", "")).endswith(".autosave")
+        ):
+            handlers.remove(handler)
+
+
+def register():
+    _remove_timer_load_handler()
+    bpy.app.handlers.load_post.append(_ensure_timer_after_load)
+    _ensure_timer()
+
+
 def unregister():
+    _remove_timer_load_handler()
     try:
-        if bpy.app.timers.is_registered(_timer_callback):
+        if _timer_is_registered():
             bpy.app.timers.unregister(_timer_callback)
     except Exception:
         pass

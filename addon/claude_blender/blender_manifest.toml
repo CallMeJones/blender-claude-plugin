@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "claude_blender"
-version = "0.1.1"
+version = "0.1.2"
 name = "Blender Agent Bridge"
 tagline = "Safe scene bridge for external AI agents"
 maintainer = "Michael"

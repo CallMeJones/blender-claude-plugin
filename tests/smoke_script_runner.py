@@ -76,6 +76,7 @@ def main():
         assert env["CLAUDE_BLENDER_MCP_SERVER_VERSION"] == build_info.MCP_SERVER_VERSION, env
         assert env["CLAUDE_BLENDER_MCP_CONFIG_VERSION"] == build_info.MCP_CONFIG_VERSION, env
         assert "MCP client" in env["CLAUDE_BLENDER_MCP_CONFIG_NOTE"], env
+        assert "SKETCHFAB_API_TOKEN" in env["BLENDER_AGENT_BRIDGE_EXTERNAL_AUTH_NOTE"], env
         assert "BLENDER_BRIDGE_TOKEN" not in env, env
         assert f"MCP config v{build_info.MCP_CONFIG_VERSION}" in state.status, state.status
 
@@ -370,6 +371,25 @@ print("created", obj.name)
         assert context.scene["claude_auto_trust_smoke"] == "ok"
         assert not state.pending_script
         assert script_runner.external_script_trust_active(context, state=state)
+
+        bake_guarded_under_trust = script_runner.stage_script(
+            context,
+            intent="Bake persistent simulation cache during the trust window",
+            expected_changes="Runs a point-cache bake",
+            risk_level="high",
+            target_objects=[],
+            code="import bpy\nbpy.ops.ptcache.bake_all(bake=True)",
+        )
+        assert bake_guarded_under_trust["ok"], bake_guarded_under_trust
+        assert bake_guarded_under_trust["analysis"]["explicit_approval_required"], bake_guarded_under_trust
+        assert not bake_guarded_under_trust["analysis"]["trust_window_allowed"], bake_guarded_under_trust
+        bake_guarded_result = script_runner.run_externally_approved_script(context, "", checkpoint_enabled=False)
+        assert not bake_guarded_result["ok"], bake_guarded_result
+        assert "explicit one-time user approval" in bake_guarded_result["message"], bake_guarded_result
+        assert state.pending_script
+        assert script_runner.external_script_trust_active(context, state=state)
+        rejected = script_runner.reject_pending_script(context)
+        assert rejected["ok"], rejected
 
         animation_guarded_under_trust = json.loads(
             tool_dispatcher.execute_tool(

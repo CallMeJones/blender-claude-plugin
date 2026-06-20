@@ -120,7 +120,10 @@ def _fake_fetch_json(url, *, timeout=15):
 def _fake_fetch_json_with_headers(url, *, headers=None, timeout=15):
     parsed = urllib.parse.urlparse(url)
     if parsed.path == "/v3/models/abc123/download":
-        assert headers and headers.get("Authorization") == "Token test-token", headers
+        assert headers and headers.get("Authorization") in {
+            "Token test-token",
+            "Token bridge-api-token",
+        }, headers
         return {"gltf": {"url": "https://download.example.invalid/abc123.zip", "expires": 300}}
     raise AssertionError(f"Unexpected authenticated URL: {url}")
 
@@ -163,6 +166,10 @@ def main():
     original_fetch_json_with_headers = external_assets._fetch_json_with_headers
     original_download_file = external_assets._download_file
     original_bpy = external_assets.bpy
+    auth_env_names = external_assets.SKETCHFAB_API_TOKEN_ENV_VARS
+    original_auth_env = {name: os.environ.get(name) for name in auth_env_names}
+    for name in auth_env_names:
+        os.environ.pop(name, None)
     external_assets._fetch_json = _fake_fetch_json
     external_assets._fetch_json_with_headers = _fake_fetch_json_with_headers
     external_assets._download_file = _fake_download_file
@@ -236,6 +243,8 @@ def main():
         no_token = external_assets.download_sketchfab_model(uid="abc123", cache_dir=cache_dir)
         assert no_token["ok"] is False, no_token
         assert no_token["auth_required"] is True, no_token
+        assert no_token["auth_method"] == "api_token", no_token
+        assert "SKETCHFAB_API_TOKEN" in no_token["allowed_api_token_env_vars"], no_token
         blocked_env = external_assets.download_sketchfab_model(
             uid="abc123",
             token_env_var="BLENDER_BRIDGE_TOKEN",
@@ -244,6 +253,18 @@ def main():
         assert blocked_env["ok"] is False, blocked_env
         assert blocked_env["blocked_token_env_var"] == "BLENDER_BRIDGE_TOKEN", blocked_env
         assert "SKETCHFAB_API_TOKEN" in blocked_env["allowed_token_env_vars"], blocked_env
+
+        os.environ[external_assets.SKETCHFAB_BRIDGE_TOKEN_ENV_VAR] = "bridge-api-token"
+        injected = external_assets.sketchfab_auth_arguments_from_env({"uid": "abc123"})
+        assert injected["api_token"] == "bridge-api-token", injected
+        server = mcp_server.BlenderMCPServer(None)
+        forwarded = server._bridge_tool_arguments("download_sketchfab_model", {"uid": "abc123"})
+        assert forwarded["api_token"] == "bridge-api-token", forwarded
+        sketchfab_env_api_cache = external_assets.download_sketchfab_model(uid="abc123", cache_dir=cache_dir)
+        assert sketchfab_env_api_cache["ok"] is True, sketchfab_env_api_cache
+        assert sketchfab_env_api_cache["auth_method"] == "api_token", sketchfab_env_api_cache
+        assert sketchfab_env_api_cache["auth_source"] == f"env:{external_assets.SKETCHFAB_BRIDGE_TOKEN_ENV_VAR}", sketchfab_env_api_cache
+        os.environ.pop(external_assets.SKETCHFAB_BRIDGE_TOKEN_ENV_VAR, None)
 
         sketchfab_cache = external_assets.download_sketchfab_model(
             uid="abc123",
@@ -257,6 +278,7 @@ def main():
 
         diagnostics = external_assets.external_asset_cache_diagnostics(cache_dir=cache_dir)
         assert diagnostics["ok"] is True, diagnostics
+        assert diagnostics["auth"]["sketchfab"]["auth_method"] == "api_token", diagnostics
         assert diagnostics["asset_count"] >= 4, diagnostics
         assert diagnostics["provider_counts"]["poly_haven"] >= 3, diagnostics
         assert diagnostics["provider_counts"]["sketchfab"] >= 1, diagnostics
@@ -332,6 +354,11 @@ def main():
         external_assets._fetch_json_with_headers = original_fetch_json_with_headers
         external_assets._download_file = original_download_file
         external_assets.bpy = original_bpy
+        for name, value in original_auth_env.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
 
 
 if __name__ == "__main__":

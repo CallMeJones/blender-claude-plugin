@@ -17,7 +17,8 @@ AGENT_GUIDANCE = (
     "For model refinement and production presentation, prefer shade_smooth_selected, add_bevel_and_subsurf, create_wheel_assembly, add_panel_seams, add_window_materials, apply_vehicle_refinement_template, apply_product_refinement_template, apply_character_refinement_template, create_studio_product_stage, add_dimension_callouts, apply_lighting_preset, create_material_palette, create_product_turntable_setup, and organize_scene_for_production when they fit the task. "
     "For shape-key animation, prefer create_shape_key and animate_shape_key before drafting Python. "
     "For quick animation playblasts and visual review, use low-resolution preview defaults unless the user explicitly asks for HD/final/1080p/4K quality. For long-running or high-resolution renders, frame sequences, 1080p/4K previews, or MP4 quality checks, use start_render_job and poll get_render_job_status instead of blocking render_scene_thumbnail, capture tools, or draft_script; report the returned rough estimate/poll interval to the user; use assemble_render_job_video for PNG sequences and validate_render_job_output before reporting success; use cancel_render_job if the user wants to stop it. If a render, playblast, or visual-review tool times out, treat it as recoverable: wait the returned poll_after_seconds, call blender_bridge_status, inspect get_visual_evidence_resources and the audit log, and only rerun if no artifact/result appears. "
-    "For external assets, use list_poly_haven_categories and search_poly_haven_assets/search_sketchfab_models for discovery, inspect_poly_haven_asset_files before choosing Poly Haven formats, download_* tools for cache-only work, import_* tools for preview scene imports, and get_external_asset_cache_diagnostics to report cached/imported assets. Sketchfab tokens must be provided per call or through an environment variable, not Blender preferences. "
+    "For persistent simulation/cache bakes or cache-freeing operations, inspect first with get_simulation_details or inspect_simulation_bake, then use stage_persistent_simulation_bake for a fixed approval-gated script. Session-wide external script trust is not enough for bpy.ops.fluid.* or bpy.ops.ptcache.* bake/free operators; they require explicit one-time user approval. Do not hand the user a checkpoint or recovery .blend path unless you just verified that it exists and is restorable through checkpoint metadata, diagnostics, or a filesystem check. "
+    "For external assets, use list_poly_haven_categories and search_poly_haven_assets/search_sketchfab_models for discovery, inspect_poly_haven_asset_files before choosing Poly Haven formats, download_* tools for cache-only work, import_* tools for preview scene imports, and get_external_asset_cache_diagnostics to report cached/imported assets. Sketchfab API tokens must be provided per call or through the MCP server environment, not Blender preferences. "
     "For animation generation, review, or repair, call run_animation_task for simple prompt-in/task-out use, or call plan_animation_workflow first when you need manual control of the generated workflow. plan_animation_workflow returns the brief, scene routing, timing chart, ordered helper calls, evaluator calls, repair calls, and script fallback rules. For common helper-backed generation, call run_animation_workflow to execute the plan, review the result, optionally capture playblast evidence, and leave changes in preview. Use any animation_brief in context as the prompt contract; otherwise call create_animation_brief first when the prompt needs an explicit contract, success criteria, or later validation. Call get_animation_scene_context before advanced animation in scenes with rigs, constraints, drivers, shape keys, physics, or unclear edit targets so you know whether to animate object transforms, rig controls, shape keys, materials, physics, or camera settings. Use create_timing_chart, block_key_poses, add_breakdown_pose, set_pose_hold, set_rig_pose_hold, get_rig_pose_library_details, apply_rig_pose_from_action, apply_rig_pose_marker, apply_rig_action_clip, offset_rig_limb_controls, set_rig_custom_property_keyframes, and create_motion_arc for animator-style blocking before spline/f-curve polish; use rig pose/action helpers only after identifying armature controls, pose-library candidates, or existing scalar IK/FK/space properties through rig inspection or repair metadata. Then use analyze_animation_principles plus focused analyzers to check timing, spacing, arcs, pose clarity, anticipation, squash/stretch, contact, center-of-mass support, speed/acceleration plausibility, simulation cache readiness, and settle before repair; use inspect_simulation_bake before persistent bake decisions, and use stage_persistent_simulation_bake when the user intentionally wants a persistent point-cache bake. Use capture_animation_playblast and review_playblast_against_brief when visual frame evidence matters; use capture_object_inspection_renders and review_inspection_renders_against_brief when close-up object detail evidence matters; if review or repair tools return repair_operations, prefer run_animation_repair_loop for bounded helper repair and review-again behavior, or execute relevant tool_call name/input entries deliberately when manual control is needed. Then prefer set_scene_frame_range, set_animation_preview_range, animate_selected_transform, animate_object_bounce, create_progressive_bounce_animation, animate_material_property, animate_light_property, create_follow_path_animation, create_turntable_animation, create_pulse_animation, create_reveal_animation, create_staggered_motion, set_action_interpolation, retime_actions, add_action_cycles, clear_animation, and create_camera_orbit. "
     "For complex scene builds that need many objects or more than about eight helper calls, stage one cohesive Blender Python script with draft_script instead of making a long chain of helper calls. "
     "When helper tools cannot express the requested edit, use draft_script to stage Blender Python for user approval; if the user has granted external script trust, draft_script may auto-run after static checks. "
@@ -979,7 +980,7 @@ def blender_tool_definitions():
         },
         {
             "name": "stage_persistent_simulation_bake",
-            "description": "Stage a fixed-template scene-wide persistent simulation point-cache bake script for explicit user approval, or auto-run it when external script trust is active.",
+            "description": "Stage a fixed-template scene-wide persistent simulation point-cache bake script for explicit user approval. Persistent bake/free operators do not auto-run under session-wide external script trust.",
             "input_schema": {
                 "type": "object",
                 "properties": {
@@ -988,7 +989,10 @@ def blender_tool_definitions():
                     "frame_end": {"type": "integer"},
                     "clear_existing": {"type": "boolean"},
                     "include_scene_rigid_body_world": {"type": "boolean"},
-                    "auto_run_if_trusted": {"type": "boolean"},
+                    "auto_run_if_trusted": {
+                        "type": "boolean",
+                        "description": "Compatibility option only; explicit-approval-only bake/free scripts remain staged even when external script trust is active.",
+                    },
                     "max_objects": {"type": "integer"},
                 },
                 "additionalProperties": False,
@@ -2711,7 +2715,7 @@ def blender_tool_definitions():
                     "token_env_var": {
                         "type": "string",
                         "enum": ["SKETCHFAB_API_TOKEN", "BLENDER_AGENT_BRIDGE_SKETCHFAB_API_TOKEN"],
-                        "description": "Sketchfab-specific environment variable to read when api_token is omitted. Defaults to SKETCHFAB_API_TOKEN.",
+                        "description": "Sketchfab API token environment variable to read when api_token is omitted. Defaults to SKETCHFAB_API_TOKEN and falls back to the bridge-specific name.",
                     },
                     "model_password": {"type": "string"},
                     "cache_dir": {"type": "string"},
@@ -2732,7 +2736,7 @@ def blender_tool_definitions():
                     "token_env_var": {
                         "type": "string",
                         "enum": ["SKETCHFAB_API_TOKEN", "BLENDER_AGENT_BRIDGE_SKETCHFAB_API_TOKEN"],
-                        "description": "Sketchfab-specific environment variable to read when api_token is omitted. Defaults to SKETCHFAB_API_TOKEN.",
+                        "description": "Sketchfab API token environment variable to read when api_token is omitted. Defaults to SKETCHFAB_API_TOKEN and falls back to the bridge-specific name.",
                     },
                     "model_password": {"type": "string"},
                     "cache_dir": {"type": "string"},

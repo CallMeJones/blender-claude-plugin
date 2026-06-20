@@ -4,8 +4,8 @@ This guide is the runbook for asking Codex to test Blender Agent Bridge end to e
 
 Current project snapshot, checked on 2026-06-20:
 
-- Extension: `Blender Agent Bridge`, manifest id `claude_blender`, version `0.1.1`.
-- Minimum Blender: `5.1.0`.
+- Extension: `Blender Agent Bridge`, manifest id `claude_blender`, version `0.1.2`.
+- Minimum Blender: `5.0.0`.
 - Local Blender detected on this workstation: `C:\Program Files\Blender Foundation\Blender 5.1\blender.exe`.
 - Dispatcher inventory: 144 tool functions in `addon/claude_blender/tool_dispatcher.py`.
 - Normal agent catalog inventory: 143 tool definitions in `addon/claude_blender/agent_tools.py`.
@@ -158,7 +158,7 @@ Run after manifest, build, docs, release, install, or packaging changes.
 $Blender = "C:\Program Files\Blender Foundation\Blender 5.1\blender.exe"
 & $Blender --command extension validate addon\claude_blender
 python scripts\build_extension_zip.py --blender $Blender
-& $Blender --command extension validate dist\claude_blender-0.1.1.zip
+& $Blender --command extension validate dist\claude_blender-0.1.2.zip
 python scripts\build_extension_repository.py --build-zip --blender $Blender --repo-dir public
 python tests\smoke_build_extension_zip.py
 python tests\smoke_extension_repository.py
@@ -167,7 +167,7 @@ python tests\smoke_extension_repository.py
 Also inspect the ZIP:
 
 ```powershell
-python -c "import zipfile; from pathlib import Path; z=Path('dist/claude_blender-0.1.1.zip'); names=zipfile.ZipFile(z).namelist(); forbidden=[n for n in names if any(p in n.lower() for p in ['.git/','__pycache__/','.pytest_cache/','.claude_blender/captures','audit.jsonl','.blend1','.blend@','sketchfab','token'])]; print('entries', len(names)); print('forbidden', forbidden); assert 'LICENSE' in names; assert not forbidden"
+python -c "import zipfile; from pathlib import Path; z=Path('dist/claude_blender-0.1.2.zip'); names=zipfile.ZipFile(z).namelist(); forbidden=[n for n in names if any(p in n.lower() for p in ['.git/','__pycache__/','.pytest_cache/','.claude_blender/captures','audit.jsonl','.blend1','.blend@','sketchfab','token'])]; print('entries', len(names)); print('forbidden', forbidden); assert 'LICENSE' in names; assert not forbidden"
 ```
 
 Pass criteria:
