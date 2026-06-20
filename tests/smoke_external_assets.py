@@ -129,8 +129,18 @@ def _fake_fetch_json_with_headers(url, *, headers=None, timeout=15):
     raise AssertionError(f"Unexpected authenticated URL: {url}")
 
 
-def _fake_download_file(url, destination, *, expected_md5="", expected_size=None, headers=None, timeout=60):
+def _fake_download_file(url, destination, *, expected_md5="", expected_size=None, headers=None, timeout=60, progress_callback=None):
     os.makedirs(os.path.dirname(destination), exist_ok=True)
+    if progress_callback:
+        progress_callback(
+            {
+                "phase": "download",
+                "url": url,
+                "path": destination,
+                "bytes_downloaded": int(expected_size or 0),
+                "expected_size": int(expected_size or 0),
+            }
+        )
     if str(destination).lower().endswith(".zip"):
         with zipfile.ZipFile(destination, "w") as archive:
             archive.writestr("scene.gltf", "{}")

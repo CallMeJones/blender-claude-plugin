@@ -237,6 +237,27 @@ def write_status(status, **updates):
     write_json(path, payload)
 
 
+def progress_callback(update):
+    update = update if isinstance(update, dict) else {{}}
+    expected = int(update.get("expected_size") or 0)
+    downloaded = int(update.get("bytes_downloaded") or 0)
+    progress = round(min(0.99, max(0.0, downloaded / expected)), 4) if expected else 0.0
+    write_status(
+        "running",
+        phase=str(update.get("phase") or "download"),
+        current_url=str(update.get("url") or ""),
+        current_file=str(update.get("path") or ""),
+        partial_path=str(update.get("partial_path") or ""),
+        bytes_downloaded=downloaded,
+        expected_size_bytes=expected,
+        current_file_progress=progress,
+        progress=progress,
+        attempt=int(update.get("attempt") or 0),
+        resumed=bool(update.get("resumed", False)),
+        message="External asset download/cache in progress",
+    )
+
+
 try:
     sys.path.insert(0, CONFIG["package_parent"])
     from claude_blender import external_assets
@@ -254,6 +275,7 @@ try:
             include_dependencies=bool(args.get("include_dependencies", True)),
             cache_dir=str(args.get("cache_dir") or ""),
             timeout=int(args.get("timeout") or 60),
+            progress_callback=progress_callback,
         )
     elif provider == "sketchfab":
         manifest = external_assets.download_sketchfab_model(
@@ -263,6 +285,7 @@ try:
             model_password=os.environ.get({ASSET_JOB_SECRET_PASSWORD_ENV!r}, ""),
             cache_dir=str(args.get("cache_dir") or ""),
             timeout=int(args.get("timeout") or 120),
+            progress_callback=progress_callback,
         )
     else:
         manifest = {{"ok": False, "message": f"Unsupported external asset provider: {{provider}}"}}
@@ -345,6 +368,26 @@ def _manifest_summary(manifest):
     }
 
 
+def _progress_metadata(update):
+    update = update if isinstance(update, dict) else {}
+    expected = int(update.get("expected_size") or 0)
+    downloaded = int(update.get("bytes_downloaded") or 0)
+    progress = round(min(0.99, max(0.0, downloaded / expected)), 4) if expected else 0.0
+    return {
+        "phase": str(update.get("phase") or "download"),
+        "current_url": str(update.get("url") or ""),
+        "current_file": str(update.get("path") or ""),
+        "partial_path": str(update.get("partial_path") or ""),
+        "bytes_downloaded": downloaded,
+        "expected_size_bytes": expected,
+        "current_file_progress": progress,
+        "progress": progress,
+        "attempt": int(update.get("attempt") or 0),
+        "resumed": bool(update.get("resumed", False)),
+        "message": "External asset download/cache in progress",
+    }
+
+
 def _is_cancel_requested(job_id):
     with _LOCK:
         return job_id in _CANCEL_REQUESTS
@@ -382,6 +425,9 @@ def _run_download_job(job_id, provider, args, metadata_path):
             )
             return
         try:
+            def progress_callback(update):
+                _update_metadata(metadata_path, **_progress_metadata(update))
+
             if provider == "poly_haven":
                 manifest = external_assets.download_poly_haven_asset(
                     asset_id=str(args.get("asset_id") or ""),
@@ -392,6 +438,7 @@ def _run_download_job(job_id, provider, args, metadata_path):
                     include_dependencies=bool(args.get("include_dependencies", True)),
                     cache_dir=str(args.get("cache_dir") or ""),
                     timeout=_bounded_int(args.get("timeout"), 60, minimum=1, maximum=300),
+                    progress_callback=progress_callback,
                 )
             elif provider == "sketchfab":
                 manifest = external_assets.download_sketchfab_model(
@@ -401,6 +448,7 @@ def _run_download_job(job_id, provider, args, metadata_path):
                     model_password=str(args.get("model_password") or ""),
                     cache_dir=str(args.get("cache_dir") or ""),
                     timeout=_bounded_int(args.get("timeout"), 120, minimum=1, maximum=300),
+                    progress_callback=progress_callback,
                 )
             else:
                 manifest = {"ok": False, "message": f"Unsupported external asset provider: {provider}"}
@@ -559,6 +607,7 @@ def _process_import_queue():
             metadata_path,
             status="running",
             started_at=time.time(),
+            phase="import",
             progress=0.0,
             message="External asset import started on Blender main thread",
         )
@@ -649,6 +698,15 @@ def start_external_asset_download(
         "returncode": None,
         "manifest_path": "",
         "manifest_summary": {},
+        "phase": "queued",
+        "current_url": "",
+        "current_file": "",
+        "partial_path": "",
+        "bytes_downloaded": 0,
+        "expected_size_bytes": 0,
+        "current_file_progress": 0.0,
+        "attempt": 0,
+        "resumed": False,
         "progress": 0.0,
         "elapsed_seconds": 0,
         "poll_interval_seconds": DEFAULT_ASSET_JOB_POLL_INTERVAL_SECONDS,
@@ -749,7 +807,24 @@ def external_asset_job_status(job_id, *, context=None, preferred_dir=None, captu
         stored_status = str(latest.get("status") or "unknown")
         child_status_name = str(child_status.get("status") or "")
         if child_status:
-            for key in ("ok", "completed_at", "progress", "manifest_path", "manifest_summary", "message", "traceback"):
+            for key in (
+                "ok",
+                "completed_at",
+                "progress",
+                "manifest_path",
+                "manifest_summary",
+                "message",
+                "traceback",
+                "phase",
+                "current_url",
+                "current_file",
+                "partial_path",
+                "bytes_downloaded",
+                "expected_size_bytes",
+                "current_file_progress",
+                "attempt",
+                "resumed",
+            ):
                 if key in child_status:
                     latest[key] = child_status[key]
         if cancel_requested and not thread_running and not process_running:
@@ -924,6 +999,7 @@ def start_external_asset_import_job(
         "manifest_path": manifest_path,
         "target_object_name": str(target_object_name or ""),
         "label": str(label or "Import external asset job result"),
+        "phase": "queued",
         "progress": 0.0,
         "elapsed_seconds": 0,
         "poll_interval_seconds": DEFAULT_ASSET_JOB_POLL_INTERVAL_SECONDS,

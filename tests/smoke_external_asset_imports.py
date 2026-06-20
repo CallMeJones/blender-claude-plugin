@@ -103,9 +103,19 @@ def _fake_fetch_json_with_headers(url, *, headers=None, timeout=15):
     raise AssertionError(f"Unexpected authenticated URL: {url}")
 
 
-def _fake_download_file(url, destination, *, expected_md5="", expected_size=None, headers=None, timeout=60):
+def _fake_download_file(url, destination, *, expected_md5="", expected_size=None, headers=None, timeout=60, progress_callback=None):
     observed_timeouts.append(("download_file", timeout))
     os.makedirs(os.path.dirname(destination), exist_ok=True)
+    if progress_callback:
+        progress_callback(
+            {
+                "phase": "download",
+                "url": url,
+                "path": destination,
+                "bytes_downloaded": int(expected_size or 0),
+                "expected_size": int(expected_size or 0),
+            }
+        )
     if str(destination).lower().endswith(".zip"):
         with zipfile.ZipFile(destination, "w") as archive:
             archive.writestr("scene.gltf", "{}")
@@ -247,6 +257,9 @@ def main():
         async_poly_status = _wait_asset_job(bpy.context, async_poly["job_id"])
         assert async_poly_status["asset_job"]["status"] == "completed", async_poly_status
         assert async_poly_status["asset_job"]["manifest_path"], async_poly_status
+        assert async_poly_status["asset_job"]["phase"] == "download", async_poly_status
+        assert async_poly_status["asset_job"]["bytes_downloaded"] >= 1, async_poly_status
+        assert async_poly_status["asset_job"]["current_file"], async_poly_status
         async_poly_import_job = _execute(
             bpy.context,
             "start_external_asset_import_job",
@@ -262,6 +275,7 @@ def main():
         )
         assert async_poly_import_status["ok"] is True, async_poly_import_status
         assert async_poly_import_status["asset_import_job"]["status"] == "completed", async_poly_import_status
+        assert async_poly_import_status["asset_import_job"]["phase"] == "import", async_poly_import_status
         assert async_poly_import_status["asset_import_job"]["import_result"]["ok"] is True, async_poly_import_status
         assert "SmokeImportedModel" in async_poly_import_status["asset_import_job"]["import_result"]["imported_objects"], async_poly_import_status
         assert live_preview.revert(bpy.context)["ok"] is True

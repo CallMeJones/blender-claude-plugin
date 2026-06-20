@@ -13,6 +13,7 @@
 - Added cached-manifest import support so completed asset jobs can be imported without rerunning the download step.
 - Added queued external asset import jobs with start/status/cancel tools so main-thread imports have the same pollable shape as downloads.
 - Added external asset cache maintenance tools for dry-run pruning and terminal job metadata deletion.
+- Added external asset job progress fields for phase, current file/url, bytes downloaded, expected size, per-file progress, attempts, and resume state.
 - Hardened asset job metadata writes for Windows polling races and redacted Sketchfab secrets from persisted job metadata.
 
 ## 0.1.2

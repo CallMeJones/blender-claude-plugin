@@ -276,7 +276,16 @@ def _cached_file_valid(path, *, expected_md5="", expected_size=None):
     return True
 
 
-def _download_file(url, destination, *, expected_md5="", expected_size=None, headers=None, timeout=60):
+def _emit_download_progress(progress_callback, payload):
+    if not progress_callback:
+        return
+    try:
+        progress_callback(payload)
+    except Exception:
+        pass
+
+
+def _download_file(url, destination, *, expected_md5="", expected_size=None, headers=None, timeout=60, progress_callback=None):
     os.makedirs(os.path.dirname(destination), exist_ok=True)
     expected_size_value = _expected_size_int(expected_size)
     partial_path = f"{destination}.part"
@@ -336,7 +345,39 @@ def _download_file(url, destination, *, expected_md5="", expected_size=None, hea
                     if partial_size and http_status == 200:
                         resumed = False
                 with open(partial_path, mode) as handle:
-                    shutil.copyfileobj(response, handle)
+                    bytes_downloaded = partial_size if mode == "ab" else 0
+                    _emit_download_progress(
+                        progress_callback,
+                        {
+                            "phase": "download",
+                            "url": str(url),
+                            "path": destination,
+                            "partial_path": partial_path,
+                            "bytes_downloaded": bytes_downloaded,
+                            "expected_size": expected_size_value,
+                            "attempt": attempts,
+                            "resumed": bool(mode == "ab"),
+                        },
+                    )
+                    while True:
+                        chunk = response.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        handle.write(chunk)
+                        bytes_downloaded += len(chunk)
+                        _emit_download_progress(
+                            progress_callback,
+                            {
+                                "phase": "download",
+                                "url": str(url),
+                                "path": destination,
+                                "partial_path": partial_path,
+                                "bytes_downloaded": bytes_downloaded,
+                                "expected_size": expected_size_value,
+                                "attempt": attempts,
+                                "resumed": bool(mode == "ab"),
+                            },
+                        )
             os.replace(partial_path, destination)
             break
         except Exception as exc:
@@ -720,6 +761,7 @@ def download_poly_haven_asset(
     include_dependencies=True,
     cache_dir="",
     timeout=60,
+    progress_callback=None,
 ):
     files = inspect_poly_haven_asset_files(asset_id=asset_id, timeout=timeout)
     if not files.get("ok"):
@@ -760,6 +802,7 @@ def download_poly_haven_asset(
             expected_md5=entry.get("md5", ""),
             expected_size=entry.get("size") or None,
             timeout=timeout,
+            progress_callback=progress_callback,
         )
         result["logical_path"] = entry.get("logical_path", "")
         result["dependency"] = bool(entry.get("dependency", False))
@@ -1477,6 +1520,7 @@ def download_sketchfab_model(
     model_password="",
     cache_dir="",
     timeout=120,
+    progress_callback=None,
 ):
     info = get_sketchfab_model_download_info(
         uid=uid,
@@ -1489,7 +1533,7 @@ def download_sketchfab_model(
         return info
     asset_dir = _asset_cache_dir("sketchfab", uid, cache_dir)
     archive_path = os.path.join(asset_dir, "download", "gltf.zip")
-    download = _download_file(info["download_url"], archive_path, timeout=timeout)
+    download = _download_file(info["download_url"], archive_path, timeout=timeout, progress_callback=progress_callback)
     if not download.get("ok"):
         manifest = _write_manifest(
             asset_dir,
