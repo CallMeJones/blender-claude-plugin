@@ -5,6 +5,7 @@
 - Hardened the optional live Pages smoke so it downloads the advertised extension ZIP and verifies the repository index hash and archive size.
 - Updated the release workflow to current Node 24-compatible official GitHub Actions.
 - Polished MCP client routing so external asset requests prefer async download/cache jobs and queued import jobs over synchronous fallback tools without misrouting ordinary material texture edits.
+- Added MCP guardrail warnings for synchronous external asset fallback calls and non-dry-run external asset cache cleanup.
 
 ## 0.1.5
 

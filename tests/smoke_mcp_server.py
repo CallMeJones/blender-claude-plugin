@@ -1357,6 +1357,40 @@ def main():
         assert invoked["result"]["isError"] is False, invoked
         assert invoked["result"]["structuredContent"]["invoked_tool"] == "list_scene_objects", invoked
 
+        invoked_direct_asset = _send(
+            proc,
+            {
+                "jsonrpc": "2.0",
+                "id": 231,
+                "method": "tools/call",
+                "params": {
+                    "name": "invoke_blender_tool",
+                    "arguments": {"name": "import_poly_haven_asset", "arguments": {"asset_id": "studio_hdri"}},
+                },
+            },
+        )
+        direct_asset_warnings = invoked_direct_asset["result"]["structuredContent"]["guardrail_warnings"]
+        assert invoked_direct_asset["result"]["isError"] is False, invoked_direct_asset
+        assert direct_asset_warnings[0]["code"] == "synchronous_external_asset_fallback", invoked_direct_asset
+        assert "start_external_asset_download" in direct_asset_warnings[0]["preferred_workflow"], invoked_direct_asset
+
+        invoked_cache_cleanup = _send(
+            proc,
+            {
+                "jsonrpc": "2.0",
+                "id": 232,
+                "method": "tools/call",
+                "params": {
+                    "name": "invoke_blender_tool",
+                    "arguments": {"name": "prune_external_asset_cache", "arguments": {"dry_run": False}},
+                },
+            },
+        )
+        cache_cleanup_warnings = invoked_cache_cleanup["result"]["structuredContent"]["guardrail_warnings"]
+        assert invoked_cache_cleanup["result"]["isError"] is False, invoked_cache_cleanup
+        assert cache_cleanup_warnings[0]["code"] == "cache_cleanup_writes", invoked_cache_cleanup
+        assert cache_cleanup_warnings[0]["safe_first_arguments"] == {"dry_run": True}, invoked_cache_cleanup
+
         catalog_invoked = _send(
             proc,
             {

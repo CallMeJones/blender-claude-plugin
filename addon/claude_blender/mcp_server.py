@@ -213,6 +213,13 @@ EXTERNAL_ASSET_DIRECT_TOOLS = {
     "import_sketchfab_model",
     "import_external_asset_job_result",
 }
+EXTERNAL_ASSET_ASYNC_WORKFLOW = [
+    "start_external_asset_download",
+    "get_external_asset_job_status",
+    "start_external_asset_import_job",
+    "get_external_asset_import_job_status",
+]
+CACHE_CLEANUP_WRITE_TOOLS = {"delete_external_asset_job", "prune_external_asset_cache"}
 
 TOOL_CATEGORY_LABELS = {
     "inspect": "Scene Inspection",
@@ -1156,6 +1163,49 @@ def _tool_error(message, *, code="tool_error", data=None):
     return _tool_result(json.dumps(structured, indent=2, sort_keys=True), structured, is_error=True)
 
 
+def _guardrail_warnings_for_call(name, arguments):
+    name = str(name or "")
+    arguments = arguments if isinstance(arguments, dict) else {}
+    warnings = []
+    if name in EXTERNAL_ASSET_DIRECT_TOOLS:
+        warnings.append(
+            {
+                "code": "synchronous_external_asset_fallback",
+                "severity": "info",
+                "message": (
+                    "This is a synchronous external asset fallback/debug path. For normal MCP client workflows, "
+                    "prefer the async download/cache job and queued import workflow."
+                ),
+                "preferred_workflow": list(EXTERNAL_ASSET_ASYNC_WORKFLOW),
+            }
+        )
+    if name in CACHE_CLEANUP_WRITE_TOOLS and arguments.get("dry_run") is False:
+        warnings.append(
+            {
+                "code": "cache_cleanup_writes",
+                "severity": "warning",
+                "message": (
+                    "This call can delete external asset cache or job metadata. Prefer running with dry_run=true "
+                    "first and only retry with dry_run=false after reviewing the planned deletion."
+                ),
+                "safe_first_arguments": {"dry_run": True},
+            }
+        )
+    return warnings
+
+
+def _attach_guardrail_warnings(structured, name, arguments):
+    warnings = _guardrail_warnings_for_call(name, arguments)
+    if not warnings or not isinstance(structured, dict):
+        return structured
+    existing = structured.get("guardrail_warnings")
+    if not isinstance(existing, list):
+        existing = []
+    structured["guardrail_warnings"] = [*existing, *warnings]
+    structured["guardrail_warning_count"] = len(structured["guardrail_warnings"])
+    return structured
+
+
 def _audit_tool_call(name, arguments, result, *, tool=None):
     try:
         structured = result.get("structuredContent") if isinstance(result, dict) else {}
@@ -1496,6 +1546,7 @@ class BlenderMCPServer:
             return result
         result = response.get("result", response)
         ok = bool(response.get("ok", True)) and bool(result.get("ok", True) if isinstance(result, dict) else True)
+        result = _attach_guardrail_warnings(result, name, call_arguments)
         text = json.dumps(result, indent=2, sort_keys=True, default=str)
         tool_result = _tool_result(text, result if isinstance(result, dict) else {"text": text}, is_error=not ok)
         _audit_tool_call(name, call_arguments, tool_result, tool=tool)
@@ -1605,6 +1656,7 @@ class BlenderMCPServer:
             structured = result
         else:
             structured = {"ok": ok, "text": str(result), "invoked_tool": target_name}
+        structured = _attach_guardrail_warnings(structured, target_name, target_args)
         text = json.dumps(structured, indent=2, sort_keys=True, default=str)
         return _tool_result(text, structured, is_error=not ok)
 
