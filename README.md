@@ -9,7 +9,7 @@ Blender Agent Bridge is a Blender extension plus a localhost MCP bridge. It lets
 </p>
 
 <p align="center">
-  <a href="addon/claude_blender/blender_manifest.toml"><img alt="Blender 5.1+" src="https://img.shields.io/badge/Blender-5.1%2B-F5792A"></a>
+  <a href="addon/claude_blender/blender_manifest.toml"><img alt="Blender 5.0+" src="https://img.shields.io/badge/Blender-5.0%2B-F5792A"></a>
   <img alt="MCP bridge" src="https://img.shields.io/badge/MCP-localhost%20bridge-3B82F6">
   <img alt="LLM host" src="https://img.shields.io/badge/LLM%20provider-external-10B981">
   <a href="LICENSE"><img alt="License GPL-3.0-or-later" src="https://img.shields.io/badge/License-GPL--3.0--or--later-111827"></a>
