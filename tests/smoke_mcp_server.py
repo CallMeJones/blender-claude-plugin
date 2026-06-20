@@ -1091,6 +1091,11 @@ def main():
         assert save_tool_schema["annotations"]["humanInLoopRequired"] is True, save_schema
         assert save_tool_schema["annotations"]["requiresUserPath"] is True, save_schema
         assert "user_confirmed_path" in save_tool_schema["inputSchema"]["properties"], save_schema
+        save_schema_warning_codes = {
+            warning["code"] for warning in save_tool_schema["guardrail_warnings"]
+        }
+        assert "user_confirmed_path_required" in save_schema_warning_codes, save_schema
+        assert "long_running_synchronous_call" in save_schema_warning_codes, save_schema
 
         save_without_path = _send(
             proc,
@@ -1110,6 +1115,10 @@ def main():
         assert save_without_path_content["human_in_loop_required"] is True, save_without_path
         assert save_without_path_content["requires_user_confirmed_path"] is True, save_without_path
         assert "Ask the user" in save_without_path_content["message"], save_without_path
+        save_without_path_warning_codes = {
+            warning["code"] for warning in save_without_path_content["guardrail_warnings"]
+        }
+        assert "user_confirmed_path_required" in save_without_path_warning_codes, save_without_path
 
         full_audit_fd, full_audit_path = tempfile.mkstemp(
             prefix="claude-blender-mcp-full-audit-",
@@ -1136,6 +1145,11 @@ def main():
             )
             assert full_empty_approval["result"]["isError"] is False, full_empty_approval
             assert full_empty_approval["result"]["structuredContent"]["tool"] == "run_approved_script", full_empty_approval
+            full_approval_warning_codes = {
+                warning["code"]
+                for warning in full_empty_approval["result"]["structuredContent"]["guardrail_warnings"]
+            }
+            assert "approval_required" in full_approval_warning_codes, full_empty_approval
         finally:
             full_proc.kill()
             full_proc.wait(timeout=5)
@@ -1156,6 +1170,8 @@ def main():
         searched_names = {tool["name"] for tool in searched["result"]["structuredContent"]["tools"]}
         assert {"draft_script", "run_approved_script"}.issubset(searched_names), searched
         searched_tools = searched["result"]["structuredContent"]["tools"]
+        run_script_summary = next(tool for tool in searched_tools if tool["name"] == "run_approved_script")
+        assert run_script_summary["guardrail_warnings"][0]["code"] == "approval_required", searched
         assert searched["result"]["structuredContent"]["include_schemas"] is False, searched
         assert searched["result"]["structuredContent"]["schema_lookup_tool"] == "get_blender_tool_schema", searched
         assert "input_schema" not in searched_tools[0], searched
@@ -1176,6 +1192,29 @@ def main():
         assert searched_with_schemas["result"]["structuredContent"]["include_schemas"] is True, searched_with_schemas
         assert "input_schema" in searched_schema_tools[0], searched_with_schemas
         assert "output_schema" in searched_schema_tools[0], searched_with_schemas
+
+        destructive_search = _send(
+            proc,
+            {
+                "jsonrpc": "2.0",
+                "id": 212,
+                "method": "tools/call",
+                "params": {
+                    "name": "search_blender_tools",
+                    "arguments": {"query": "open_blend_file", "limit": 3},
+                },
+            },
+        )
+        open_summary = next(
+            tool
+            for tool in destructive_search["result"]["structuredContent"]["tools"]
+            if tool["name"] == "open_blend_file"
+        )
+        open_summary_warning_codes = {
+            warning["code"] for warning in open_summary["guardrail_warnings"]
+        }
+        assert "destructive_scene_operation" in open_summary_warning_codes, destructive_search
+        assert "user_confirmed_path_required" in open_summary_warning_codes, destructive_search
 
         for query in (
             "Make the selected cube bounce twice and get smaller each bounce.",
@@ -1288,6 +1327,10 @@ def main():
         assert bake_catalog_tool["annotations"]["requiresExplicitOneTimeApproval"] is True, bake_catalog_schema
         assert bake_catalog_tool["annotations"]["trustWindowAutoRunAllowed"] is False, bake_catalog_schema
         assert "requires_explicit_one_time_approval" in bake_catalog_tool["outputSchema"]["properties"], bake_catalog_schema
+        bake_warning_codes = {
+            warning["code"] for warning in bake_catalog_tool["guardrail_warnings"]
+        }
+        assert "explicit_one_time_approval_required" in bake_warning_codes, bake_catalog_schema
 
         simulation_catalog_search = _send(
             proc,
@@ -1484,6 +1527,73 @@ def main():
         )
         assert empty_approval_invoke["result"]["isError"] is False, empty_approval_invoke
         assert empty_approval_invoke["result"]["structuredContent"]["invoked_tool"] == "run_approved_script", empty_approval_invoke
+        approval_warning_codes = {
+            warning["code"]
+            for warning in empty_approval_invoke["result"]["structuredContent"]["guardrail_warnings"]
+        }
+        assert "approval_required" in approval_warning_codes, empty_approval_invoke
+
+        destructive_invoke = _send(
+            proc,
+            {
+                "jsonrpc": "2.0",
+                "id": 36,
+                "method": "tools/call",
+                "params": {
+                    "name": "invoke_blender_tool",
+                    "arguments": {
+                        "name": "open_blend_file",
+                        "arguments": {
+                            "filepath": "C:/tmp/guardrail-test.blend",
+                            "confirm_discard_current": True,
+                            "user_confirmed_path": True,
+                        },
+                    },
+                },
+            },
+        )
+        destructive_warning_codes = {
+            warning["code"]
+            for warning in destructive_invoke["result"]["structuredContent"]["guardrail_warnings"]
+        }
+        assert destructive_invoke["result"]["isError"] is False, destructive_invoke
+        assert "destructive_scene_operation" in destructive_warning_codes, destructive_invoke
+        assert "long_running_synchronous_call" in destructive_warning_codes, destructive_invoke
+
+        playblast_invoke = _send(
+            proc,
+            {
+                "jsonrpc": "2.0",
+                "id": 37,
+                "method": "tools/call",
+                "params": {
+                    "name": "invoke_blender_tool",
+                    "arguments": {"name": "capture_animation_playblast", "arguments": {}},
+                },
+            },
+        )
+        playblast_warning_codes = {
+            warning["code"]
+            for warning in playblast_invoke["result"]["structuredContent"]["guardrail_warnings"]
+        }
+        assert playblast_invoke["result"]["isError"] is False, playblast_invoke
+        assert "long_running_synchronous_call" in playblast_warning_codes, playblast_invoke
+
+        render_job_invoke = _send(
+            proc,
+            {
+                "jsonrpc": "2.0",
+                "id": 38,
+                "method": "tools/call",
+                "params": {"name": "start_render_job", "arguments": {"job_name": "guardrail-smoke"}},
+            },
+        )
+        render_job_warning_codes = {
+            warning["code"]
+            for warning in render_job_invoke["result"]["structuredContent"]["guardrail_warnings"]
+        }
+        assert render_job_invoke["result"]["isError"] is False, render_job_invoke
+        assert "background_job_polling_required" in render_job_warning_codes, render_job_invoke
 
         with open(audit_path, "r", encoding="utf-8") as handle:
             audit_events = [json.loads(line) for line in handle if line.strip()]

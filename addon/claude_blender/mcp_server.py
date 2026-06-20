@@ -220,6 +220,7 @@ EXTERNAL_ASSET_ASYNC_WORKFLOW = [
     "get_external_asset_import_job_status",
 ]
 CACHE_CLEANUP_WRITE_TOOLS = {"delete_external_asset_job", "prune_external_asset_cache"}
+GUARDRAIL_COMMIT_REVERT_TOOLS = ["commit_preview", "revert_preview"]
 
 TOOL_CATEGORY_LABELS = {
     "inspect": "Scene Inspection",
@@ -966,6 +967,7 @@ def _tool_category(tool):
 def _tool_summary(tool, *, include_schema=True):
     annotations = dict(tool.get("annotations") or {})
     category = _tool_category(tool)
+    guardrail_warnings = _guardrail_warnings_for_tool(tool)
     summary = {
         "name": tool.get("name", ""),
         "title": tool.get("title", ""),
@@ -991,6 +993,9 @@ def _tool_summary(tool, *, include_schema=True):
         "approval_policy": str(annotations.get("approvalPolicy", "") or ""),
         "recovery_hint": str(annotations.get("recoveryHint", "") or ""),
     }
+    if guardrail_warnings:
+        summary["guardrail_warnings"] = guardrail_warnings
+        summary["guardrail_warning_count"] = len(guardrail_warnings)
     if include_schema:
         summary["input_schema"] = tool.get("inputSchema") or {}
         summary["output_schema"] = tool.get("outputSchema") or GENERIC_OUTPUT_SCHEMA
@@ -1163,9 +1168,12 @@ def _tool_error(message, *, code="tool_error", data=None):
     return _tool_result(json.dumps(structured, indent=2, sort_keys=True), structured, is_error=True)
 
 
-def _guardrail_warnings_for_call(name, arguments):
-    name = str(name or "")
-    arguments = arguments if isinstance(arguments, dict) else {}
+def _guardrail_warnings_for_tool(tool, arguments=None):
+    tool = tool if isinstance(tool, dict) else {"name": str(tool or "")}
+    name = str(tool.get("name") or "")
+    arguments_known = isinstance(arguments, dict)
+    arguments = arguments if arguments_known else {}
+    annotations = dict(tool.get("annotations") or {})
     warnings = []
     if name in EXTERNAL_ASSET_DIRECT_TOOLS:
         warnings.append(
@@ -1179,7 +1187,19 @@ def _guardrail_warnings_for_call(name, arguments):
                 "preferred_workflow": list(EXTERNAL_ASSET_ASYNC_WORKFLOW),
             }
         )
-    if name in CACHE_CLEANUP_WRITE_TOOLS and arguments.get("dry_run") is False:
+    if name in CACHE_CLEANUP_WRITE_TOOLS and not arguments_known:
+        warnings.append(
+            {
+                "code": "cache_cleanup_dry_run_first",
+                "severity": "info",
+                "message": (
+                    "This cache maintenance tool can delete external asset cache or job metadata. Use dry_run=true "
+                    "first, review the planned deletion, then retry with dry_run=false only when intended."
+                ),
+                "safe_first_arguments": {"dry_run": True},
+            }
+        )
+    elif name in CACHE_CLEANUP_WRITE_TOOLS and arguments.get("dry_run") is False:
         warnings.append(
             {
                 "code": "cache_cleanup_writes",
@@ -1191,17 +1211,124 @@ def _guardrail_warnings_for_call(name, arguments):
                 "safe_first_arguments": {"dry_run": True},
             }
         )
+    if annotations.get("destructiveHint"):
+        warnings.append(
+            {
+                "code": "destructive_scene_operation",
+                "severity": "warning",
+                "message": (
+                    "This can replace or discard the active Blender session. Confirm the user's intent, preserve "
+                    "the checkpoint policy, and avoid retrying blindly after a timeout."
+                ),
+                "confirmation_arguments": ["confirm_discard_current", "user_confirmed_path"],
+            }
+        )
+    if annotations.get("humanInLoopRequired") or annotations.get("requiresUserPath"):
+        warnings.append(
+            {
+                "code": "user_confirmed_path_required",
+                "severity": "warning",
+                "message": (
+                    "This operation needs a user-confirmed path or explicit human confirmation. Do not invent a "
+                    "filesystem path on the client's behalf."
+                ),
+                "path_policy": str(annotations.get("pathPolicy") or ""),
+            }
+        )
+    if annotations.get("requiresExplicitOneTimeApproval"):
+        warnings.append(
+            {
+                "code": "explicit_one_time_approval_required",
+                "severity": "warning",
+                "message": (
+                    "This requires a fresh one-time approval in Blender; a session trust window cannot auto-run it."
+                ),
+                "approval_policy": str(annotations.get("approvalPolicy") or ""),
+            }
+        )
+    elif annotations.get("requiresApproval"):
+        warnings.append(
+            {
+                "code": "approval_required",
+                "severity": "warning",
+                "message": (
+                    "This stages or runs approval-gated Python. Do not claim execution succeeded until Blender "
+                    "returns an approved run result."
+                ),
+                "approval_policy": str(annotations.get("approvalPolicy") or ""),
+            }
+        )
+    if annotations.get("mutatesScene") and annotations.get("requiresLivePreview"):
+        warnings.append(
+            {
+                "code": "live_preview_pending",
+                "severity": "info",
+                "message": (
+                    "This mutates the live scene through the preview workflow. Inspect the result, then use "
+                    "commit_preview, revert_preview, or Blender undo as appropriate."
+                ),
+                "follow_up_tools": list(GUARDRAIL_COMMIT_REVERT_TOOLS),
+            }
+        )
+    timeout_recovery = dict(annotations.get("timeoutRecovery") or {})
+    if annotations.get("returnsBackgroundJob"):
+        warnings.append(
+            {
+                "code": "background_job_polling_required",
+                "severity": "info",
+                "message": (
+                    "This starts a background job. Poll the matching status tool until terminal state instead "
+                    "of starting duplicate work."
+                ),
+                "poll_after_seconds": int(timeout_recovery.get("poll_after_seconds") or 5),
+                "status_tool": str(timeout_recovery.get("resource_tool") or timeout_recovery.get("status_tool") or ""),
+            }
+        )
+    elif annotations.get("longRunningHint"):
+        warnings.append(
+            {
+                "code": "long_running_synchronous_call",
+                "severity": "info",
+                "message": (
+                    "This can keep Blender busy until the bounded timeout. If the client times out, wait and "
+                    "use the recovery status/resource path before rerunning."
+                ),
+                "timeout_recovery": timeout_recovery,
+            }
+        )
     return warnings
 
 
-def _attach_guardrail_warnings(structured, name, arguments):
-    warnings = _guardrail_warnings_for_call(name, arguments)
+def _guardrail_warnings_for_call(name, arguments, tool=None):
+    if isinstance(tool, dict):
+        guardrail_tool = dict(tool)
+        guardrail_tool.setdefault("name", str(name or ""))
+    else:
+        guardrail_tool = {"name": str(name or "")}
+        try:
+            guardrail_tool["annotations"] = bridge_protocol.mcp_annotations_for_tool(str(name or ""))
+        except Exception:
+            guardrail_tool["annotations"] = {}
+    return _guardrail_warnings_for_tool(guardrail_tool, arguments if isinstance(arguments, dict) else {})
+
+
+def _attach_guardrail_warnings(structured, name, arguments, tool=None):
+    warnings = _guardrail_warnings_for_call(name, arguments, tool=tool)
     if not warnings or not isinstance(structured, dict):
         return structured
     existing = structured.get("guardrail_warnings")
     if not isinstance(existing, list):
         existing = []
-    structured["guardrail_warnings"] = [*existing, *warnings]
+    seen = {str(item.get("code") or "") for item in existing if isinstance(item, dict)}
+    deduped = list(existing)
+    for warning in warnings:
+        code = str(warning.get("code") or "")
+        if code and code in seen:
+            continue
+        deduped.append(warning)
+        if code:
+            seen.add(code)
+    structured["guardrail_warnings"] = deduped
     structured["guardrail_warning_count"] = len(structured["guardrail_warnings"])
     return structured
 
@@ -1546,7 +1673,7 @@ class BlenderMCPServer:
             return result
         result = response.get("result", response)
         ok = bool(response.get("ok", True)) and bool(result.get("ok", True) if isinstance(result, dict) else True)
-        result = _attach_guardrail_warnings(result, name, call_arguments)
+        result = _attach_guardrail_warnings(result, name, call_arguments, tool=tool)
         text = json.dumps(result, indent=2, sort_keys=True, default=str)
         tool_result = _tool_result(text, result if isinstance(result, dict) else {"text": text}, is_error=not ok)
         _audit_tool_call(name, call_arguments, tool_result, tool=tool)
@@ -1618,7 +1745,12 @@ class BlenderMCPServer:
         tool = self._full_tool_definition(name)
         if tool is None:
             return _tool_error(f"Unknown Blender tool: {name}", code="unknown_tool")
-        structured = {"ok": True, "tool": _normalize_tool_definition(tool)}
+        normalized = _normalize_tool_definition(tool)
+        guardrail_warnings = _guardrail_warnings_for_tool(normalized)
+        if guardrail_warnings:
+            normalized["guardrail_warnings"] = guardrail_warnings
+            normalized["guardrail_warning_count"] = len(guardrail_warnings)
+        structured = {"ok": True, "tool": normalized}
         return _tool_result(json.dumps(structured, indent=2, sort_keys=True), structured)
 
     def _invoke_blender_tool(self, arguments):
@@ -1656,7 +1788,7 @@ class BlenderMCPServer:
             structured = result
         else:
             structured = {"ok": ok, "text": str(result), "invoked_tool": target_name}
-        structured = _attach_guardrail_warnings(structured, target_name, target_args)
+        structured = _attach_guardrail_warnings(structured, target_name, target_args, tool=target_tool)
         text = json.dumps(structured, indent=2, sort_keys=True, default=str)
         return _tool_result(text, structured, is_error=not ok)
 
