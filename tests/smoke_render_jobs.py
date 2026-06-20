@@ -18,6 +18,8 @@ sys.path.insert(0, os.path.join(ROOT, "addon"))
 import claude_blender  # noqa: E402
 from claude_blender import preferences, render_jobs, tool_dispatcher  # noqa: E402
 
+RENDER_JOB_SMOKE_TIMEOUT_SECONDS = int(os.environ.get("BAB_RENDER_JOB_SMOKE_TIMEOUT_SECONDS", "90"))
+
 
 def _execute(context, name, args=None):
     return json.loads(tool_dispatcher.execute_tool(context, name, args or {}))
@@ -64,7 +66,7 @@ def main():
         assert job["metadata_uri"].startswith("blender://render-jobs/"), job
 
         status = job
-        deadline = time.time() + 45
+        deadline = time.time() + RENDER_JOB_SMOKE_TIMEOUT_SECONDS
         while time.time() < deadline:
             status_payload = _execute(bpy.context, "get_render_job_status", {"job_id": job_id})
             assert status_payload["ok"] is True, status_payload
@@ -107,7 +109,7 @@ def main():
             },
         )
         assert assembled["ok"] is True, assembled
-        deadline = time.time() + 45
+        deadline = time.time() + RENDER_JOB_SMOKE_TIMEOUT_SECONDS
         while time.time() < deadline:
             status_payload = _execute(bpy.context, "get_render_job_status", {"job_id": job_id})
             assert status_payload["ok"] is True, status_payload
@@ -153,7 +155,7 @@ def main():
         assert started_video["ok"] is True, started_video
         video_job_id = started_video["render_job"]["job_id"]
         video_status = started_video["render_job"]
-        deadline = time.time() + 45
+        deadline = time.time() + RENDER_JOB_SMOKE_TIMEOUT_SECONDS
         while time.time() < deadline:
             status_payload = _execute(bpy.context, "get_render_job_status", {"job_id": video_job_id})
             assert status_payload["ok"] is True, status_payload

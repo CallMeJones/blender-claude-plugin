@@ -168,11 +168,14 @@ def main():
                 {"target_name": "Cube", "include_stage": True, "include_callouts": False},
             )
             assert "synthetic product stage failure" in failure["message"], failure
+            assert failure["auto_reverted_preview"] is True, failure
+            assert failure["auto_revert_message"] == "Preview reverted", failure
+            assert failure["auto_revert_manifest"]["status"] == "reverted", failure
         finally:
             advanced_helpers.create_studio_product_stage = original_stage_helper
         assert {obj.name for obj in context.selected_objects} == {"Cube", "Camera"}
         assert context.view_layer.objects.active == camera
-        _execute(context, "revert_preview", {})
+        assert context.scene.claude_blender.pending_preview is False
         final = _snapshot(cube)
         assert final == initial, {"initial": initial, "final": final}
 

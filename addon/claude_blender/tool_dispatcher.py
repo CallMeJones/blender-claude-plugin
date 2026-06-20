@@ -3301,11 +3301,17 @@ def execute_tool(context, name, args):
             ):
                 revert_result = live_preview.revert(context)
                 result["auto_reverted_preview"] = bool(revert_result.get("ok"))
+                result["auto_revert_message"] = revert_result.get("message", "")
+                result["auto_revert_manifest"] = revert_result.get("manifest", {})
                 warning_summary = revert_result.get("rollback_warning_summary")
                 if warning_summary:
                     result["auto_revert_warnings"] = warning_summary
-        except Exception:
-            pass
+            elif current and current.get("status") == "pending" and current.get("id") == txn_id_before:
+                result["auto_reverted_preview"] = False
+                result["auto_revert_message"] = "Preserved the preview transaction that existed before this failed tool call"
+        except Exception as rollback_exc:
+            result["auto_reverted_preview"] = False
+            result["auto_revert_message"] = f"Preview auto-revert failed: {type(rollback_exc).__name__}: {rollback_exc}"
     if isinstance(result, str):
         return result
     result = _attach_preview_change_report(result)

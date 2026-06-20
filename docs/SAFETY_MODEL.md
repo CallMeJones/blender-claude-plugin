@@ -84,6 +84,8 @@ These checks are guardrails, not a true sandbox. Blender Python runs with broad 
 
 Live-preview reverts return a rollback manifest and warnings when restoration is incomplete. This is visibility, not a guarantee that every possible Blender API mutation is reversible.
 
+If a helper call opens a new preview transaction and then fails, the dispatcher auto-reverts that new transaction and reports `auto_reverted_preview` plus the rollback manifest in the failed tool result. A preview transaction that already existed before the failed call is preserved instead of being unwound.
+
 ## Safer Defaults
 
 - Prefer helper tools for simple edits.
