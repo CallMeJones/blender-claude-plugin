@@ -2,23 +2,21 @@
 
 from __future__ import annotations
 
-import os
-
 import bpy
 
-from . import build_info
+from . import build_info, user_paths
 
 
 def _default_cache_dir():
-    return os.path.join(os.path.expanduser("~"), ".claude_blender", "docs_cache")
+    return user_paths.user_data_path("docs_cache")
 
 
 def _default_capture_dir():
-    return os.path.join(os.path.expanduser("~"), ".claude_blender", "captures")
+    return user_paths.user_data_path("captures")
 
 
 def _default_checkpoint_dir():
-    return os.path.join(os.path.expanduser("~"), ".claude_blender", "checkpoints")
+    return user_paths.user_data_path("checkpoints")
 
 
 class CLAUDEBLENDER_AP_preferences(bpy.types.AddonPreferences):

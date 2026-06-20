@@ -89,9 +89,12 @@ The client should use `run_animation_task` or the animation workflow tools befor
 Local release build:
 
 ```powershell
+blender --command extension validate addon\claude_blender
+python scripts\build_extension_zip.py --blender blender
+blender --command extension validate dist\claude_blender-0.1.0.zip
 python tests\smoke_build_extension_zip.py
 python tests\smoke_extension_repository.py
-python scripts\build_extension_repository.py --build-zip --repo-dir public
+python scripts\build_extension_repository.py --build-zip --blender blender --repo-dir public
 ```
 
 Publish a tagged GitHub release:

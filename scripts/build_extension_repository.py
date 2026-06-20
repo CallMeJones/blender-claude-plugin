@@ -167,12 +167,13 @@ def build_repository(
     repo_dir=DEFAULT_REPO_DIR,
     archive_base_url="",
     build_zip=False,
+    blender="",
     repository_url=DEFAULT_REPOSITORY_URL,
     release_url=DEFAULT_RELEASE_URL,
 ):
     repo_dir = os.path.abspath(repo_dir)
     if build_zip or not zip_path:
-        result = build_extension_zip.build_extension()
+        result = build_extension_zip.build_extension(blender=blender)
         zip_path = result["path"]
     zip_path = os.path.abspath(zip_path)
     if not os.path.exists(zip_path):
@@ -230,6 +231,7 @@ def main(argv=None):
     parser.add_argument("--repo-dir", default=DEFAULT_REPO_DIR)
     parser.add_argument("--archive-base-url", default="", help="Optional absolute URL prefix for archive_url.")
     parser.add_argument("--build-zip", action="store_true", help="Build the extension zip before generating the repository.")
+    parser.add_argument("--blender", default="", help="Optional Blender executable for official extension zip builds.")
     parser.add_argument("--repository-url", default=DEFAULT_REPOSITORY_URL, help="Blender remote repository URL shown on index.html.")
     parser.add_argument("--release-url", default=DEFAULT_RELEASE_URL, help="GitHub release URL shown on index.html.")
     args = parser.parse_args(argv)
@@ -238,6 +240,7 @@ def main(argv=None):
         repo_dir=args.repo_dir,
         archive_base_url=args.archive_base_url,
         build_zip=args.build_zip,
+        blender=args.blender,
         repository_url=args.repository_url,
         release_url=args.release_url,
     )

@@ -21,10 +21,27 @@ import claude_blender  # noqa: E402
 from claude_blender import agent_tools, bridge_protocol, context_budget, context_bundle, docs_index, inspection_render, lab_parity, playblast_capture, tool_dispatcher, viewport_capture  # noqa: E402
 
 
+class _FakeOfflineApp:
+    online_access = False
+    online_access_overriden = True
+
+
+class _FakeOfflineBpy:
+    app = _FakeOfflineApp()
+
+
 def main():
     cache_dir = tempfile.mkdtemp(prefix="claude-blender-docs-")
     try:
         claude_blender.register()
+
+        original_docs_bpy = docs_index.bpy
+        docs_index.bpy = _FakeOfflineBpy()
+        try:
+            offline_error = docs_index._online_access_error()
+            assert "--offline-mode" in offline_error, offline_error
+        finally:
+            docs_index.bpy = original_docs_bpy
 
         bundle = context_bundle.build_context_bundle(bpy.context, include_visual=True)
         public = context_bundle.public_bundle(bundle)

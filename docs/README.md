@@ -13,7 +13,7 @@ Start with the top-level `README.md`, then use these deeper notes for developmen
 - Sampled animation playblast frames are exposed through `blender://playblasts/latest/metadata`, exact playblast metadata resources, and frame PNG resources for animation review.
 - Render thumbnails are exposed through `blender://render-thumbnails/latest`, exact thumbnail resources, and matching metadata resources.
 - Async render jobs are exposed through `blender://render-jobs/latest/metadata`, exact job metadata resources, frame PNG resources, and log resources.
-- Saved `.blend` files store generated captures and playblast frames in project-local `.claude_blender/captures/<session_id>` folders by default. Unsaved or unwritable projects use the global user cache.
+- Saved `.blend` files store generated captures and playblast frames in project-local `.claude_blender/captures/<session_id>` folders by default. Unsaved or unwritable projects use Blender's extension user-data directory, falling back to `~/.claude_blender` only outside extension-aware Blender runtimes.
 - External script trust is runtime-only and can be granted from sidebar presets such as 15 minutes, 1 hour, 4 hours, or the current Blender session.
 - The helper catalog now includes production kits for lighting presets, material palettes, product/vehicle/character refinement, product turntable staging, and scene organization.
 

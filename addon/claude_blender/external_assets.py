@@ -22,12 +22,16 @@ try:
 except ImportError:
     live_preview = None
 
+try:
+    from . import user_paths
+except ImportError:
+    user_paths = None
+
 
 POLY_HAVEN_BASE_URL = "https://api.polyhaven.com"
 POLY_HAVEN_SITE_URL = "https://polyhaven.com"
 SKETCHFAB_BASE_URL = "https://api.sketchfab.com/v3"
 USER_AGENT = "BlenderAgentBridge/0.1 (+https://github.com/CallMeJones/blender-agent-bridge)"
-DEFAULT_CACHE_DIR = os.path.join(os.path.expanduser("~"), ".claude_blender", "assets")
 POLY_HAVEN_LICENSE = "CC0"
 SKETCHFAB_TOKEN_ENV_VAR = "SKETCHFAB_API_TOKEN"
 SKETCHFAB_BRIDGE_TOKEN_ENV_VAR = "BLENDER_AGENT_BRIDGE_SKETCHFAB_API_TOKEN"
@@ -42,7 +46,33 @@ def _bounded_limit(value, default=20, *, maximum=50):
     return max(1, min(int(maximum), result))
 
 
+def _default_cache_dir():
+    if user_paths is not None:
+        return user_paths.user_data_path("assets")
+    return os.path.join(os.path.expanduser("~"), ".claude_blender", "assets")
+
+
+def _online_access_error(provider="external asset"):
+    if bpy is None or bool(getattr(bpy.app, "online_access", True)):
+        return None
+    overridden = bool(getattr(bpy.app, "online_access_overriden", False))
+    if overridden:
+        message = f"{provider} download requires online access, but Blender was started in offline mode."
+    else:
+        message = f"{provider} download requires online access; enable Allow Online Access in Blender preferences."
+    return {
+        "ok": False,
+        "message": message,
+        "error_type": "online_access_disabled",
+        "online_access": False,
+        "online_access_overridden": overridden,
+    }
+
+
 def _fetch_json(url, *, timeout=15):
+    offline_error = _online_access_error("External asset metadata")
+    if offline_error:
+        raise RuntimeError(offline_error["message"])
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
     with urllib.request.urlopen(request, timeout=max(1, int(timeout or 15))) as response:
         data = response.read()
@@ -50,6 +80,9 @@ def _fetch_json(url, *, timeout=15):
 
 
 def _fetch_json_with_headers(url, *, headers=None, timeout=15):
+    offline_error = _online_access_error("External asset metadata")
+    if offline_error:
+        raise RuntimeError(offline_error["message"])
     merged = {"User-Agent": USER_AGENT, "Accept": "application/json"}
     merged.update(headers or {})
     request = urllib.request.Request(url, headers=merged)
@@ -81,7 +114,7 @@ def _sanitize_slug(value, fallback="asset"):
 
 
 def _cache_root(cache_dir=""):
-    root = os.path.abspath(os.path.expanduser(str(cache_dir or DEFAULT_CACHE_DIR)))
+    root = os.path.abspath(os.path.expanduser(str(cache_dir or _default_cache_dir())))
     os.makedirs(root, exist_ok=True)
     return root
 
@@ -150,6 +183,11 @@ def _download_file(url, destination, *, expected_md5="", expected_size=None, hea
     if cached and expected_md5 and _md5_file(destination).lower() != str(expected_md5).lower():
         cached = False
     if not cached:
+        offline_error = _online_access_error("External asset file")
+        if offline_error:
+            offline_error["url"] = str(url)
+            offline_error["path"] = destination
+            return offline_error
         request = urllib.request.Request(str(url), headers={"User-Agent": USER_AGENT, **(headers or {})})
         with urllib.request.urlopen(request, timeout=max(1, int(timeout or 60))) as response:
             with open(destination, "wb") as handle:

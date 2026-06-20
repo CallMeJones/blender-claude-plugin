@@ -16,7 +16,7 @@ import traceback
 import bpy
 from bpy.app.handlers import persistent
 
-from . import audit_log, script_analysis, transcript
+from . import audit_log, script_analysis, transcript, user_paths
 
 PENDING_SCRIPT_NAME = "Agent Bridge Pending Script"
 SCRIPT_LOG_NAME = "Agent Bridge Script Log"
@@ -36,7 +36,7 @@ _runtime_external_trust_session = False
 
 
 def _default_checkpoint_dir():
-    return os.path.join(os.path.expanduser("~"), ".claude_blender", "checkpoints")
+    return user_paths.user_data_path("checkpoints")
 
 
 def _safe_filename(value):

@@ -4,20 +4,9 @@ from __future__ import annotations
 
 import importlib
 
-from . import build_info
-
-bl_info = {
-    "name": build_info.ADDON_NAME,
-    "author": "Michael",
-    "version": build_info.ADDON_VERSION_TUPLE,
-    "blender": build_info.BLENDER_VERSION_MIN_TUPLE,
-    "location": "View3D > Sidebar > Agent Bridge",
-    "description": "Safe Blender bridge for external AI agents",
-    "category": "3D View",
-}
-
 _MODULE_NAMES = (
     "build_info",
+    "user_paths",
     "properties",
     "preferences",
     "context_budget",

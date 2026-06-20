@@ -149,10 +149,20 @@ def _failing_fetch_json(url, *, timeout=15):
     raise TimeoutError(f"offline: {url}")
 
 
+class _FakeOfflineApp:
+    online_access = False
+    online_access_overriden = True
+
+
+class _FakeOfflineBpy:
+    app = _FakeOfflineApp()
+
+
 def main():
     original_fetch_json = external_assets._fetch_json
     original_fetch_json_with_headers = external_assets._fetch_json_with_headers
     original_download_file = external_assets._download_file
+    original_bpy = external_assets.bpy
     external_assets._fetch_json = _fake_fetch_json
     external_assets._fetch_json_with_headers = _fake_fetch_json_with_headers
     external_assets._download_file = _fake_download_file
@@ -251,6 +261,18 @@ def main():
         assert diagnostics["provider_counts"]["poly_haven"] >= 3, diagnostics
         assert diagnostics["provider_counts"]["sketchfab"] >= 1, diagnostics
 
+        external_assets._download_file = original_download_file
+        external_assets.bpy = _FakeOfflineBpy()
+        offline_download = external_assets._download_file(
+            "https://download.example.invalid/blocked.bin",
+            os.path.join(cache_dir, "blocked.bin"),
+        )
+        assert offline_download["ok"] is False, offline_download
+        assert offline_download["error_type"] == "online_access_disabled", offline_download
+        assert offline_download["online_access_overridden"] is True, offline_download
+        external_assets.bpy = original_bpy
+        external_assets._download_file = _fake_download_file
+
         tool_names = {tool["name"] for tool in agent_tools.blender_tool_definitions()}
         for name in (
             "list_poly_haven_categories",
@@ -309,6 +331,7 @@ def main():
         external_assets._fetch_json = original_fetch_json
         external_assets._fetch_json_with_headers = original_fetch_json_with_headers
         external_assets._download_file = original_download_file
+        external_assets.bpy = original_bpy
 
 
 if __name__ == "__main__":

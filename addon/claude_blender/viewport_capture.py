@@ -11,6 +11,8 @@ import uuid
 
 import bpy
 
+from . import user_paths
+
 
 DEFAULT_MAX_BYTES = 5 * 1024 * 1024
 PREVIEW_IMAGE_NAME = "Agent Bridge Viewport Preview"
@@ -23,7 +25,7 @@ _capture_session_id = ""
 
 
 def default_capture_dir():
-    return os.path.join(os.path.expanduser("~"), ".claude_blender", "captures")
+    return user_paths.user_data_path("captures")
 
 
 def capture_session_id():

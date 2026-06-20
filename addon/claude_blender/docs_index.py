@@ -18,7 +18,7 @@ from html.parser import HTMLParser
 
 import bpy
 
-from . import context_budget
+from . import context_budget, user_paths
 
 
 OFFICIAL_DOC_HOSTS = (
@@ -141,7 +141,16 @@ def manual_zip_url(version):
 
 
 def _default_cache_dir():
-    return os.path.join(os.path.expanduser("~"), ".claude_blender", "docs_cache")
+    return user_paths.user_data_path("docs_cache")
+
+
+def _online_access_error():
+    if bool(getattr(bpy.app, "online_access", True)):
+        return ""
+    overridden = bool(getattr(bpy.app, "online_access_overriden", False))
+    if overridden:
+        return "Online access is disabled by Blender command line policy; start Blender without --offline-mode to build docs caches."
+    return "Online access is disabled in Blender preferences; enable Allow Online Access before building docs caches."
 
 
 def _cache_file(cache_dir, version):
@@ -332,6 +341,9 @@ def _safe_extract_zip(zip_path, destination):
 
 
 def _download_zip(url, destination):
+    offline_error = _online_access_error()
+    if offline_error:
+        raise RuntimeError(offline_error)
     os.makedirs(os.path.dirname(destination), exist_ok=True)
     temp_fd, temp_path = tempfile.mkstemp(prefix="docs-download-", suffix=".zip", dir=os.path.dirname(destination))
     os.close(temp_fd)

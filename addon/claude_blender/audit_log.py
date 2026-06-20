@@ -7,9 +7,11 @@ import json
 import os
 import tempfile
 
+try:
+    from . import user_paths
+except ImportError:
+    user_paths = None
 
-DEFAULT_AUDIT_DIR = os.path.join(os.path.expanduser("~"), ".claude_blender")
-DEFAULT_AUDIT_FILE = os.path.join(DEFAULT_AUDIT_DIR, "audit.jsonl")
 MAX_VALUE_CHARS = 500
 MAX_RECENT_LINES = 200
 
@@ -36,7 +38,11 @@ def _now():
 
 
 def audit_path():
-    return os.environ.get("CLAUDE_BLENDER_AUDIT_LOG", DEFAULT_AUDIT_FILE)
+    if user_paths is not None:
+        default_path = user_paths.user_data_path("audit.jsonl")
+    else:
+        default_path = os.path.join(os.path.expanduser("~"), ".claude_blender", "audit.jsonl")
+    return os.environ.get("CLAUDE_BLENDER_AUDIT_LOG", default_path)
 
 
 def _safe_key(key):

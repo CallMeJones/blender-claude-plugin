@@ -143,10 +143,12 @@ Live helper changes remain pending until you use `Commit`, `Revert`, or Blender 
 
 ## Install From Source
 
-Build the extension ZIP from the repository root:
+Build and validate the extension ZIP from the repository root:
 
 ```powershell
-python scripts\build_extension_zip.py
+blender --command extension validate addon\claude_blender
+python scripts\build_extension_zip.py --blender blender
+blender --command extension validate dist\claude_blender-0.1.0.zip
 ```
 
 The build writes:
