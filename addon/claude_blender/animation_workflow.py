@@ -208,6 +208,64 @@ def _generation_tool_calls(brief, chart, *, frame_start, frame_end):
                 requires_live_preview=True,
             )
         )
+    elif action == "orbit":
+        calls.append(
+            _tool_call(
+                "create_directed_animation_shot",
+                {
+                    "shot_type": "orbit_reveal",
+                    "object_names": subject_names,
+                    "selected_only": False,
+                    "frame_start": frame_start,
+                    "frame_end": frame_end,
+                    "scale_start": 1.0,
+                    "scale_end": 1.0,
+                    "rotation_revolutions": 0.0,
+                    "interpolation": "BEZIER",
+                },
+                reason="Use the bounded directed-shot helper for camera orbit staging around the subject.",
+                mutates_scene=True,
+                requires_live_preview=True,
+            )
+        )
+    elif action in {"move", "follow path"}:
+        calls.append(
+            _tool_call(
+                "create_directed_animation_shot",
+                {
+                    "shot_type": "path_slide",
+                    "object_names": subject_names,
+                    "selected_only": False,
+                    "frame_start": frame_start,
+                    "frame_end": frame_end,
+                    "travel_axis": "X",
+                    "travel_distance": 2.0,
+                    "interpolation": "BEZIER",
+                },
+                reason="Use the bounded directed-shot helper for a simple path/slide move before custom path scripting.",
+                mutates_scene=True,
+                requires_live_preview=True,
+            )
+        )
+    elif action == "fall":
+        calls.append(
+            _tool_call(
+                "create_directed_animation_shot",
+                {
+                    "shot_type": "path_slide",
+                    "object_names": subject_names,
+                    "selected_only": False,
+                    "frame_start": frame_start,
+                    "frame_end": frame_end,
+                    "travel_axis": "Z",
+                    "travel_distance": -2.0,
+                    "interpolation": "BEZIER",
+                },
+                reason="Use the bounded directed-shot helper for a simple falling translation before custom physics or path scripting.",
+                mutates_scene=True,
+                requires_live_preview=True,
+            )
+        )
     elif action == "reveal":
         calls.append(
             _tool_call(

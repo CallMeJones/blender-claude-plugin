@@ -22,7 +22,9 @@ ADVANCED_TOOLS = {
     "create_storyboard_panels",
     "create_2d_cutout_layer",
     "apply_procedural_array_stack",
+    "create_procedural_object_kit",
     "create_camera_dolly_animation",
+    "create_directed_animation_shot",
     "add_cloth_simulation_to_selected",
     "create_shader_material",
     "add_geometry_nodes_modifier",
@@ -299,6 +301,50 @@ def main():
         )
         assert dolly["camera"] == "Camera"
         assert dolly["action"] in bpy.data.actions
+
+        object_kit = _execute(
+            context,
+            "create_procedural_object_kit",
+            {
+                "template": "radial_array",
+                "name_prefix": "Agent Bridge Smoke Kit",
+                "location": [3.0, 0.0, 0.0],
+                "count": 6,
+                "radius": 1.4,
+                "height": 0.7,
+            },
+        )
+        assert object_kit["template"] == "radial_array", object_kit
+        assert len(object_kit["objects"]) >= 7, object_kit
+        assert bpy.data.objects[object_kit["objects"][0]].type == "MESH"
+
+        directed = _execute(
+            context,
+            "create_directed_animation_shot",
+            {
+                "shot_type": "path_slide",
+                "object_names": ["Cube"],
+                "selected_only": False,
+                "frame_start": 1,
+                "frame_end": 36,
+                "travel_axis": "X",
+                "travel_distance": 1.25,
+                "camera_name": "Camera",
+            },
+        )
+        assert directed["shot_type"] == "path_slide", directed
+        assert "Cube" in directed["objects"], directed
+        assert directed["camera"] == "Camera", directed
+
+        invalid_directed = json.loads(
+            tool_dispatcher.execute_tool(
+                context,
+                "create_directed_animation_shot",
+                {"camera_name": "Cube", "object_names": ["Cube"], "selected_only": False},
+            )
+        )
+        assert invalid_directed["ok"] is False, invalid_directed
+        assert scene.claude_blender.pending_preview is True, "invalid directed shot must not clear existing preview"
 
         _execute(context, "set_render_settings", {"resolution": [1280, 720], "fps": 30, "frame_start": 1, "frame_end": 48, "film_transparent": True})
         assert scene.render.resolution_x == 1280 and scene.render.resolution_y == 720

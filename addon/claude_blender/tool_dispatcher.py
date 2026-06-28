@@ -2348,6 +2348,23 @@ def apply_procedural_array_stack(context, args):
     )
 
 
+def create_procedural_object_kit(context, args):
+    return advanced_helpers.create_procedural_object_kit(
+        context,
+        template=str(args.get("template") or "kitbash_tower"),
+        name_prefix=str(args.get("name_prefix") or "Agent Bridge Kit"),
+        location=_float_list(args.get("location"), 3, (0.0, 0.0, 0.0)),
+        count=_bounded_int(args.get("count"), 8, minimum=1, maximum=80),
+        radius=float(args.get("radius", 2.0)),
+        spacing=float(args.get("spacing", 1.1)),
+        height=float(args.get("height", 2.0)),
+        primary_color=_float_list(args.get("primary_color"), 4, (0.18, 0.22, 0.27, 1.0)),
+        accent_color=_float_list(args.get("accent_color"), 4, (0.95, 0.62, 0.18, 1.0)),
+        add_detail_modifiers=bool(args.get("add_detail_modifiers", True)),
+        label=args.get("label", "Create procedural object kit"),
+    )
+
+
 def create_camera_dolly_animation(context, args):
     return advanced_helpers.create_camera_dolly_animation(
         context,
@@ -2361,6 +2378,29 @@ def create_camera_dolly_animation(context, args):
         lens_end=args.get("lens_end"),
         interpolation=str(args.get("interpolation") or "BEZIER"),
         label=args.get("label", "Create camera dolly animation"),
+    )
+
+
+def create_directed_animation_shot(context, args):
+    return advanced_helpers.create_directed_animation_shot(
+        context,
+        shot_type=str(args.get("shot_type") or "camera_push_reveal"),
+        object_names=_name_list(args.get("object_names")),
+        selected_only=bool(args.get("selected_only", True)),
+        frame_start=int(args.get("frame_start", context.scene.frame_start)),
+        frame_end=int(args.get("frame_end", context.scene.frame_end)),
+        travel_axis=str(args.get("travel_axis") or "X"),
+        travel_distance=float(args.get("travel_distance", 2.0)),
+        scale_start=float(args.get("scale_start", 0.2)),
+        scale_end=float(args.get("scale_end", 1.0)),
+        rotation_revolutions=float(args.get("rotation_revolutions", 1.0)),
+        camera_name=str(args.get("camera_name") or ""),
+        target_name=str(args.get("target_name") or ""),
+        create_camera=bool(args.get("create_camera", True)),
+        lens_start=args.get("lens_start"),
+        lens_end=args.get("lens_end"),
+        interpolation=str(args.get("interpolation") or "BEZIER"),
+        label=args.get("label", "Create directed animation shot"),
     )
 
 
@@ -3496,7 +3536,9 @@ TOOL_FUNCTIONS = {
     "create_storyboard_panels": create_storyboard_panels,
     "create_2d_cutout_layer": create_2d_cutout_layer,
     "apply_procedural_array_stack": apply_procedural_array_stack,
+    "create_procedural_object_kit": create_procedural_object_kit,
     "create_camera_dolly_animation": create_camera_dolly_animation,
+    "create_directed_animation_shot": create_directed_animation_shot,
     "add_cloth_simulation_to_selected": add_cloth_simulation_to_selected,
     "create_empty": create_empty,
     "set_object_visibility": set_object_visibility,

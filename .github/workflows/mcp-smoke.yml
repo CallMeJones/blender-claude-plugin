@@ -46,6 +46,7 @@ jobs:
           tests\smoke_release_consistency.py
           tests\smoke_script_analysis.py
           tests\smoke_mcp_server.py
+          tests\smoke_tool_contract_inventory.py
 
       - name: Run audit log smoke test
         run: python tests\smoke_audit_log.py
@@ -67,6 +68,9 @@ jobs:
 
       - name: Run stdio MCP smoke test
         run: python tests\smoke_mcp_server.py
+
+      - name: Run tool contract inventory smoke test
+        run: python tests\smoke_tool_contract_inventory.py
 
       - name: Build extension zip and GitHub Pages repository
         run: >

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Added a Blender sidebar Bridge Control Center with source-hash diagnostics, MCP refresh guidance, active/last operation state, audit preview controls, live-preview manifest details, and latest visual-evidence inventory.
+- Added bounded `create_procedural_object_kit` templates for kitbash towers, radial arrays, scatter grids, and product stacks, all using live-preview rollback.
+- Added bounded `create_directed_animation_shot` templates for camera push/reveal, orbit reveal, product turntable, path slide, staggered reveal, and storyboard dolly shots.
+- Expanded animation workflow generation so move/path/orbit/fall prompts can route through directed shot helpers before script fallback.
+- Added smoke coverage for the sidebar control center, audit log preview, visual evidence inventory, object-kit helpers, directed-shot helpers, and MCP search routing.
 - Hardened the optional live Pages smoke so it downloads the advertised extension ZIP and verifies the repository index hash and archive size.
 - Updated the release workflow to current Node 24-compatible official GitHub Actions.
 - Polished MCP client routing so external asset requests prefer async download/cache jobs and queued import jobs over synchronous fallback tools without misrouting ordinary material texture edits.

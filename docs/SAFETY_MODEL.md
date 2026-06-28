@@ -66,6 +66,7 @@ Defaults and boundaries:
 - External script trust also does not bypass helper-first routing for common helper-covered work; clients should follow `recommended_tools` rather than retrying the same draft.
 - Viewport screenshots, sampled animation playblast frames, inspection renders, render thumbnails, and async render-job outputs exposed through MCP resources are local artifacts. Saved `.blend` files use a project-local `.claude_blender/captures/` folder by default, while unsaved or unwritable projects use Blender's extension user-data directory. Async render jobs launch a background Blender process from a temporary `.blend` copy and can be cancelled with `cancel_render_job` while the bridge session is tracking the process.
 - MCP search summaries, schema lookups, and tool-call results may include `guardrail_warnings` for client routing and recovery. These warnings are advisory; Blender-side path checks, approval gates, preview rollback, and static script analysis remain the enforcement layer.
+- The Blender sidebar Bridge Control Center surfaces source-hash freshness, stale MCP-client hints, active/last operation state, audit summaries, live-preview rollback manifests, and latest visual evidence inventory so users can inspect state before rerunning tools.
 - External clients should surface tool calls clearly because MCP tools are model-controlled.
 
 ## Risk Checks

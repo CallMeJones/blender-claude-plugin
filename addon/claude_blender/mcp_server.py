@@ -105,6 +105,8 @@ ANIMATION_ROUTE_TERMS = {
     "anticipation",
     "contact",
     "spacing",
+    "directed shot",
+    "shot template",
 }
 ANIMATION_ROUTE_TOOLS = {
     "run_animation_task",
@@ -119,6 +121,7 @@ ANIMATION_ROUTE_TOOLS = {
     "review_inspection_renders_against_brief",
     "repair_animation_from_findings",
     "run_animation_repair_loop",
+    "create_directed_animation_shot",
     "capture_animation_playblast",
     "set_rig_pose_hold",
     "set_rig_custom_property_keyframes",
@@ -145,6 +148,12 @@ ADVANCED_ROUTE_TERMS = {
     "cloth simulation",
     "camera dolly",
     "dolly shot",
+    "directed shot",
+    "shot template",
+    "object kit",
+    "kitbash",
+    "scatter grid",
+    "radial array",
 }
 ADVANCED_ROUTE_TOOLS = {
     "plan_advanced_scene_workflow",
@@ -152,13 +161,15 @@ ADVANCED_ROUTE_TOOLS = {
     "create_storyboard_panels",
     "create_2d_cutout_layer",
     "apply_procedural_array_stack",
+    "create_procedural_object_kit",
     "create_camera_dolly_animation",
+    "create_directed_animation_shot",
     "add_cloth_simulation_to_selected",
 }
 TWO_D_ROUTE_TERMS = {"advanced 2d", "storyboard", "animatic", "cutout", "cut-out", "motion graphics", "grease pencil"}
-PROCEDURAL_ROUTE_TERMS = {"advanced 3d", "procedural", "array stack", "modifier stack", "hard surface"}
+PROCEDURAL_ROUTE_TERMS = {"advanced 3d", "procedural", "array stack", "modifier stack", "hard surface", "object kit", "kitbash", "scatter grid", "radial array"}
 SIMULATION_SETUP_ROUTE_TERMS = {"cloth simulation", "cloth sim", "simulation setup", "physics setup"}
-CAMERA_MOVE_ROUTE_TERMS = {"camera dolly", "dolly shot", "camera move", "camera animation", "lens keyframe"}
+CAMERA_MOVE_ROUTE_TERMS = {"camera dolly", "dolly shot", "camera move", "camera animation", "lens keyframe", "directed shot", "shot template"}
 GENERIC_SELECTED_OBJECT_TOOLS = {
     "set_selected_location_delta",
     "set_selected_transform",
@@ -531,9 +542,9 @@ PROMPTS = {
             "Handle this advanced Blender task through helper-first planning: {goal}\n\n"
             "Call plan_advanced_scene_workflow first when the helper path is not obvious. For 2D, storyboard, "
             "animatic, cutout, or motion-graphics tasks, call get_2d_animation_details, then prefer "
-            "create_storyboard_panels, create_2d_cutout_layer, create_camera_dolly_animation, and visual review. "
-            "For procedural 3D modifier-stack tasks, inspect geometry nodes when relevant and prefer "
-            "apply_procedural_array_stack before custom geometry scripts. For cloth setup, use "
+            "create_storyboard_panels, create_2d_cutout_layer, create_camera_dolly_animation, create_directed_animation_shot, "
+            "and visual review. For procedural 3D modifier-stack or object-kit tasks, inspect geometry nodes when relevant "
+            "and prefer create_procedural_object_kit or apply_procedural_array_stack before custom geometry scripts. For cloth setup, use "
             "add_cloth_simulation_to_selected, then get_simulation_details or inspect_simulation_bake before any "
             "persistent bake. Use draft_script only after the planner or helper result identifies an explicit helper gap."
         ),
@@ -1187,6 +1198,8 @@ def _score_tool_match(tool, query):
             score += 1000
         elif name == "run_animation_workflow":
             score += 950
+        elif name == "create_directed_animation_shot":
+            score += 700
         elif name in ANIMATION_ROUTE_TOOLS:
             score += 500
         elif category == "animation":
@@ -1197,14 +1210,16 @@ def _score_tool_match(tool, query):
             score -= 1000
     if advanced_query:
         if name == "plan_advanced_scene_workflow":
-            score += 1100
+            score += 3000
         if two_d_query:
             if name == "get_2d_animation_details":
                 score += 900
             elif name in {"create_storyboard_panels", "create_2d_cutout_layer"}:
                 score += 800
         if procedural_query:
-            if name == "apply_procedural_array_stack":
+            if name == "create_procedural_object_kit":
+                score += 950
+            elif name == "apply_procedural_array_stack":
                 score += 900
             elif name in {"get_geometry_nodes_details", "add_geometry_nodes_modifier", "add_bevel_and_subsurf"}:
                 score += 500
@@ -1214,7 +1229,9 @@ def _score_tool_match(tool, query):
             elif name in {"get_simulation_details", "inspect_simulation_bake", "stage_persistent_simulation_bake"}:
                 score += 650
         if camera_move_query:
-            if name == "create_camera_dolly_animation":
+            if name == "create_directed_animation_shot":
+                score += 950
+            elif name == "create_camera_dolly_animation":
                 score += 900
             elif name in {"set_camera_settings", "capture_animation_playblast"}:
                 score += 450

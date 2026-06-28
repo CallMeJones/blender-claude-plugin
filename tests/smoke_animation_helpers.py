@@ -290,6 +290,22 @@ def main():
         assert not any("scale" in item for item in plan["generation_blockers"]), plan
         assert not scene.claude_blender.pending_preview
 
+        move_workflow = _execute(
+            context,
+            "plan_animation_workflow",
+            {
+                "prompt": "Move the cube across the frame over 48 frames with a camera shot.",
+                "subject_names": ["Cube"],
+                "frame_start": 1,
+                "frame_end": 48,
+                "mode": "full",
+            },
+        )
+        move_plan = move_workflow["workflow"]
+        move_call_names = [call["name"] for call in move_plan["next_tool_calls"]]
+        assert "create_directed_animation_shot" in move_call_names, move_plan
+        assert not move_plan["generation_blockers"], move_plan
+
         workflow_run = _execute(
             context,
             "run_animation_workflow",

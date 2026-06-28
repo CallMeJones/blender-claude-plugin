@@ -51,6 +51,8 @@ AI agents are getting good at using tools, but Blender needs guardrails. This br
 - Blender stays the execution layer: scene state, viewport evidence, preview changes, approvals, checkpoints, and local resources.
 - The external client stays the agent host: model connection, conversation memory, provider account, planning, and user chat.
 - Generated Python is not the default path. Agents get structured helpers first, and arbitrary scripts stay approval-gated unless the user grants runtime session trust.
+- The Blender sidebar includes a Bridge Control Center for source-hash freshness, stale MCP-client hints, active/last operation state, audit events, live-preview rollback manifests, and latest visual evidence resources.
+- Advanced helper paths include bounded procedural object kits and directed animation shot templates before custom Python fallback.
 
 ## Showcase: Egypt Dogfight
 

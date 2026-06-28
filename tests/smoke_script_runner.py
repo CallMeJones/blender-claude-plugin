@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.join(ROOT, "addon"))
 import claude_blender  # noqa: E402
 from claude_blender import (  # noqa: E402
     agent_tools,
+    audit_log,
     bridge_protocol,
     bridge_server,
     build_info,
@@ -79,6 +80,32 @@ def main():
         assert "SKETCHFAB_API_TOKEN" in env["BLENDER_AGENT_BRIDGE_EXTERNAL_AUTH_NOTE"], env
         assert "BLENDER_BRIDGE_TOKEN" not in env, env
         assert f"MCP config v{build_info.MCP_CONFIG_VERSION}" in state.status, state.status
+
+        audit_log.append_event("ui_audit_smoke", tool_name="copy_mcp_config", ok=True)
+        refreshed_audit = bpy.ops.claude_blender.refresh_audit_log()
+        assert "FINISHED" in refreshed_audit, refreshed_audit
+        assert audit_log.AUDIT_LOG_TEXT_NAME in bpy.data.texts
+        audit_text = bpy.data.texts[audit_log.AUDIT_LOG_TEXT_NAME].as_string()
+        assert "ui_audit_smoke" in audit_text, audit_text
+        assert state.audit_log_text_name == audit_log.AUDIT_LOG_TEXT_NAME, state.audit_log_text_name
+        assert "event(s)" in state.audit_log_status, state.audit_log_status
+
+        refreshed_preview = bpy.ops.claude_blender.refresh_preview_manifest()
+        assert "FINISHED" in refreshed_preview, refreshed_preview
+        assert "Claude Preview Manifest" in bpy.data.texts
+        assert "No preview transaction" in state.preview_manifest_status, state.preview_manifest_status
+
+        refreshed_visual = bpy.ops.claude_blender.refresh_visual_evidence()
+        assert "FINISHED" in refreshed_visual, refreshed_visual
+        assert "Claude Visual Evidence" in bpy.data.texts
+        assert "tracked resource" in state.visual_evidence_status or "available" in state.visual_evidence_status, state.visual_evidence_status
+
+        refreshed_center = bpy.ops.claude_blender.refresh_control_center()
+        assert "FINISHED" in refreshed_center, refreshed_center
+        assert "Claude Bridge Control Center" in bpy.data.texts
+        center_text = bpy.data.texts["Claude Bridge Control Center"].as_string()
+        assert "bridge" in center_text and "visual_evidence" in center_text, center_text
+        assert "MCP" in state.bridge_diagnostics_status, state.bridge_diagnostics_status
 
         internal_tool_names = {tool["name"] for tool in agent_tools.blender_tool_definitions()}
         assert "run_approved_script" not in internal_tool_names

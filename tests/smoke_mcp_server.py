@@ -950,6 +950,14 @@ def main():
                 {"apply_procedural_array_stack"},
             ),
             (
+                "Create an advanced procedural object kit with a kitbash scatter grid.",
+                {"create_procedural_object_kit"},
+            ),
+            (
+                "Create a directed shot template with a camera push reveal.",
+                {"create_directed_animation_shot"},
+            ),
+            (
                 "Add cloth simulation setup and inspect it before any bake.",
                 {"add_cloth_simulation_to_selected", "get_simulation_details"},
             ),
@@ -1814,6 +1822,8 @@ def main():
         assert "plan_advanced_scene_workflow" in advanced_prompt_text, advanced_prompt
         assert "create_storyboard_panels" in advanced_prompt_text, advanced_prompt
         assert "apply_procedural_array_stack" in advanced_prompt_text, advanced_prompt
+        assert "create_procedural_object_kit" in advanced_prompt_text, advanced_prompt
+        assert "create_directed_animation_shot" in advanced_prompt_text, advanced_prompt
         assert "add_cloth_simulation_to_selected" in advanced_prompt_text, advanced_prompt
         asset_prompt = _send(
             proc,

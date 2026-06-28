@@ -19,14 +19,14 @@ AGENT_GUIDANCE = (
     "When the user asks to change the scene, use safe helper tools first so Blender changes immediately. "
     "Use direct Blender data concepts: objects, collections, materials, cameras, lights, actions, keyframes. "
     "For advanced 3D, 2D/storyboard, animation, simulation, compositor/render, or script-heavy tasks, call plan_advanced_scene_workflow first when the helper path is not obvious. It returns domain-specific helpers and script fallback boundaries. "
-    "For scene building and layout, prefer create_primitive, create_empty, duplicate_selected_objects, parent_selected_to_empty, align_selected_objects, distribute_selected_objects, set_object_visibility, set_object_display, assign_material_to_selected, assign_emission_material_to_selected, create_shader_material, create_text_object, create_curve_path, create_collection, link_selected_to_collection, add_light, add_camera, add_modifier_to_selected, add_geometry_nodes_modifier, apply_procedural_array_stack, add_track_to_constraint, add_copy_transform_constraint, create_basic_armature, add_particle_system_to_selected, add_cloth_simulation_to_selected, set_render_settings, set_camera_settings, and set_world_background. "
+    "For scene building and layout, prefer create_primitive, create_empty, duplicate_selected_objects, parent_selected_to_empty, align_selected_objects, distribute_selected_objects, set_object_visibility, set_object_display, assign_material_to_selected, assign_emission_material_to_selected, create_shader_material, create_text_object, create_curve_path, create_collection, link_selected_to_collection, add_light, add_camera, add_modifier_to_selected, add_geometry_nodes_modifier, apply_procedural_array_stack, create_procedural_object_kit, add_track_to_constraint, add_copy_transform_constraint, create_basic_armature, add_particle_system_to_selected, add_cloth_simulation_to_selected, set_render_settings, set_camera_settings, and set_world_background. "
     "For 2D, storyboard, animatic, cutout, or motion-graphics work, inspect first with get_2d_animation_details, then prefer create_storyboard_panels, create_2d_cutout_layer, create_camera_dolly_animation, capture_animation_playblast, and render jobs before drafting custom Grease Pencil or SVG Python. "
-    "For model refinement and production presentation, prefer shade_smooth_selected, add_bevel_and_subsurf, apply_procedural_array_stack, create_wheel_assembly, add_panel_seams, add_window_materials, apply_vehicle_refinement_template, apply_product_refinement_template, apply_character_refinement_template, create_studio_product_stage, add_dimension_callouts, apply_lighting_preset, create_material_palette, create_product_turntable_setup, and organize_scene_for_production when they fit the task. "
+    "For model refinement and production presentation, prefer shade_smooth_selected, add_bevel_and_subsurf, apply_procedural_array_stack, create_procedural_object_kit, create_wheel_assembly, add_panel_seams, add_window_materials, apply_vehicle_refinement_template, apply_product_refinement_template, apply_character_refinement_template, create_studio_product_stage, add_dimension_callouts, apply_lighting_preset, create_material_palette, create_product_turntable_setup, and organize_scene_for_production when they fit the task. "
     "For shape-key animation, prefer create_shape_key and animate_shape_key before drafting Python. "
     "For quick animation playblasts and visual review, use low-resolution preview defaults unless the user explicitly asks for HD/final/1080p/4K quality. For long-running or high-resolution renders, frame sequences, 1080p/4K previews, or MP4 quality checks, use start_render_job and poll get_render_job_status instead of blocking render_scene_thumbnail, capture tools, or draft_script; report the returned rough estimate/poll interval to the user; use assemble_render_job_video for PNG sequences and validate_render_job_output before reporting success; use cancel_render_job if the user wants to stop it. If a render, playblast, or visual-review tool times out, treat it as recoverable: wait the returned poll_after_seconds, call blender_bridge_status, inspect get_visual_evidence_resources and the audit log, and only rerun if no artifact/result appears. "
     "For simulation setup, prefer add_cloth_simulation_to_selected or add_particle_system_to_selected for bounded setup, then inspect with get_simulation_details or inspect_simulation_bake. For persistent simulation/cache bakes or cache-freeing operations, use stage_persistent_simulation_bake for a fixed approval-gated script. Session-wide external script trust is not enough for bpy.ops.fluid.* or bpy.ops.ptcache.* bake/free operators; they require explicit one-time user approval. Do not hand the user a checkpoint or recovery .blend path unless you just verified that it exists and is restorable through checkpoint metadata, diagnostics, or a filesystem check. "
     "For external assets, use list_poly_haven_categories and search_poly_haven_assets/search_sketchfab_models for discovery, inspect_poly_haven_asset_files before choosing Poly Haven formats, then use start_external_asset_download for any download/cache or import request. Poll get_external_asset_job_status until completed or failed. For scene import, call start_external_asset_import_job and poll get_external_asset_import_job_status until completed or failed. Use download_poly_haven_asset, import_poly_haven_asset, download_sketchfab_model, import_sketchfab_model, and import_external_asset_job_result only for explicit synchronous fallback/debug cases. Use get_external_asset_cache_diagnostics to report cached/imported assets. Sketchfab API tokens must be provided per call or through the MCP server environment, not Blender preferences. "
-    "For animation generation, review, or repair, call run_animation_task for simple prompt-in/task-out use, or call plan_animation_workflow first when you need manual control of the generated workflow. plan_animation_workflow returns the brief, scene routing, timing chart, ordered helper calls, evaluator calls, repair calls, and script fallback rules. For common helper-backed generation, call run_animation_workflow to execute the plan, review the result, optionally capture playblast evidence, and leave changes in preview. Use any animation_brief in context as the prompt contract; otherwise call create_animation_brief first when the prompt needs an explicit contract, success criteria, or later validation. Call get_animation_scene_context before advanced animation in scenes with rigs, constraints, drivers, shape keys, physics, or unclear edit targets so you know whether to animate object transforms, rig controls, shape keys, materials, physics, or camera settings. Use create_timing_chart, block_key_poses, add_breakdown_pose, set_pose_hold, set_rig_pose_hold, get_rig_pose_library_details, apply_rig_pose_from_action, apply_rig_pose_marker, apply_rig_action_clip, offset_rig_limb_controls, set_rig_custom_property_keyframes, create_camera_dolly_animation, and create_motion_arc for animator-style blocking before spline/f-curve polish; use rig pose/action helpers only after identifying armature controls, pose-library candidates, or existing scalar IK/FK/space properties through rig inspection or repair metadata. Then use analyze_animation_principles plus focused analyzers to check timing, spacing, arcs, pose clarity, anticipation, squash/stretch, contact, center-of-mass support, speed/acceleration plausibility, simulation cache readiness, and settle before repair; use inspect_simulation_bake before persistent bake decisions, and use stage_persistent_simulation_bake when the user intentionally wants a persistent point-cache bake. Use capture_animation_playblast and review_playblast_against_brief when visual frame evidence matters; use capture_object_inspection_renders and review_inspection_renders_against_brief when close-up object detail evidence matters; if review or repair tools return repair_operations, prefer run_animation_repair_loop for bounded helper repair and review-again behavior, or execute relevant tool_call name/input entries deliberately when manual control is needed. Then prefer set_scene_frame_range, set_animation_preview_range, animate_selected_transform, animate_object_bounce, create_progressive_bounce_animation, animate_material_property, animate_light_property, create_follow_path_animation, create_turntable_animation, create_pulse_animation, create_reveal_animation, create_staggered_motion, set_action_interpolation, retime_actions, add_action_cycles, clear_animation, create_camera_dolly_animation, and create_camera_orbit. "
+    "For animation generation, review, or repair, call run_animation_task for simple prompt-in/task-out use, or call plan_animation_workflow first when you need manual control of the generated workflow. plan_animation_workflow returns the brief, scene routing, timing chart, ordered helper calls, evaluator calls, repair calls, and script fallback rules. For common helper-backed generation, call run_animation_workflow to execute the plan, review the result, optionally capture playblast evidence, and leave changes in preview. Use any animation_brief in context as the prompt contract; otherwise call create_animation_brief first when the prompt needs an explicit contract, success criteria, or later validation. Call get_animation_scene_context before advanced animation in scenes with rigs, constraints, drivers, shape keys, physics, or unclear edit targets so you know whether to animate object transforms, rig controls, shape keys, materials, physics, or camera settings. Use create_timing_chart, block_key_poses, add_breakdown_pose, set_pose_hold, set_rig_pose_hold, get_rig_pose_library_details, apply_rig_pose_from_action, apply_rig_pose_marker, apply_rig_action_clip, offset_rig_limb_controls, set_rig_custom_property_keyframes, create_directed_animation_shot, create_camera_dolly_animation, and create_motion_arc for animator-style blocking before spline/f-curve polish; use rig pose/action helpers only after identifying armature controls, pose-library candidates, or existing scalar IK/FK/space properties through rig inspection or repair metadata. Then use analyze_animation_principles plus focused analyzers to check timing, spacing, arcs, pose clarity, anticipation, squash/stretch, contact, center-of-mass support, speed/acceleration plausibility, simulation cache readiness, and settle before repair; use inspect_simulation_bake before persistent bake decisions, and use stage_persistent_simulation_bake when the user intentionally wants a persistent point-cache bake. Use capture_animation_playblast and review_playblast_against_brief when visual frame evidence matters; use capture_object_inspection_renders and review_inspection_renders_against_brief when close-up object detail evidence matters; if review or repair tools return repair_operations, prefer run_animation_repair_loop for bounded helper repair and review-again behavior, or execute relevant tool_call name/input entries deliberately when manual control is needed. Then prefer set_scene_frame_range, set_animation_preview_range, animate_selected_transform, animate_object_bounce, create_progressive_bounce_animation, animate_material_property, animate_light_property, create_follow_path_animation, create_turntable_animation, create_pulse_animation, create_reveal_animation, create_staggered_motion, create_directed_animation_shot, set_action_interpolation, retime_actions, add_action_cycles, clear_animation, create_camera_dolly_animation, and create_camera_orbit. "
     "For complex scene builds that need many objects or more than about eight helper calls, stage one cohesive Blender Python script with draft_script instead of making a long chain of helper calls. "
     "When helper tools cannot express the requested edit, use draft_script to stage Blender Python for user approval; if the user has granted external script trust, draft_script may auto-run after static checks. "
     "When calling draft_script, put the complete Python source in the code field. Do not put script code in final chat text for the user to paste manually. "
@@ -2234,6 +2234,30 @@ def blender_tool_definitions():
             },
         },
         {
+            "name": "create_procedural_object_kit",
+            "description": "Create a reversible procedural object kit from bounded templates such as kitbash towers, radial arrays, scatter grids, or product stacks. Use before custom mesh or geometry-node scripts.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "template": {
+                        "type": "string",
+                        "enum": ["kitbash_tower", "radial_array", "scatter_grid", "product_stack"],
+                    },
+                    "name_prefix": {"type": "string"},
+                    "location": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
+                    "count": {"type": "integer", "minimum": 1, "maximum": 80},
+                    "radius": {"type": "number"},
+                    "spacing": {"type": "number"},
+                    "height": {"type": "number"},
+                    "primary_color": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 4},
+                    "accent_color": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 4},
+                    "add_detail_modifiers": {"type": "boolean"},
+                    "label": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+        },
+        {
             "name": "create_camera_dolly_animation",
             "description": "Create a camera dolly/shot move with location keyframes, optional target tracking, and optional lens keyframes. Applies immediately with preview revert support.",
             "input_schema": {
@@ -2245,6 +2269,60 @@ def blender_tool_definitions():
                     "frame_end": {"type": "integer"},
                     "start_location": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
                     "end_location": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
+                    "lens_start": {"type": "number"},
+                    "lens_end": {"type": "number"},
+                    "interpolation": {
+                        "type": "string",
+                        "enum": [
+                            "CONSTANT",
+                            "LINEAR",
+                            "BEZIER",
+                            "SINE",
+                            "QUAD",
+                            "CUBIC",
+                            "QUART",
+                            "QUINT",
+                            "EXPO",
+                            "CIRC",
+                            "BACK",
+                            "BOUNCE",
+                            "ELASTIC",
+                        ],
+                    },
+                    "label": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "create_directed_animation_shot",
+            "description": "Create a reversible director-style animation shot template: camera push reveal, orbit reveal, product turntable, path slide, staggered reveal, or storyboard dolly.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "shot_type": {
+                        "type": "string",
+                        "enum": [
+                            "camera_push_reveal",
+                            "orbit_reveal",
+                            "product_turntable",
+                            "path_slide",
+                            "staggered_reveal",
+                            "storyboard_dolly",
+                        ],
+                    },
+                    "object_names": {"type": "array", "items": {"type": "string"}},
+                    "selected_only": {"type": "boolean"},
+                    "frame_start": {"type": "integer"},
+                    "frame_end": {"type": "integer"},
+                    "travel_axis": {"type": "string", "enum": ["X", "Y", "Z"]},
+                    "travel_distance": {"type": "number"},
+                    "scale_start": {"type": "number"},
+                    "scale_end": {"type": "number"},
+                    "rotation_revolutions": {"type": "number"},
+                    "camera_name": {"type": "string"},
+                    "target_name": {"type": "string"},
+                    "create_camera": {"type": "boolean"},
                     "lens_start": {"type": "number"},
                     "lens_end": {"type": "number"},
                     "interpolation": {
@@ -3169,6 +3247,7 @@ _TOOL_GROUPS = {
         "plan_animation_workflow",
         "run_animation_workflow",
         "run_animation_task",
+        "create_directed_animation_shot",
         "analyze_motion_arcs",
         "analyze_fcurve_spacing",
         "analyze_pose_clarity",
@@ -3215,6 +3294,7 @@ _TOOL_GROUPS = {
         "offset_rig_limb_controls",
         "create_motion_arc",
         "create_camera_dolly_animation",
+        "create_directed_animation_shot",
         "create_camera_orbit",
         "capture_animation_playblast",
         "animate_shape_key",
@@ -3458,6 +3538,7 @@ _TOOL_GROUPS = {
         "create_storyboard_panels",
         "create_2d_cutout_layer",
         "create_camera_dolly_animation",
+        "create_directed_animation_shot",
         "capture_animation_playblast",
         "render_scene_thumbnail",
         "start_render_job",
@@ -3466,6 +3547,7 @@ _TOOL_GROUPS = {
         "plan_advanced_scene_workflow",
         "get_geometry_nodes_details",
         "apply_procedural_array_stack",
+        "create_procedural_object_kit",
         "add_geometry_nodes_modifier",
         "shade_smooth_selected",
         "add_bevel_and_subsurf",
@@ -3480,7 +3562,7 @@ _TOOL_GROUPS = {
         "stage_persistent_simulation_bake",
     },
     "particles": {"get_simulation_details", "inspect_simulation_bake", "stage_persistent_simulation_bake", "add_particle_system_to_selected", "add_cloth_simulation_to_selected"},
-    "geometry_nodes": {"get_geometry_nodes_details", "add_geometry_nodes_modifier", "apply_procedural_array_stack"},
+    "geometry_nodes": {"get_geometry_nodes_details", "add_geometry_nodes_modifier", "apply_procedural_array_stack", "create_procedural_object_kit"},
     "preview_control": {"commit_preview", "revert_preview"},
 }
 
@@ -3488,12 +3570,12 @@ _GROUP_KEYWORDS = {
     "selection": {"select", "selected", "active", "frame", "playhead", "inspect", "workspace", "tab", "focus", "viewport focus", "front view", "top view", "camera view"},
     "basic_edit": {"make", "create", "add", "move", "scale", "rotate", "transform", "object", "primitive", "empty", "marker", "collection", "duplicate", "copy", "parent", "align", "distribute", "layout", "arrange", "hide", "unhide", "visibility", "visible", "display", "wireframe", "show name", "in front"},
     "materials": {"material", "shader", "color", "colour", "red", "blue", "green", "metal", "metallic", "chrome", "glass", "emission", "glow", "window"},
-    "animation": {"animate", "animation", "animation brief", "prompt contract", "success criteria", "timing chart", "key pose", "key poses", "hold", "breakdown", "keyframe", "timeline", "frame", "orbit", "dolly", "camera move", "bounce", "driver", "motion", "motion arc", "arc", "follow path", "path", "retime", "interpolation", "easing", "loop", "cycles", "turntable", "pulse", "reveal", "stagger", "playblast", "timing", "spacing", "blocking", "anticipation", "squash", "stretch", "settle", "follow-through", "principles", "center of mass", "support", "contact sliding", "simulation", "physics bake", "persistent bake"},
+    "animation": {"animate", "animation", "animation brief", "prompt contract", "success criteria", "timing chart", "key pose", "key poses", "hold", "breakdown", "keyframe", "timeline", "frame", "orbit", "dolly", "camera move", "bounce", "driver", "motion", "motion arc", "arc", "follow path", "path", "retime", "interpolation", "easing", "loop", "cycles", "turntable", "pulse", "reveal", "stagger", "playblast", "timing", "spacing", "blocking", "anticipation", "squash", "stretch", "settle", "follow-through", "principles", "center of mass", "support", "contact sliding", "simulation", "physics bake", "persistent bake", "directed shot", "shot template"},
     "camera_render": {"camera", "render", "render job", "render output", "output resource", "quality check", "thumbnail", "still", "mp4", "video assembly", "assemble video", "validate render", "1080p", "4k", "frame sequence", "samples", "light", "lighting", "world", "background", "dof", "depth of field", "lens", "compositor", "compositing", "post process", "alpha", "transparent", "resolution", "intensity", "studio", "product stage", "presentation", "close-up", "closeup", "underside"},
     "project_files": {"save", "save as", "save-as", "save copy", "autosave", "auto save", "open blend", "open file", "load blend", "new project", "create project", "blend file", ".blend", "project folder", "project directory", "checkpoint"},
     "deep_inspect": {"inspect", "analyze", "analyse", "summarize", "summary", "details", "world model", "what", "list", "screenshot", "viewport", "visual", "visual evidence", "evidence resource", "resource uri", "image", "capture", "playblast", "review", "diagnostic", "diagnostics", "missing external", "linked library", "linked libraries", "blend file", "data-block", "datablock", "backup", "workspace", "layout json", "underside", "gear"},
     "external_assets": {"asset", "assets", "asset catalog", "asset library", "external asset", "external assets", "asset cache", "cache diagnostics", "poly haven", "polyhaven", "sketchfab", "hdri", "hdris", "environment map", "texture", "textures", "model library", "download model", "download asset", "import model", "import asset", "import hdri", "import texture", "sketchfab uid"},
-    "advanced_create": {"advanced", "advanced 3d", "advanced 2d", "geometry nodes", "shape key", "text", "curve", "particle", "armature", "constraint", "rig", "driver", "callout", "dimension", "label", "palette", "swatch", "organize", "collection", "cutout", "storyboard", "animatic", "procedural array"},
+    "advanced_create": {"advanced", "advanced 3d", "advanced 2d", "geometry nodes", "shape key", "text", "curve", "particle", "armature", "constraint", "rig", "driver", "callout", "dimension", "label", "palette", "swatch", "organize", "collection", "cutout", "storyboard", "animatic", "procedural array", "object kit", "kitbash", "scatter grid", "radial array", "directed shot", "shot template"},
     "refinement": {"refine", "polish", "smooth", "high poly", "high-poly", "detail", "bevel", "subdivision", "subsurf", "seam", "panel", "dimension", "callout", "stage", "palette", "lighting", "modifier stack"},
     "vehicle": {"car", "vehicle", "truck", "wheel", "tire", "tyre", "rim", "headlight", "taillight", "windshield", "door", "grille"},
     "product": {"product", "catalog", "catalogue", "packshot", "presentation", "hero shot", "studio shot"},
@@ -3502,10 +3584,10 @@ _GROUP_KEYWORDS = {
     "curves_text": {"curve", "path", "text", "label", "spline"},
     "advanced_workflow": {"advanced workflow", "advanced 3d", "advanced 2d", "advanced animation", "helper path", "helper gap", "which tools", "what tools", "workflow plan"},
     "two_d_storyboard": {"2d", "two dimensional", "storyboard", "animatic", "storyboard panel", "storyboard panels", "2d panel", "2d panels", "cutout", "cut-out", "motion graphic", "motion graphics", "grease pencil", "grease-pencil", "2d animation"},
-    "procedural_3d": {"procedural", "procedural 3d", "array stack", "modifier stack", "scatter", "kitbash", "hard surface", "hard-surface", "non destructive", "non-destructive"},
+    "procedural_3d": {"procedural", "procedural 3d", "array stack", "modifier stack", "scatter", "scatter grid", "kitbash", "object kit", "radial array", "hard surface", "hard-surface", "non destructive", "non-destructive"},
     "simulation_setup": {"cloth", "cloth sim", "cloth simulation", "simulation setup", "physics setup", "sim setup"},
     "particles": {"particle", "particles", "simulation", "sim", "physics", "bake", "persistent bake", "cache", "point cache", "spark", "dust", "cloth"},
-    "geometry_nodes": {"geometry node", "geometry nodes", "node group", "procedural array", "array stack"},
+    "geometry_nodes": {"geometry node", "geometry nodes", "node group", "procedural array", "array stack", "radial array"},
     "preview_control": {"commit", "revert", "undo", "cancel preview", "accept preview"},
 }
 
@@ -3682,6 +3764,7 @@ TOOL_FUNCTIONS_FOR_MUTATION_COMPAT = {
     "set_animation_preview_range",
     "run_animation_workflow",
     "run_animation_task",
+    "create_directed_animation_shot",
     "run_animation_repair_loop",
     "create_turntable_animation",
     "create_pulse_animation",
@@ -3701,7 +3784,9 @@ TOOL_FUNCTIONS_FOR_MUTATION_COMPAT = {
     "create_storyboard_panels",
     "create_2d_cutout_layer",
     "apply_procedural_array_stack",
+    "create_procedural_object_kit",
     "create_camera_dolly_animation",
+    "create_directed_animation_shot",
     "add_cloth_simulation_to_selected",
     "list_poly_haven_categories",
     "search_poly_haven_assets",

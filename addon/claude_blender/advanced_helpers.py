@@ -3683,6 +3683,7 @@ ADVANCED_WORKFLOW_DOMAINS = {
         "tools": [
             "get_geometry_nodes_details",
             "apply_procedural_array_stack",
+            "create_procedural_object_kit",
             "add_geometry_nodes_modifier",
             "shade_smooth_selected",
             "add_bevel_and_subsurf",
@@ -3695,6 +3696,7 @@ ADVANCED_WORKFLOW_DOMAINS = {
         "tools": [
             "plan_animation_workflow",
             "run_animation_workflow",
+            "create_directed_animation_shot",
             "create_camera_dolly_animation",
             "block_key_poses",
             "add_breakdown_pose",
@@ -4101,6 +4103,154 @@ def apply_procedural_array_stack(
     }
 
 
+def _add_kit_detail_modifiers(obj, *, bevel_width=0.025, weighted_normals=True):
+    bevel = obj.modifiers.new("Agent Bridge Kit Bevel", "BEVEL")
+    bevel.width = max(0.0, min(2.0, float(bevel_width)))
+    bevel.segments = 2
+    live_preview._record_created_modifier(obj, bevel)
+    modifiers = [bevel.name]
+    if weighted_normals:
+        normals = obj.modifiers.new("Agent Bridge Kit Weighted Normals", "WEIGHTED_NORMAL")
+        live_preview._record_created_modifier(obj, normals)
+        modifiers.append(normals.name)
+    return modifiers
+
+
+def create_procedural_object_kit(
+    context,
+    *,
+    template="kitbash_tower",
+    name_prefix="Agent Bridge Kit",
+    location=(0.0, 0.0, 0.0),
+    count=8,
+    radius=2.0,
+    spacing=1.1,
+    height=2.0,
+    primary_color=(0.18, 0.22, 0.27, 1.0),
+    accent_color=(0.95, 0.62, 0.18, 1.0),
+    add_detail_modifiers=True,
+    label="Create procedural object kit",
+):
+    """Create bounded reusable object-kit templates without arbitrary script mutation."""
+
+    template = str(template or "kitbash_tower").strip().lower().replace("-", "_").replace(" ", "_")
+    if template not in {"kitbash_tower", "radial_array", "scatter_grid", "product_stack"}:
+        return {
+            "ok": False,
+            "message": "template must be one of kitbash_tower, radial_array, scatter_grid, or product_stack",
+            "template": template,
+        }
+    count = max(1, min(80, int(count or 1)))
+    radius = max(0.1, min(50.0, float(radius or 2.0)))
+    spacing = max(0.05, min(20.0, float(spacing or 1.1)))
+    height = max(0.1, min(50.0, float(height or 2.0)))
+    origin = _coerce_vector(location, (0.0, 0.0, 0.0))
+    prefix = str(name_prefix or "Agent Bridge Kit")
+    transaction = live_preview.begin(label, context)
+    primary = _material_for_color(f"{prefix} Primary", primary_color)
+    accent = _material_for_color(f"{prefix} Accent", accent_color)
+    created = []
+    modifiers = []
+
+    def remember(obj):
+        created.append(obj.name)
+        if add_detail_modifiers and obj.type == "MESH":
+            modifiers.append({"object": obj.name, "modifiers": _add_kit_detail_modifiers(obj)})
+        return obj
+
+    if template == "kitbash_tower":
+        levels = max(2, min(12, count))
+        base = remember(_create_cylinder_object(context, f"{prefix} Base", origin, radius * 0.42, height * 0.12, primary, vertices=48))
+        for index in range(levels):
+            z = origin[2] + height * (0.16 + index / max(1, levels - 1) * 0.78)
+            width = radius * (0.52 - index * 0.018)
+            depth = radius * (0.36 - index * 0.012)
+            block = remember(_create_cube_object(context, f"{prefix} Tier {index + 1:02d}", (origin[0], origin[1], z), (width, depth, height / levels * 0.32), primary))
+            if index % 2:
+                block.rotation_euler[2] = math.radians(90.0)
+            panel_z = z + height / levels * 0.18
+            for side, sx, sy in (("Front", 0.0, -1.0), ("Back", 0.0, 1.0), ("Left", -1.0, 0.0), ("Right", 1.0, 0.0)):
+                if index % 2 and side in {"Front", "Back"}:
+                    continue
+                panel = remember(
+                    _create_cube_object(
+                        context,
+                        f"{prefix} {side} Panel {index + 1:02d}",
+                        (origin[0] + sx * width * 0.54, origin[1] + sy * depth * 0.54, panel_z),
+                        (max(0.04, width * (0.08 if sx else 0.28)), max(0.04, depth * (0.08 if sy else 0.28)), max(0.04, height / levels * 0.08)),
+                        accent,
+                    )
+                )
+                if sx:
+                    panel.rotation_euler[2] = math.radians(90.0)
+        remember(_create_cylinder_object(context, f"{prefix} Antenna", (origin[0], origin[1], origin[2] + height * 1.02), radius * 0.035, height * 0.34, accent, vertices=12))
+        base.show_name = True
+
+    elif template == "radial_array":
+        spokes = max(3, min(64, count))
+        remember(_create_cylinder_object(context, f"{prefix} Hub", origin, radius * 0.18, height * 0.18, primary, vertices=48))
+        for index in range(spokes):
+            angle = math.tau * index / spokes
+            mid_radius = radius * 0.52
+            x = origin[0] + math.cos(angle) * mid_radius
+            y = origin[1] + math.sin(angle) * mid_radius
+            spoke = remember(_create_cube_object(context, f"{prefix} Spoke {index + 1:02d}", (x, y, origin[2]), (radius * 0.48, radius * 0.035, height * 0.08), primary))
+            spoke.rotation_euler[2] = angle
+            node = remember(_create_cylinder_object(context, f"{prefix} Node {index + 1:02d}", (origin[0] + math.cos(angle) * radius, origin[1] + math.sin(angle) * radius, origin[2]), radius * 0.07, height * 0.14, accent, vertices=20))
+            node.rotation_euler[2] = angle
+
+    elif template == "scatter_grid":
+        columns = max(1, int(math.ceil(math.sqrt(count))))
+        rows = max(1, int(math.ceil(count / columns)))
+        for index in range(count):
+            col = index % columns
+            row = index // columns
+            x = origin[0] + (col - (columns - 1) / 2.0) * spacing
+            y = origin[1] + (row - (rows - 1) / 2.0) * spacing
+            factor = 0.45 + 0.55 * ((math.sin(index * 1.618) + 1.0) / 2.0)
+            material = accent if index % 5 == 0 else primary
+            block_height = max(0.04, height * factor)
+            remember(_create_cube_object(context, f"{prefix} Scatter {index + 1:02d}", (x, y, origin[2] + block_height / 2.0), (spacing * 0.36, spacing * 0.36, block_height / 2.0), material))
+
+    else:
+        remember(_create_cylinder_object(context, f"{prefix} Plinth", origin, radius * 0.7, height * 0.12, primary, vertices=64))
+        tier_count = max(2, min(8, count))
+        for index in range(tier_count):
+            z = origin[2] + height * (0.1 + index * 0.16)
+            scale = radius * (0.52 - index * 0.045)
+            material = primary if index % 2 == 0 else accent
+            remember(_create_cube_object(context, f"{prefix} Riser {index + 1:02d}", (origin[0], origin[1], z), (scale, scale * 0.62, height * 0.045), material))
+        hero = remember(_create_cylinder_object(context, f"{prefix} Hero Stand", (origin[0], origin[1], origin[2] + height * 0.58), radius * 0.22, height * 0.22, accent, vertices=48))
+        hero.show_name = True
+
+    transaction["applied_steps"].append(
+        {
+            "type": "create_procedural_object_kit",
+            "label": label,
+            "template": template,
+            "objects": created,
+            "modifiers": modifiers,
+            "controls": {
+                "count": count,
+                "radius": radius,
+                "spacing": spacing,
+                "height": height,
+            },
+        }
+    )
+    live_preview.redraw(context)
+    live_preview._mark_pending(context, label)
+    return {
+        "ok": True,
+        "message": f"Created {template} object kit with {len(created)} object(s)",
+        "template": template,
+        "objects": created,
+        "modifiers": modifiers,
+        "controls": {"count": count, "radius": radius, "spacing": spacing, "height": height},
+        "transaction_id": transaction["id"],
+    }
+
+
 def create_camera_dolly_animation(
     context,
     *,
@@ -4195,6 +4345,197 @@ def create_camera_dolly_animation(
         "target": target.name if target else "",
         "action": action.name,
         "lens_action": lens_action_name,
+        "transaction_id": transaction["id"],
+    }
+
+
+def _average_target_center(objects):
+    centers = []
+    radii = []
+    for obj in objects:
+        if getattr(obj, "bound_box", None):
+            bounds = _bounds_world(obj)
+            centers.append(Vector(bounds["center"]))
+            radii.append(max(bounds["size"]))
+        else:
+            centers.append(Vector(obj.location))
+            radii.append(1.0)
+    if not centers:
+        return Vector((0.0, 0.0, 0.0)), 1.0
+    center = sum(centers, Vector((0.0, 0.0, 0.0))) / len(centers)
+    radius = max(0.75, max(radii or [1.0]))
+    return center, radius
+
+
+def _axis_vector(axis):
+    axis = str(axis or "X").strip().upper()
+    if axis == "Y":
+        return Vector((0.0, 1.0, 0.0)), "Y"
+    if axis == "Z":
+        return Vector((0.0, 0.0, 1.0)), "Z"
+    return Vector((1.0, 0.0, 0.0)), "X"
+
+
+def create_directed_animation_shot(
+    context,
+    *,
+    shot_type="camera_push_reveal",
+    object_names=None,
+    selected_only=True,
+    frame_start=1,
+    frame_end=96,
+    travel_axis="X",
+    travel_distance=2.0,
+    scale_start=0.2,
+    scale_end=1.0,
+    rotation_revolutions=1.0,
+    camera_name="",
+    target_name="",
+    create_camera=True,
+    lens_start=None,
+    lens_end=None,
+    interpolation="BEZIER",
+    label="Create directed animation shot",
+):
+    """Create bounded director-style shot templates for common animation requests."""
+
+    shot_type = str(shot_type or "camera_push_reveal").strip().lower().replace("-", "_").replace(" ", "_")
+    allowed = {"camera_push_reveal", "orbit_reveal", "product_turntable", "path_slide", "staggered_reveal", "storyboard_dolly"}
+    if shot_type not in allowed:
+        return {"ok": False, "message": f"shot_type must be one of {', '.join(sorted(allowed))}", "shot_type": shot_type}
+    objects, missing = _resolve_edit_objects(context, object_names=object_names, selected_only=selected_only, include_active=True)
+    objects = [obj for obj in objects if obj is not None]
+    if not objects and shot_type not in {"storyboard_dolly"}:
+        return {"ok": False, "message": "No animation subjects found for directed shot", "missing_object_names": missing}
+    scene = context.scene
+    start = int(frame_start or scene.frame_start)
+    end = int(frame_end or scene.frame_end)
+    if end < start:
+        start, end = end, start
+    axis_vec, axis_name = _axis_vector(travel_axis)
+    distance = max(-1000.0, min(1000.0, float(travel_distance or 0.0)))
+    start_scale = max(0.001, min(100.0, float(scale_start or 1.0)))
+    end_scale = max(0.001, min(100.0, float(scale_end or 1.0)))
+    revolutions = max(-24.0, min(24.0, float(rotation_revolutions or 0.0)))
+    camera = bpy.data.objects.get(str(camera_name or "")) if camera_name else scene.camera
+    if camera is not None and camera.type != "CAMERA":
+        return {"ok": False, "message": f"Object is not a camera: {camera.name}"}
+    transaction = live_preview.begin(label, context)
+    live_preview._record_scene_timeline(scene)
+    scene.frame_start = min(scene.frame_start, start)
+    scene.frame_end = max(scene.frame_end, end)
+    scene.frame_set(start)
+
+    center, radius = _average_target_center(objects)
+    actions = []
+    keyed_objects = []
+    frame_span = max(1, end - start)
+    for index, obj in enumerate(objects):
+        live_preview._record_object_transform(obj)
+        action = live_preview._assign_preview_action(obj)
+        original_location = Vector(obj.location)
+        original_rotation = obj.rotation_euler.copy()
+        original_scale = Vector(obj.scale)
+        offset_frames = int(round(frame_span * min(0.35, index * 0.08))) if shot_type == "staggered_reveal" else 0
+        obj_start = min(end, start + offset_frames)
+        obj_end = end
+        if shot_type in {"camera_push_reveal", "orbit_reveal", "staggered_reveal"}:
+            obj.scale = original_scale * start_scale
+            obj.keyframe_insert(data_path="scale", frame=obj_start)
+            obj.scale = original_scale * end_scale
+            obj.keyframe_insert(data_path="scale", frame=obj_end)
+        elif shot_type == "path_slide":
+            obj.location = original_location
+            obj.keyframe_insert(data_path="location", frame=obj_start)
+            obj.location = original_location + axis_vec * distance
+            obj.keyframe_insert(data_path="location", frame=obj_end)
+        elif shot_type == "product_turntable":
+            obj.rotation_euler = original_rotation
+            obj.keyframe_insert(data_path="rotation_euler", frame=obj_start)
+            obj.rotation_euler[2] = float(original_rotation[2]) + math.tau * revolutions
+            obj.keyframe_insert(data_path="rotation_euler", frame=obj_end)
+        _set_action_interpolation(action, interpolation)
+        actions.append(action.name)
+        keyed_objects.append(obj.name)
+
+    target = bpy.data.objects.get(str(target_name or "")) if target_name else None
+    created_target = ""
+    if target is None and (objects or shot_type in {"storyboard_dolly"}):
+        target = _create_empty_target(context, f"{label} Target", center, display_size=max(0.2, radius * 0.08))
+        created_target = target.name
+    camera_action_name = ""
+    lens_action_name = ""
+    if create_camera or camera is not None:
+        if camera is None:
+            live_preview._record_scene_camera(scene)
+            data = bpy.data.cameras.new("Agent Bridge Directed Camera Data")
+            camera = bpy.data.objects.new("Agent Bridge Directed Camera", object_data=data)
+            scene.collection.objects.link(camera)
+            scene.camera = camera
+            live_preview._record_created_id("object", camera.name)
+            live_preview._record_created_id("camera", data.name)
+        live_preview._record_object_transform(camera)
+        _record_camera_settings(camera)
+        camera_action = live_preview._assign_preview_action(camera)
+        camera_distance = radius * (4.0 if shot_type != "storyboard_dolly" else 5.2)
+        start_location = center + Vector((0.0, -camera_distance, radius * 1.2))
+        end_location = center + Vector((0.0, -camera_distance * 0.62, radius * 0.9))
+        if shot_type in {"orbit_reveal", "product_turntable"}:
+            start_location = center + Vector((camera_distance, -camera_distance, radius * 1.15))
+            end_location = center + Vector((-camera_distance, -camera_distance, radius * 1.15))
+        elif shot_type == "path_slide":
+            start_location = center + Vector((0.0, -camera_distance, radius * 1.0)) - axis_vec * max(0.5, abs(distance) * 0.25)
+            end_location = center + Vector((0.0, -camera_distance, radius * 1.0)) + axis_vec * max(0.5, abs(distance) * 0.25)
+        camera.location = start_location
+        camera.keyframe_insert(data_path="location", frame=start)
+        if target and not any(constraint.type == "TRACK_TO" and constraint.target == target for constraint in camera.constraints):
+            _track_to_target(camera, target)
+        camera.location = end_location
+        camera.keyframe_insert(data_path="location", frame=end)
+        _set_action_interpolation(camera_action, interpolation)
+        camera_action_name = camera_action.name
+        if lens_start is not None or lens_end is not None:
+            live_preview._record_id_animation(camera.data, "cameras")
+            lens_action = bpy.data.actions.new(name=f"{camera.name} Directed Lens Preview Action")
+            camera.data.animation_data_create().action = lens_action
+            live_preview._record_created_id("action", lens_action.name)
+            if lens_start is not None:
+                camera.data.lens = max(1.0, min(1000.0, float(lens_start)))
+            camera.data.keyframe_insert(data_path="lens", frame=start)
+            if lens_end is not None:
+                camera.data.lens = max(1.0, min(1000.0, float(lens_end)))
+            camera.data.keyframe_insert(data_path="lens", frame=end)
+            _set_action_interpolation(lens_action, interpolation)
+            lens_action_name = lens_action.name
+
+    transaction["applied_steps"].append(
+        {
+            "type": "create_directed_animation_shot",
+            "label": label,
+            "shot_type": shot_type,
+            "objects": keyed_objects,
+            "camera": camera.name if camera else "",
+            "target": target.name if target else "",
+            "frame_start": start,
+            "frame_end": end,
+        }
+    )
+    live_preview.redraw(context)
+    live_preview._mark_pending(context, label)
+    return {
+        "ok": True,
+        "message": f"Created {shot_type} directed shot",
+        "shot_type": shot_type,
+        "objects": keyed_objects,
+        "missing_object_names": missing,
+        "camera": camera.name if camera else "",
+        "target": target.name if target else "",
+        "created_target": created_target,
+        "actions": actions,
+        "camera_action": camera_action_name,
+        "lens_action": lens_action_name,
+        "frame_start": start,
+        "frame_end": end,
         "transaction_id": transaction["id"],
     }
 

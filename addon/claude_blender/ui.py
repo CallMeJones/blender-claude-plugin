@@ -11,11 +11,13 @@ import bpy
 from bpy.app.handlers import persistent
 
 from . import (
+    audit_log,
     bridge_server,
     build_info,
     context_bundle,
     context_planner,
     docs_index,
+    lab_parity,
     live_preview,
     preferences,
     script_runner,
@@ -92,6 +94,167 @@ def _draw_section(layout, title):
     box = layout.box()
     box.label(text=title)
     return box
+
+
+def _write_text_datablock(name, body):
+    text = bpy.data.texts.get(name)
+    if text is None:
+        text = bpy.data.texts.new(name)
+    text.clear()
+    text.write(str(body or ""))
+    return text.name
+
+
+def _short_hash(value):
+    value = str(value or "").strip()
+    return value[:12] if value else "none"
+
+
+def _operation_summary(active, last):
+    operation = active or last or {}
+    if not operation:
+        return "No bridge operation recorded"
+    state = "Running" if active else "Last"
+    tool = str(operation.get("tool") or "tool")
+    elapsed = int(operation.get("elapsed_seconds") or 0)
+    status = ""
+    if not active and "ok" in operation:
+        status = "ok" if operation.get("ok") else "failed"
+    timeout = int(operation.get("timeout_seconds") or 0)
+    bits = [f"{state}: {tool}"]
+    if elapsed:
+        bits.append(f"{elapsed}s")
+    if timeout:
+        bits.append(f"timeout {timeout}s")
+    if status:
+        bits.append(status)
+    if operation.get("message"):
+        bits.append(str(operation["message"])[:160])
+    return " | ".join(bits)
+
+
+def _refresh_bridge_diagnostics_state(context, state, prefs):
+    url = state.bridge_url or bridge_server.bridge_url() or f"http://127.0.0.1:{getattr(prefs, 'bridge_port', bridge_server.DEFAULT_PORT)}"
+    blender_version = ".".join(str(part) for part in bpy.app.version)
+    diagnostics = build_info.diagnostics_dict(bridge_url=url, blender_version=blender_version)
+    bridge_running = bridge_server.is_running()
+    state.bridge_running = bridge_running
+    state.bridge_url = url
+    state.bridge_status = "Bridge running" if bridge_running else "Bridge stopped"
+    runtime = str(diagnostics.get("addon_runtime_source_status") or "")
+    hash_status = str(diagnostics.get("addon_source_hash_status") or "")
+    hash_match = diagnostics.get("addon_source_hash_match")
+    match_text = "not provided" if hash_match is None else ("match" if hash_match else "mismatch")
+    state.bridge_source_status = (
+        f"Runtime {runtime}; config hash {hash_status}/{match_text}; "
+        f"source {_short_hash(diagnostics.get('addon_source_hash'))}; "
+        f"expected {_short_hash(diagnostics.get('expected_addon_source_hash'))}"
+    )
+    state.bridge_diagnostics_status = (
+        f"{'On' if bridge_running else 'Off'} | {url} | "
+        f"Add-on {build_info.ADDON_VERSION} | Bridge {build_info.BRIDGE_VERSION} | "
+        f"MCP {build_info.MCP_SERVER_VERSION} | Config {build_info.MCP_CONFIG_VERSION}"
+    )
+    active = bridge_server._active_operation_status()
+    last = bridge_server._last_operation_status()
+    state.bridge_operation_status = _operation_summary(active, last)
+    state.bridge_refresh_hint = (
+        "Restart or refresh the MCP client if newly added Blender tools are missing from its callable tool list."
+    )
+    return {
+        "diagnostics": diagnostics,
+        "active_operation": active,
+        "last_operation": last,
+    }
+
+
+def _refresh_preview_manifest_state(state):
+    manifest = live_preview.transaction_manifest()
+    body = json.dumps(manifest, indent=2, sort_keys=True, default=str)
+    state.preview_manifest_text_name = _write_text_datablock(state.preview_manifest_text_name or "Claude Preview Manifest", body)
+    status = manifest.get("status", "unknown")
+    if status == "none":
+        state.preview_manifest_status = "No preview transaction"
+    else:
+        created = sum(len(values) for values in (manifest.get("created") or {}).values())
+        modified = sum(len(values) for values in (manifest.get("modified") or {}).values())
+        state.preview_manifest_status = (
+            f"{status}: {manifest.get('applied_step_count', 0)} step(s), "
+            f"{manifest.get('snapshot_count', 0)} snapshot(s), {created} created, {modified} modified"
+        )
+    return body
+
+
+def _refresh_audit_log_state(state, *, limit=40):
+    body = audit_log.format_recent(limit)
+    state.audit_log_text_name = _write_text_datablock(audit_log.AUDIT_LOG_TEXT_NAME, body)
+    state.audit_log_status = audit_log.status_summary()
+    return body
+
+
+def _resource_line(entry):
+    entry = entry or {}
+    kind = str(entry.get("kind") or "resource")
+    available = "yes" if entry.get("available") else "no"
+    item_id = str(entry.get("id") or "")
+    summary = entry.get("summary") or {}
+    counts = []
+    if summary.get("frame_count"):
+        counts.append(f"{summary['frame_count']} frame(s)")
+    if summary.get("image_count"):
+        counts.append(f"{summary['image_count']} image(s)")
+    if summary.get("width") and summary.get("height"):
+        counts.append(f"{summary['width']}x{summary['height']}")
+    status = str(entry.get("status") or entry.get("note") or "")
+    bits = [kind, f"available {available}"]
+    if item_id:
+        bits.append(item_id)
+    if counts:
+        bits.append(", ".join(counts))
+    if status:
+        bits.append(status[:120])
+    return " | ".join(bits)
+
+
+def _refresh_visual_evidence_state(context, state, prefs):
+    capture_dir = getattr(prefs, "capture_cache_dir", None)
+    resources = lab_parity.get_visual_evidence_resources(context, include_unavailable=True, capture_dir=capture_dir)
+    latest = resources.get("latest_available") or {}
+    if latest:
+        state.visual_evidence_status = (
+            f"{resources.get('available_count', 0)} available | latest {_resource_line(latest)}"
+        )
+        state.visual_evidence_latest_path = str((latest.get("path_info") or {}).get("path") or latest.get("path") or "")
+    else:
+        state.visual_evidence_status = f"0 available | {resources.get('resource_count', 0)} tracked resource type(s)"
+        state.visual_evidence_latest_path = ""
+    body = json.dumps(resources, indent=2, sort_keys=True, default=str)
+    state.visual_evidence_text_name = _write_text_datablock(
+        state.visual_evidence_text_name or "Claude Visual Evidence",
+        body,
+    )
+    return body
+
+
+def _refresh_control_center_state(context, state, prefs):
+    bridge = _refresh_bridge_diagnostics_state(context, state, prefs)
+    preview_body = _refresh_preview_manifest_state(state)
+    audit_body = _refresh_audit_log_state(state)
+    visual_body = _refresh_visual_evidence_state(context, state, prefs)
+    body = json.dumps(
+        {
+            "bridge": bridge,
+            "preview_manifest": json.loads(preview_body),
+            "audit_status": audit_log.status(),
+            "visual_evidence": json.loads(visual_body),
+        },
+        indent=2,
+        sort_keys=True,
+        default=str,
+    )
+    _write_text_datablock("Claude Bridge Control Center", body)
+    state.status = "Bridge control center refreshed"
+    return body
 
 
 def _update_screenshot_state(state, bundle):
@@ -277,17 +440,26 @@ class CLAUDEBLENDER_OT_undo_last(bpy.types.Operator):
 
 
 def _draw_ask_section(layout, state, prefs):
-    ask_box = _draw_section(layout, "Connection")
+    ask_box = _draw_section(layout, "Bridge Control")
     bridge_running = bridge_server.is_running()
     ask_box.label(text=f"{build_info.ADDON_NAME} {build_info.ADDON_VERSION}")
     ask_box.label(text=f"Bridge {build_info.BRIDGE_VERSION} | MCP {build_info.MCP_SERVER_VERSION}")
     ask_box.label(text=f"Status: {'On' if bridge_running else 'Off'}")
+    if state.bridge_diagnostics_status != "Bridge diagnostics not checked":
+        _draw_wrapped(ask_box, state.bridge_diagnostics_status, max_lines=2)
+    if state.bridge_source_status != "Source hash not checked":
+        _draw_wrapped(ask_box, state.bridge_source_status, max_lines=2)
+    if state.bridge_operation_status != "No bridge operation recorded":
+        _draw_wrapped(ask_box, state.bridge_operation_status, max_lines=2)
     bridge_row = ask_box.row(align=True)
     if bridge_running:
         bridge_row.operator("claude_blender.stop_bridge", text="Stop Bridge")
     else:
         bridge_row.operator("claude_blender.start_bridge", text="Start Bridge")
     bridge_row.operator("claude_blender.copy_mcp_config", text="Copy MCP Config")
+    center_row = ask_box.row(align=True)
+    center_row.operator("claude_blender.refresh_control_center", text="Refresh Center", icon="FILE_REFRESH")
+    center_row.operator("claude_blender.copy_control_center", text="Copy Center")
     trust_snapshot = script_runner.external_script_trust_snapshot(bpy.context, state=state)
     trust_active = trust_snapshot["active"]
     trust_status = trust_snapshot["status"]
@@ -315,6 +487,46 @@ def _draw_ask_section(layout, state, prefs):
 
     if prefs:
         ask_box.label(text=f"Mode: {prefs.execution_mode.replace('_', ' ').title()}")
+
+
+def _draw_preview_manifest_section(layout, state):
+    preview_box = _draw_section(layout, "Preview Manifest")
+    _draw_wrapped(preview_box, state.preview_manifest_status or "No preview transaction", max_lines=2)
+    row = preview_box.row(align=True)
+    row.operator("claude_blender.refresh_preview_manifest", text="Refresh", icon="FILE_REFRESH")
+    row.operator("claude_blender.copy_preview_manifest", text="Copy")
+    if state.preview_manifest_text_name:
+        preview_box.label(text=f"Text: {state.preview_manifest_text_name}")
+
+
+def _draw_audit_section(layout, state):
+    audit_box = _draw_section(layout, "Audit Log")
+    _draw_wrapped(audit_box, state.audit_log_status or audit_log.status_summary(), max_lines=2)
+    audit_exists = os.path.exists(audit_log.audit_path())
+    row = audit_box.row(align=True)
+    row.operator("claude_blender.refresh_audit_log", text="Refresh", icon="FILE_REFRESH")
+    row.operator("claude_blender.copy_audit_log", text="Copy")
+    open_row = audit_box.row(align=True)
+    open_row.enabled = audit_exists
+    open_row.operator("claude_blender.open_audit_log", text="Open File", icon="FILE_FOLDER")
+    clear_row = audit_box.row(align=True)
+    clear_row.enabled = audit_exists
+    clear_row.operator("claude_blender.clear_audit_log", text="Clear", icon="TRASH")
+    if state.audit_log_text_name:
+        audit_box.label(text=f"Text: {state.audit_log_text_name}")
+
+
+def _draw_visual_evidence_section(layout, state):
+    visual_box = _draw_section(layout, "Visual Evidence")
+    _draw_wrapped(visual_box, state.visual_evidence_status or "Visual evidence not checked", max_lines=3)
+    row = visual_box.row(align=True)
+    row.operator("claude_blender.refresh_visual_evidence", text="Refresh", icon="FILE_REFRESH")
+    row.operator("claude_blender.copy_visual_evidence", text="Copy")
+    open_row = visual_box.row(align=True)
+    open_row.enabled = bool(state.visual_evidence_latest_path)
+    open_row.operator("claude_blender.open_latest_visual_evidence", text="Open Latest", icon="FILE_FOLDER")
+    if state.visual_evidence_text_name:
+        visual_box.label(text=f"Text: {state.visual_evidence_text_name}")
 
 
 def _draw_status_section(layout, state):
@@ -634,6 +846,165 @@ class CLAUDEBLENDER_OT_open_last_screenshot(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class CLAUDEBLENDER_OT_refresh_control_center(bpy.types.Operator):
+    bl_idname = "claude_blender.refresh_control_center"
+    bl_label = "Refresh Control Center"
+    bl_description = "Refresh bridge diagnostics, preview manifest, audit status, and visual evidence"
+
+    def execute(self, context):
+        state = context.scene.claude_blender
+        prefs = _prefs(context)
+        _refresh_control_center_state(context, state, prefs)
+        return {"FINISHED"}
+
+
+class CLAUDEBLENDER_OT_copy_control_center(bpy.types.Operator):
+    bl_idname = "claude_blender.copy_control_center"
+    bl_label = "Copy Control Center"
+    bl_description = "Copy bridge diagnostics, preview manifest, audit status, and visual evidence"
+
+    def execute(self, context):
+        state = context.scene.claude_blender
+        prefs = _prefs(context)
+        body = _refresh_control_center_state(context, state, prefs)
+        context.window_manager.clipboard = body
+        state.status = "Copied bridge control center"
+        return {"FINISHED"}
+
+
+class CLAUDEBLENDER_OT_refresh_preview_manifest(bpy.types.Operator):
+    bl_idname = "claude_blender.refresh_preview_manifest"
+    bl_label = "Refresh Preview Manifest"
+    bl_description = "Refresh rollback manifest details for the current live preview transaction"
+
+    def execute(self, context):
+        state = context.scene.claude_blender
+        _refresh_preview_manifest_state(state)
+        state.status = state.preview_manifest_status
+        return {"FINISHED"}
+
+
+class CLAUDEBLENDER_OT_copy_preview_manifest(bpy.types.Operator):
+    bl_idname = "claude_blender.copy_preview_manifest"
+    bl_label = "Copy Preview Manifest"
+    bl_description = "Copy rollback manifest details for the current live preview transaction"
+
+    def execute(self, context):
+        state = context.scene.claude_blender
+        body = _refresh_preview_manifest_state(state)
+        context.window_manager.clipboard = body
+        state.status = "Copied preview manifest"
+        return {"FINISHED"}
+
+
+class CLAUDEBLENDER_OT_refresh_audit_log(bpy.types.Operator):
+    bl_idname = "claude_blender.refresh_audit_log"
+    bl_label = "Refresh Audit Log"
+    bl_description = "Refresh the local MCP/bridge audit log preview"
+
+    def execute(self, context):
+        state = context.scene.claude_blender
+        _refresh_audit_log_state(state)
+        state.status = state.audit_log_status
+        return {"FINISHED"}
+
+
+class CLAUDEBLENDER_OT_copy_audit_log(bpy.types.Operator):
+    bl_idname = "claude_blender.copy_audit_log"
+    bl_label = "Copy Audit Log"
+    bl_description = "Copy recent local MCP/bridge audit events"
+
+    def execute(self, context):
+        state = context.scene.claude_blender
+        body = _refresh_audit_log_state(state)
+        context.window_manager.clipboard = body
+        state.status = "Copied audit log"
+        return {"FINISHED"}
+
+
+class CLAUDEBLENDER_OT_open_audit_log(bpy.types.Operator):
+    bl_idname = "claude_blender.open_audit_log"
+    bl_label = "Open Audit Log"
+    bl_description = "Open the local MCP/bridge audit log file"
+
+    def execute(self, context):
+        state = context.scene.claude_blender
+        info = audit_log.status()
+        if not info["exists"]:
+            state.audit_log_status = audit_log.status_summary()
+            state.status = state.audit_log_status
+            return {"CANCELLED"}
+        bpy.ops.wm.path_open(filepath=info["path"])
+        state.audit_log_status = audit_log.status_summary()
+        state.status = "Opened audit log"
+        return {"FINISHED"}
+
+
+class CLAUDEBLENDER_OT_clear_audit_log(bpy.types.Operator):
+    bl_idname = "claude_blender.clear_audit_log"
+    bl_label = "Clear Audit Log"
+    bl_description = "Delete the local MCP/bridge audit log file"
+    bl_options = {"REGISTER"}
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_confirm(self, event)
+
+    def execute(self, context):
+        state = context.scene.claude_blender
+        result = audit_log.clear()
+        state.audit_log_status = result["message"]
+        state.status = result["message"]
+        _write_text_datablock(audit_log.AUDIT_LOG_TEXT_NAME, audit_log.format_recent(20))
+        return {"FINISHED"}
+
+
+class CLAUDEBLENDER_OT_refresh_visual_evidence(bpy.types.Operator):
+    bl_idname = "claude_blender.refresh_visual_evidence"
+    bl_label = "Refresh Visual Evidence"
+    bl_description = "Refresh latest viewport, playblast, inspection render, thumbnail, and render-job evidence"
+
+    def execute(self, context):
+        state = context.scene.claude_blender
+        prefs = _prefs(context)
+        _refresh_visual_evidence_state(context, state, prefs)
+        state.status = state.visual_evidence_status
+        return {"FINISHED"}
+
+
+class CLAUDEBLENDER_OT_copy_visual_evidence(bpy.types.Operator):
+    bl_idname = "claude_blender.copy_visual_evidence"
+    bl_label = "Copy Visual Evidence"
+    bl_description = "Copy latest visual evidence resource inventory"
+
+    def execute(self, context):
+        state = context.scene.claude_blender
+        prefs = _prefs(context)
+        body = _refresh_visual_evidence_state(context, state, prefs)
+        context.window_manager.clipboard = body
+        state.status = "Copied visual evidence"
+        return {"FINISHED"}
+
+
+class CLAUDEBLENDER_OT_open_latest_visual_evidence(bpy.types.Operator):
+    bl_idname = "claude_blender.open_latest_visual_evidence"
+    bl_label = "Open Latest Visual Evidence"
+    bl_description = "Open the latest available visual evidence file"
+
+    def execute(self, context):
+        state = context.scene.claude_blender
+        path = state.visual_evidence_latest_path
+        if not path:
+            prefs = _prefs(context)
+            _refresh_visual_evidence_state(context, state, prefs)
+            path = state.visual_evidence_latest_path
+        if not path:
+            state.status = "No visual evidence file available"
+            return {"CANCELLED"}
+        bpy.ops.wm.path_open(filepath=path)
+        state.status = "Opened latest visual evidence"
+        return {"FINISHED"}
+
+
 class CLAUDEBLENDER_OT_check_docs_cache(bpy.types.Operator):
     bl_idname = "claude_blender.check_docs_cache"
     bl_label = "Check"
@@ -705,6 +1076,7 @@ class CLAUDEBLENDER_OT_start_bridge(bpy.types.Operator):
         state.bridge_url = str(result.get("url") or "")
         state.bridge_status = str(result.get("message") or "")
         state.status = state.bridge_status
+        _refresh_bridge_diagnostics_state(context, state, prefs)
         return {"FINISHED"} if result.get("ok") else {"CANCELLED"}
 
 
@@ -721,6 +1093,7 @@ class CLAUDEBLENDER_OT_stop_bridge(bpy.types.Operator):
         state.bridge_url = ""
         state.bridge_status = str(result.get("message") or "Bridge stopped")
         state.status = state.bridge_status
+        _refresh_bridge_diagnostics_state(context, state, _prefs(context))
         return {"FINISHED"}
 
 
@@ -736,7 +1109,9 @@ class CLAUDEBLENDER_OT_copy_mcp_config(bpy.types.Operator):
         token = getattr(prefs, "bridge_auth_token", "")
         config = build_info.mcp_config(url, token=token)
         context.window_manager.clipboard = json.dumps(config, indent=2)
-        context.scene.claude_blender.status = (
+        state = context.scene.claude_blender
+        _refresh_bridge_diagnostics_state(context, state, prefs)
+        state.status = (
             f"Copied MCP config v{build_info.MCP_CONFIG_VERSION} for add-on {build_info.ADDON_VERSION}"
         )
         return {"FINISHED"}
@@ -756,6 +1131,9 @@ class CLAUDEBLENDER_PT_sidebar(bpy.types.Panel):
 
         _draw_ask_section(layout, state, prefs)
         _draw_action_center(layout, state)
+        _draw_preview_manifest_section(layout, state)
+        _draw_audit_section(layout, state)
+        _draw_visual_evidence_section(layout, state)
         _draw_status_section(layout, state)
 
 
@@ -772,6 +1150,17 @@ classes = (
     CLAUDEBLENDER_OT_restore_last_checkpoint,
     CLAUDEBLENDER_OT_capture_viewport_preview,
     CLAUDEBLENDER_OT_open_last_screenshot,
+    CLAUDEBLENDER_OT_refresh_control_center,
+    CLAUDEBLENDER_OT_copy_control_center,
+    CLAUDEBLENDER_OT_refresh_preview_manifest,
+    CLAUDEBLENDER_OT_copy_preview_manifest,
+    CLAUDEBLENDER_OT_refresh_audit_log,
+    CLAUDEBLENDER_OT_copy_audit_log,
+    CLAUDEBLENDER_OT_open_audit_log,
+    CLAUDEBLENDER_OT_clear_audit_log,
+    CLAUDEBLENDER_OT_refresh_visual_evidence,
+    CLAUDEBLENDER_OT_copy_visual_evidence,
+    CLAUDEBLENDER_OT_open_latest_visual_evidence,
     CLAUDEBLENDER_OT_check_docs_cache,
     CLAUDEBLENDER_OT_build_docs_cache,
     CLAUDEBLENDER_OT_start_bridge,

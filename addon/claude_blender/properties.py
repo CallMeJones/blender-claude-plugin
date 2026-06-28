@@ -80,6 +80,14 @@ class CLAUDEBLENDER_PG_scene_state(bpy.types.PropertyGroup):
         name="Preview Rollback Warnings",
         default="",
     )
+    preview_manifest_status: bpy.props.StringProperty(
+        name="Preview Manifest",
+        default="No preview transaction",
+    )
+    preview_manifest_text_name: bpy.props.StringProperty(
+        name="Preview Manifest Text",
+        default="Claude Preview Manifest",
+    )
     last_preview_summary: bpy.props.StringProperty(
         name="Last Preview Summary",
         default="",
@@ -221,6 +229,42 @@ class CLAUDEBLENDER_PG_scene_state(bpy.types.PropertyGroup):
     )
     bridge_url: bpy.props.StringProperty(
         name="Bridge URL",
+        default="",
+    )
+    bridge_diagnostics_status: bpy.props.StringProperty(
+        name="Bridge Diagnostics",
+        default="Bridge diagnostics not checked",
+    )
+    bridge_source_status: bpy.props.StringProperty(
+        name="Source Hash",
+        default="Source hash not checked",
+    )
+    bridge_operation_status: bpy.props.StringProperty(
+        name="Bridge Operation",
+        default="No bridge operation recorded",
+    )
+    bridge_refresh_hint: bpy.props.StringProperty(
+        name="MCP Refresh Hint",
+        default="Restart or refresh the MCP client after copying new config.",
+    )
+    audit_log_status: bpy.props.StringProperty(
+        name="Audit Log",
+        default="Audit log not checked",
+    )
+    audit_log_text_name: bpy.props.StringProperty(
+        name="Audit Log Text",
+        default="Claude Audit Log",
+    )
+    visual_evidence_status: bpy.props.StringProperty(
+        name="Visual Evidence",
+        default="Visual evidence not checked",
+    )
+    visual_evidence_text_name: bpy.props.StringProperty(
+        name="Visual Evidence Text",
+        default="Claude Visual Evidence",
+    )
+    visual_evidence_latest_path: bpy.props.StringProperty(
+        name="Latest Evidence Path",
         default="",
     )
 

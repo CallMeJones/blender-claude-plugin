@@ -83,7 +83,8 @@ $PureTests = @(
   "tests\smoke_external_assets.py",
   "tests\smoke_helper_routing.py",
   "tests\smoke_mcp_server.py",
-  "tests\smoke_script_analysis.py"
+  "tests\smoke_script_analysis.py",
+  "tests\smoke_tool_contract_inventory.py"
 )
 
 foreach ($Test in $PureTests) {
@@ -104,6 +105,7 @@ What this covers:
 - Helper-first script routing metadata and recommended-tool drift.
 - Stdio MCP protocol, compact catalog, pagination, prompts, resources, wrappers, and error paths.
 - Static script analysis and risk classification.
+- Catalog-to-contract inventory drift, including intentional external-only tools.
 
 ## Phase 2: Blender-Background Suite
 
@@ -120,6 +122,7 @@ $BlenderTests = @(
   "tests\smoke_context_docs.py",
   "tests\smoke_context_planner.py",
   "tests\smoke_external_asset_imports.py",
+  "tests\smoke_full_tool_inventory.py",
   "tests\smoke_live_helpers.py",
   "tests\smoke_project_files.py",
   "tests\smoke_refinement_helpers.py",
@@ -546,7 +549,9 @@ create_curve_path
 create_storyboard_panels
 create_2d_cutout_layer
 apply_procedural_array_stack
+create_procedural_object_kit
 create_camera_dolly_animation
+create_directed_animation_shot
 add_particle_system_to_selected
 add_cloth_simulation_to_selected
 create_basic_armature
@@ -786,6 +791,14 @@ Make the selected cube bounce twice and get smaller each bounce. Review it again
 ```
 
 ```text
+Create an advanced procedural object kit using a radial array. Leave it as a preview.
+```
+
+```text
+Create a directed camera push reveal shot for the selected cube. Leave it as a preview.
+```
+
+```text
 Capture a viewport screenshot, then read the latest capture metadata resource.
 ```
 
@@ -798,6 +811,7 @@ Pass criteria:
 - Client uses helper/workflow tools before `draft_script` for common edits and animation.
 - Preview changes are visible in Blender and reversible.
 - MCP resources can be read by URI.
+- Blender sidebar Bridge Control Center refresh shows source/hash status, audit status, preview manifest, and visual evidence inventory.
 - Client final responses accurately state what changed, what is pending, and what artifact URIs or paths exist.
 
 ## Phase 8: Negative And Security Tests
@@ -894,7 +908,7 @@ Minimum new-tool test set:
 
 These are good next improvements to make the suite more comprehensive:
 
-- Add `tests\smoke_full_tool_inventory.py` to assert dispatcher/catalog/bridge contract consistency and the intentional `run_approved_script` exception.
+- Keep `tests\smoke_full_tool_inventory.py` current so dispatcher/catalog/bridge contract consistency and the intentional `run_approved_script` exception stay covered.
 - Add a generated-scene live bridge harness that starts Blender foreground, starts the bridge, then drives MCP stdio calls against real resources.
 - Add a compact per-tool smoke manifest with tool name, feature group, mutates/read-only, required fixture, positive args, negative args, expected preview behavior, and expected resources.
 - Add a CI job that runs all pure-Python tests plus a smaller Blender-background subset on Windows with Blender cached or installed.
