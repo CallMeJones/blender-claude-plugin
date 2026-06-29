@@ -3676,7 +3676,7 @@ ADVANCED_WORKFLOW_DOMAINS = {
             "create_camera_dolly_animation",
             "capture_animation_playblast",
         ],
-        "script_boundary": "Use draft_script only for custom Grease Pencil stroke editing, SVG conversion, or destructive vector import helpers that are not exposed yet.",
+        "script_boundary": "Prefer storyboard/cutout helpers when they fit; draft_script can handle custom Grease Pencil stroke editing, SVG conversion, or bespoke vector workflows after static checks.",
     },
     "procedural_3d": {
         "keywords": {"advanced 3d", "procedural", "array", "scatter", "kitbash", "hard surface", "hard-surface", "geometry nodes", "node group", "modifier stack"},
@@ -3704,7 +3704,7 @@ ADVANCED_WORKFLOW_DOMAINS = {
             "create_motion_arc",
             "analyze_animation_principles",
         ],
-        "script_boundary": "Use draft_script only when the workflow reports a helper gap or a custom rig/driver operation is required.",
+        "script_boundary": "Prefer workflow helpers for common blocking/review/repair; draft_script can handle custom advanced animation, rig, or driver code after static checks.",
     },
     "simulation_setup": {
         "keywords": {"simulation", "cloth", "physics", "particle", "rigid body", "cache", "bake"},

@@ -22,7 +22,7 @@ PENDING_SCRIPT_NAME = "Agent Bridge Pending Script"
 SCRIPT_LOG_NAME = "Agent Bridge Script Log"
 SCRIPT_FAILURE_PROMPT_NAME = "Agent Bridge Script Repair Context"
 
-MAX_SCRIPT_CHARS = 80_000
+MAX_SCRIPT_CHARS = 500_000
 MAX_STATE_TEXT_CHARS = 1800
 EXTERNAL_APPROVAL_TTL_SECONDS = 300
 EXTERNAL_TRUST_TTL_SECONDS = 15 * 60
@@ -75,6 +75,46 @@ def _join_lines(values, *, empty="", max_chars=MAX_STATE_TEXT_CHARS):
     if not lines:
         return empty
     return _short_text("\n".join(f"- {line}" for line in lines), max_chars=max_chars)
+
+
+def _normalize_list(values):
+    return [str(value).strip() for value in (values or []) if str(value).strip()]
+
+
+def _capability_text(capabilities):
+    return ", ".join(_normalize_list(capabilities))
+
+
+def _split_capabilities(text):
+    return [item.strip() for item in str(text or "").split(",") if item.strip()]
+
+
+def _pending_script_capabilities(state):
+    if not state or not getattr(state, "pending_script_privileged", False):
+        return []
+    return _split_capabilities(getattr(state, "pending_script_privileged_capabilities", ""))
+
+
+def _analyze_pending_source(source, state=None):
+    return analyze_script(source, privileged_capabilities=_pending_script_capabilities(state))
+
+
+def _clear_pending_script_metadata(state):
+    state.pending_script = False
+    state.pending_script_blocked = False
+    state.pending_script_text_name = ""
+    state.pending_script_intent = ""
+    state.pending_script_expected_changes = ""
+    state.pending_script_risk = ""
+    state.pending_script_issues = ""
+    state.pending_script_warnings = ""
+    state.pending_script_privileged = False
+    state.pending_script_privileged_kind = ""
+    state.pending_script_privileged_capabilities = ""
+    state.pending_script_approval_summary = ""
+    state.pending_script_declared_paths = ""
+    state.pending_script_declared_urls = ""
+    state.pending_script_destructive_actions = ""
 
 
 def _scene_state(context=None):
@@ -321,7 +361,7 @@ def approve_pending_script_for_external_run(context, *, ttl_seconds=EXTERNAL_APP
     if not source:
         clear_external_script_approval(state=state, status="External approval failed: missing script text")
         return {"ok": False, "message": "No pending script text found"}
-    analysis = analyze_script(source)
+    analysis = _analyze_pending_source(source, state)
     if not analysis["ok"]:
         state.pending_script_blocked = True
         state.pending_script_status = "Blocked by static checks"
@@ -338,7 +378,8 @@ def approve_pending_script_for_external_run(context, *, ttl_seconds=EXTERNAL_APP
     state.pending_script_external_approval_text_name = text_name
     state.pending_script_external_approval_source_hash = _source_hash(source)
     state.pending_script_external_approval_expires_at = f"{expires_at:.6f}"
-    state.pending_script_external_approval_status = f"External run approved for {ttl} second(s)"
+    approval_label = "External privileged run" if getattr(state, "pending_script_privileged", False) else "External run"
+    state.pending_script_external_approval_status = f"{approval_label} approved for {ttl} second(s)"
     state.pending_script_status = state.pending_script_external_approval_status
     state.status = state.pending_script_external_approval_status
     transcript.record_system_message(
@@ -371,7 +412,7 @@ def _validate_current_pending_script_for_external_run(context, state):
     source = _read_text_block(text_name)
     if not source:
         return _external_approval_error(state, "No pending script text found", clear=True)
-    analysis = analyze_script(source)
+    analysis = _analyze_pending_source(source, state)
     if not analysis["ok"]:
         state.pending_script_blocked = True
         state.pending_script_status = "Blocked by static checks"
@@ -395,6 +436,14 @@ def validate_external_script_approval(context, approval_token):
             if not accepted.get("ok"):
                 return accepted
             analysis = accepted.get("analysis") or {}
+            if getattr(state, "pending_script_privileged", False):
+                return _external_approval_error(
+                    state,
+                    (
+                        "Pending privileged script requires explicit one-time user approval; "
+                        "external script trust cannot auto-run custom asset or project-file scripts"
+                    ),
+                )
             if analysis.get("explicit_approval_required"):
                 return _external_approval_error(
                     state,
@@ -446,8 +495,8 @@ def run_externally_approved_script(context, approval_token, *, checkpoint_enable
     return result
 
 
-def analyze_script(source):
-    return script_analysis.analyze_script(source)
+def analyze_script(source, *, privileged_capabilities=None):
+    return script_analysis.analyze_script(source, privileged_capabilities=privileged_capabilities)
 
 
 def _is_checkpoint_path(path):
@@ -553,7 +602,25 @@ def restore_checkpoint(context, checkpoint_path=None):
     return {"ok": True, "message": "Checkpoint restored", "checkpoint": metadata}
 
 
-def _metadata_text(*, intent, expected_changes, risk_level, target_objects, analysis):
+def _metadata_text(
+    *,
+    intent,
+    expected_changes,
+    risk_level,
+    target_objects,
+    analysis,
+    privileged=False,
+    privileged_kind="",
+    privileged_capabilities=None,
+    approval_summary="",
+    declared_paths=None,
+    declared_urls=None,
+    destructive_actions=None,
+):
+    privileged_capabilities = _normalize_list(privileged_capabilities)
+    declared_paths = _normalize_list(declared_paths)
+    declared_urls = _normalize_list(declared_urls)
+    destructive_actions = _normalize_list(destructive_actions)
     lines = [
         "# Agent Bridge Pending Script",
         "",
@@ -562,7 +629,23 @@ def _metadata_text(*, intent, expected_changes, risk_level, target_objects, anal
         f"Detected risk: {analysis.get('risk_level', 'unknown')}",
         f"Checkpoint recommended: {'yes' if analysis.get('checkpoint_recommended') else 'no'}",
         f"External trust auto-run: {'yes' if analysis.get('trust_window_allowed', analysis.get('ok')) else 'no'}",
+        f"Privileged: {'yes' if privileged else 'no'}",
+        f"Privileged kind: {privileged_kind or 'none'}",
+        f"Capabilities: {_capability_text(privileged_capabilities) or 'none'}",
+        f"Manifest enforcement: {'review context only; not a runtime sandbox' if privileged else 'none'}",
         f"Targets: {', '.join(target_objects) if target_objects else 'unspecified'}",
+        "",
+        "Approval summary:",
+        approval_summary or "No approval summary provided",
+        "",
+        "Declared paths:",
+        "\n".join(f"- {path}" for path in declared_paths) if declared_paths else "None",
+        "",
+        "Declared URLs:",
+        "\n".join(f"- {url}" for url in declared_urls) if declared_urls else "None",
+        "",
+        "Destructive actions:",
+        "\n".join(f"- {action}" for action in destructive_actions) if destructive_actions else "None",
         "",
         "Expected changes:",
         expected_changes or "No expected changes provided",
@@ -581,8 +664,27 @@ def _metadata_text(*, intent, expected_changes, risk_level, target_objects, anal
     return "\n".join(lines)
 
 
-def stage_script(context, *, code, intent="", expected_changes="", risk_level="medium", target_objects=None):
+def stage_script(
+    context,
+    *,
+    code,
+    intent="",
+    expected_changes="",
+    risk_level="medium",
+    target_objects=None,
+    privileged=False,
+    privileged_kind="",
+    privileged_capabilities=None,
+    approval_summary="",
+    declared_paths=None,
+    declared_urls=None,
+    destructive_actions=None,
+):
     target_objects = [str(obj) for obj in (target_objects or []) if str(obj)]
+    privileged_capabilities = _normalize_list(privileged_capabilities)
+    declared_paths = _normalize_list(declared_paths)
+    declared_urls = _normalize_list(declared_urls)
+    destructive_actions = _normalize_list(destructive_actions)
     code = textwrap.dedent(str(code or "")).strip()
     if not code:
         return {
@@ -593,7 +695,7 @@ def stage_script(context, *, code, intent="", expected_changes="", risk_level="m
             ),
             "missing_code": True,
         }
-    analysis = analyze_script(code)
+    analysis = analyze_script(code, privileged_capabilities=privileged_capabilities if privileged else None)
     script_text = _write_text_block(PENDING_SCRIPT_NAME, code)
     metadata = _metadata_text(
         intent=str(intent or ""),
@@ -601,6 +703,13 @@ def stage_script(context, *, code, intent="", expected_changes="", risk_level="m
         risk_level=str(risk_level or "medium"),
         target_objects=target_objects,
         analysis=analysis,
+        privileged=bool(privileged),
+        privileged_kind=str(privileged_kind or ""),
+        privileged_capabilities=privileged_capabilities,
+        approval_summary=str(approval_summary or ""),
+        declared_paths=declared_paths,
+        declared_urls=declared_urls,
+        destructive_actions=destructive_actions,
     )
     _write_text_block(f"{PENDING_SCRIPT_NAME} Metadata", metadata)
 
@@ -612,9 +721,10 @@ def stage_script(context, *, code, intent="", expected_changes="", risk_level="m
         if analysis.get("blocked"):
             status = "Blocked by static checks"
         elif analysis.get("warnings"):
-            status = f"Pending approval with {len(analysis.get('warnings', []))} warning(s)"
+            prefix = "Pending privileged approval" if privileged else "Pending approval"
+            status = f"{prefix} with {len(analysis.get('warnings', []))} warning(s)"
         else:
-            status = "Pending approval"
+            status = "Pending privileged approval" if privileged else "Pending approval"
         state.pending_script = True
         state.pending_script_blocked = bool(analysis.get("blocked"))
         state.pending_script_text_name = script_text.name
@@ -624,6 +734,13 @@ def stage_script(context, *, code, intent="", expected_changes="", risk_level="m
         state.pending_script_status = status
         state.pending_script_issues = issue_text
         state.pending_script_warnings = warning_text
+        state.pending_script_privileged = bool(privileged)
+        state.pending_script_privileged_kind = str(privileged_kind or "")[:120]
+        state.pending_script_privileged_capabilities = _capability_text(privileged_capabilities)[:240]
+        state.pending_script_approval_summary = str(approval_summary or "")[:1000]
+        state.pending_script_declared_paths = "\n".join(declared_paths)[:1000]
+        state.pending_script_declared_urls = "\n".join(declared_urls)[:1000]
+        state.pending_script_destructive_actions = "\n".join(destructive_actions)[:1000]
         state.last_script_error_summary = ""
         state.status = state.pending_script_status
 
@@ -639,6 +756,15 @@ def stage_script(context, *, code, intent="", expected_changes="", risk_level="m
         "metadata_datablock": f"{PENDING_SCRIPT_NAME} Metadata",
         "analysis": analysis,
         "requires_user_approval": True,
+        "privileged": bool(privileged),
+        "privileged_kind": str(privileged_kind or ""),
+        "privileged_capabilities": privileged_capabilities,
+        "approval_summary": str(approval_summary or ""),
+        "declared_paths": declared_paths,
+        "declared_urls": declared_urls,
+        "destructive_actions": destructive_actions,
+        "trust_window_auto_run_allowed": bool(analysis.get("trust_window_allowed")),
+        "manifest_enforcement": "review_context_only" if privileged else "none",
     }
 
 
@@ -646,15 +772,8 @@ def reject_pending_script(context):
     state = getattr(context.scene, "claude_blender", None)
     if state:
         clear_external_script_approval(state=state)
-        state.pending_script = False
-        state.pending_script_blocked = False
+        _clear_pending_script_metadata(state)
         state.pending_script_status = "Pending script rejected"
-        state.pending_script_text_name = ""
-        state.pending_script_intent = ""
-        state.pending_script_expected_changes = ""
-        state.pending_script_risk = ""
-        state.pending_script_issues = ""
-        state.pending_script_warnings = ""
         state.status = "Pending script rejected"
     transcript.record_system_message("Pending script rejected by user.")
     return {"ok": True, "message": "Pending script rejected"}
@@ -699,7 +818,7 @@ def run_pending_script(context, *, checkpoint_enabled=True, checkpoint_dir=None)
     if not source:
         clear_external_script_approval(state=state, status="No pending script text found")
         return {"ok": False, "message": "No pending script text found"}
-    analysis = analyze_script(source)
+    analysis = _analyze_pending_source(source, state)
     if not analysis["ok"]:
         if state:
             state.pending_script_blocked = True
@@ -781,15 +900,8 @@ def run_pending_script(context, *, checkpoint_enabled=True, checkpoint_dir=None)
     )
     _write_text_block(SCRIPT_LOG_NAME, log)
     if state:
-        state.pending_script = False
-        state.pending_script_blocked = False
+        _clear_pending_script_metadata(state)
         state.pending_script_status = "Script executed"
-        state.pending_script_text_name = ""
-        state.pending_script_intent = ""
-        state.pending_script_expected_changes = ""
-        state.pending_script_risk = ""
-        state.pending_script_issues = ""
-        state.pending_script_warnings = ""
         clear_external_script_approval(state=state)
         state.last_script_error_summary = ""
         state.last_script_log_name = SCRIPT_LOG_NAME

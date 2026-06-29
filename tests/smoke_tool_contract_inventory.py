@@ -9,7 +9,7 @@ import sys
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(ROOT, "addon"))
 
-from claude_blender import agent_tools, bridge_protocol  # noqa: E402
+from claude_blender import agent_tools, bridge_protocol, script_analysis  # noqa: E402
 
 
 EXTERNAL_ONLY_TOOLS = {"run_approved_script"}
@@ -29,6 +29,10 @@ def main():
         assert contract["mutates_scene"] is True, contract
         assert contract["requires_live_preview"] is True, contract
         assert contract["input_schema"].get("additionalProperties") is False, contract
+    catalog_by_name = {tool["name"]: tool for tool in agent_tools.blender_tool_definitions()}
+    for tool_name in ("draft_script", "draft_privileged_script"):
+        code_schema = catalog_by_name[tool_name]["input_schema"]["properties"]["code"]
+        assert code_schema["maxLength"] == script_analysis.MAX_SCRIPT_CHARS, code_schema
     print("smoke_tool_contract_inventory: ok")
 
 

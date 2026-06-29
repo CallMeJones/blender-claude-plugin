@@ -2,7 +2,12 @@
 
 ## Unreleased
 
-- Added a Blender sidebar Bridge Control Center with source-hash diagnostics, MCP refresh guidance, active/last operation state, audit preview controls, live-preview manifest details, and latest visual-evidence inventory.
+- Kept the Blender sidebar lean around bridge start/stop, MCP config, script trust, pending script approval, preview commit/revert, and checkpoint restore; rich diagnostics remain available through bridge/operator responses instead of always showing in the panel.
+- Relaxed `draft_script` routing so helper-overlap scene, material, and animation scripts can stage or auto-run under trust after static checks, while external asset, project-file, and persistent simulation bake/free paths stay out of the normal script-trust lane.
+- Added `draft_privileged_script` for custom external asset and project-file lifecycle scripts with a declared path/URL/action manifest, elevated static-analysis capabilities, and mandatory one-time approval; these scripts never auto-run under normal external script trust.
+- Raised the approval-gated script size ceiling to 500k characters for larger procedural scene scripts and allowed safe in-memory `io` use while continuing to block file-opening aliases such as `io.open`.
+- Hardened script analysis so aliased Blender project-file/window operators such as `ops.wm.save_as_mainfile`, `wm.open_mainfile`, and assigned `save_as_mainfile` functions cannot bypass the privileged approval path.
+- Clarified that privileged script manifests are user review/audit context rather than a runtime filesystem or network sandbox.
 - Added bounded `create_procedural_object_kit` templates for kitbash towers, radial arrays, scatter grids, and product stacks, all using live-preview rollback.
 - Added bounded `create_directed_animation_shot` templates for camera push/reveal, orbit reveal, product turntable, path slide, staggered reveal, and storyboard dolly shots.
 - Expanded animation workflow generation so move/path/orbit/fall prompts can route through directed shot helpers before script fallback.

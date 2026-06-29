@@ -100,6 +100,17 @@ HELPER_FIRST_SCRIPT_GROUPS = {
     "preview_control",
 }
 
+STRICT_HELPER_FIRST_SCRIPT_GROUPS = {
+    "external_assets",
+    "project_files",
+}
+
+STRICT_HELPER_FIRST_SCRIPT_CODES = {
+    "external_asset_workflow_required",
+    "project_file_helper_required",
+    "simulation_helper_required",
+}
+
 HELPER_FIRST_SCRIPT_RULES = (
     {
         "code": "advanced_workflow_helper_required",
@@ -458,35 +469,71 @@ def has_explicit_helper_gap(text):
 def should_include_draft_script(text, matched_groups):
     if not contains_keyword(text, SCRIPT_FALLBACK_KEYWORDS):
         return False
+    matched = set(matched_groups or [])
+    if matched.intersection(STRICT_HELPER_FIRST_SCRIPT_GROUPS):
+        return False
     if contains_keyword(text, EXPLICIT_SCRIPT_FALLBACK_KEYWORDS):
         return True
-    matched = set(matched_groups or [])
-    if matched.intersection(HELPER_FIRST_SCRIPT_GROUPS):
-        return False
     return True
+
+
+def should_include_privileged_script(text, matched_groups):
+    if not contains_keyword(text, SCRIPT_FALLBACK_KEYWORDS):
+        return False
+    matched = set(matched_groups or [])
+    return bool(matched.intersection(STRICT_HELPER_FIRST_SCRIPT_GROUPS))
 
 
 def iter_helper_first_script_rules():
     return iter(HELPER_FIRST_SCRIPT_RULES)
 
 
-def helper_first_script_guard(text):
-    if has_explicit_helper_gap(text):
+def _matching_helper_first_rule(text, *, ignore_helper_gap=False):
+    if not ignore_helper_gap and has_explicit_helper_gap(text):
         return None
     for rule in HELPER_FIRST_SCRIPT_RULES:
         if not contains_any_guard_term(text, rule["terms"]):
             continue
-        recommended_tools = list(rule["recommended_tools"])
-        return {
-            "ok": False,
-            "blocked": True,
-            "code": rule["code"],
-            "message": rule["message"],
-            "requires_user_approval": False,
-            "explicit_helper_gap_required": True,
-            "recommended_tools": recommended_tools,
-            "recommended_next_step": f"Call {recommended_tools[0]} or another listed helper before retrying draft_script.",
-        }
+        return rule
+    return None
+
+
+def _result_for_rule(rule):
+    if not rule:
+        return None
+    recommended_tools = list(rule["recommended_tools"])
+    return {
+        "ok": True,
+        "blocked": False,
+        "code": rule["code"],
+        "message": rule["message"],
+        "requires_user_approval": False,
+        "explicit_helper_gap_required": False,
+        "recommended_tools": recommended_tools,
+        "recommended_next_step": f"Consider {recommended_tools[0]} or another listed helper if it covers the edit.",
+    }
+
+
+def helper_first_script_advisory(text):
+    return _result_for_rule(_matching_helper_first_rule(text))
+
+
+def helper_first_script_guard(text):
+    for rule in HELPER_FIRST_SCRIPT_RULES:
+        if rule["code"] not in STRICT_HELPER_FIRST_SCRIPT_CODES:
+            continue
+        if not contains_any_guard_term(text, rule["terms"]):
+            continue
+        result = _result_for_rule(rule)
+        result.update(
+            {
+                "ok": False,
+                "blocked": True,
+                "explicit_helper_gap_required": True,
+                "recommended_next_step": f"Call {result['recommended_tools'][0]} or another listed helper before retrying draft_script.",
+            }
+        )
+        return result
     return None
 
 

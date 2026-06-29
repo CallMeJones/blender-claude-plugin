@@ -113,6 +113,39 @@ class FakeBridgeHandler(BaseHTTPRequestHandler):
                             "annotations": bridge_protocol.mcp_annotations_for_tool("draft_script"),
                         },
                         {
+                            "name": "draft_privileged_script",
+                            "title": "Draft Privileged Script",
+                            "description": "Stage privileged asset/project-file script for approval",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "script_kind": {
+                                        "type": "string",
+                                        "enum": ["external_asset", "project_file", "asset_project_file"],
+                                    },
+                                    "intent": {"type": "string"},
+                                    "expected_changes": {"type": "string"},
+                                    "approval_summary": {"type": "string"},
+                                    "declared_paths": {"type": "array", "items": {"type": "string"}},
+                                    "declared_urls": {"type": "array", "items": {"type": "string"}},
+                                    "destructive_actions": {"type": "array", "items": {"type": "string"}},
+                                    "code": {"type": "string"},
+                                },
+                                "required": [
+                                    "script_kind",
+                                    "intent",
+                                    "expected_changes",
+                                    "approval_summary",
+                                    "declared_paths",
+                                    "declared_urls",
+                                    "destructive_actions",
+                                    "code",
+                                ],
+                                "additionalProperties": False,
+                            },
+                            "annotations": bridge_protocol.mcp_annotations_for_tool("draft_privileged_script"),
+                        },
+                        {
                             "name": "run_approved_script",
                             "title": "Run Approved Script",
                             "description": "Run a user-approved pending script with a Blender-issued token",
@@ -201,7 +234,7 @@ class FakeBridgeHandler(BaseHTTPRequestHandler):
                         "text": json.dumps(
                             {
                                 "ok": True,
-                                "count": 2,
+                                "count": 3,
                                 "tools": [
                                     {
                                         "name": "list_scene_objects",
@@ -212,6 +245,12 @@ class FakeBridgeHandler(BaseHTTPRequestHandler):
                                         "name": "draft_script",
                                         "risk_level": "approval",
                                         "permissions": ["script:stage"],
+                                        "requires_approval": True,
+                                    },
+                                    {
+                                        "name": "draft_privileged_script",
+                                        "risk_level": "approval",
+                                        "permissions": ["script:stage", "files:write", "network"],
                                         "requires_approval": True,
                                     },
                                 ],
@@ -712,12 +751,18 @@ def _assert_full_tools_visible(proc):
         "create_new_blender_project",
         "autosave_current_blend_file",
         "draft_script",
+        "draft_privileged_script",
         "run_approved_script",
     }.issubset(names), listed
     draft_tool = next(tool for tool in listed["result"]["tools"] if tool["name"] == "draft_script")
     assert draft_tool["annotations"]["mutatesScene"] is True, draft_tool
     assert draft_tool["annotations"]["hasSideEffects"] is True, draft_tool
     assert draft_tool["annotations"]["readOnlyHint"] is False, draft_tool
+    privileged_tool = next(tool for tool in listed["result"]["tools"] if tool["name"] == "draft_privileged_script")
+    assert privileged_tool["annotations"]["requiresApproval"] is True, privileged_tool
+    assert privileged_tool["annotations"]["requiresExplicitOneTimeApproval"] is True, privileged_tool
+    assert privileged_tool["annotations"]["trustWindowAutoRunAllowed"] is False, privileged_tool
+    assert {"files:read", "files:write", "network"}.issubset(set(privileged_tool["annotations"]["permissions"])), privileged_tool
     run_tool = next(tool for tool in listed["result"]["tools"] if tool["name"] == "run_approved_script")
     assert run_tool["annotations"]["requiresApproval"] is True, run_tool
     assert run_tool["annotations"]["hasSideEffects"] is True, run_tool
@@ -1805,7 +1850,7 @@ def main():
         assert "plan_animation_workflow" in animation_prompt_text, animation_prompt
         assert "run_animation_workflow" in animation_prompt_text, animation_prompt
         assert "capture_object_inspection_renders" in animation_prompt_text, animation_prompt
-        assert "draft_script only" in animation_prompt_text, animation_prompt
+        assert "draft_script for custom advanced animation code" in animation_prompt_text, animation_prompt
         advanced_prompt = _send(
             proc,
             {

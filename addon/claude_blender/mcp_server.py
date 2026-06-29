@@ -181,6 +181,7 @@ SCRIPT_EXPLICIT_TERMS = {
     "custom code",
     "custom python",
     "draft_script",
+    "draft_privileged_script",
     "helper tools cannot express",
     "helpers cannot express",
     "approved script",
@@ -524,7 +525,8 @@ PROMPTS = {
             "For manual control, follow next_tool_calls in order for brief, scene routing, timing, "
             "helper generation, validation, playblast review, and repair. "
             "When rendered visual evidence is needed for object details, use capture_object_inspection_renders. "
-            "Use draft_script only when the workflow's script_fallback_policy says helpers cannot express the edit."
+            "Prefer helpers when they clearly fit; use draft_script for custom advanced animation code when "
+            "static checks pass and the user has approved or trusted script execution."
         ),
     },
     "advanced_scene_workflow": {
@@ -546,7 +548,8 @@ PROMPTS = {
             "and visual review. For procedural 3D modifier-stack or object-kit tasks, inspect geometry nodes when relevant "
             "and prefer create_procedural_object_kit or apply_procedural_array_stack before custom geometry scripts. For cloth setup, use "
             "add_cloth_simulation_to_selected, then get_simulation_details or inspect_simulation_bake before any "
-            "persistent bake. Use draft_script only after the planner or helper result identifies an explicit helper gap."
+            "persistent bake. Use draft_script for custom advanced scene scripts when static checks pass; keep "
+            "external asset, project-file, and persistent bake/free work on their dedicated approval paths."
         ),
     },
     "external_asset_workflow": {
@@ -983,7 +986,7 @@ def _is_external_asset_route_query(text):
 
 def _tool_category(tool):
     name = str((tool or {}).get("name") or "").lower()
-    if name in {"draft_script", "run_approved_script"}:
+    if name in {"draft_script", "draft_privileged_script", "run_approved_script"}:
         return "script"
     if name in {"commit_preview", "revert_preview"}:
         return "preview"
@@ -1242,6 +1245,8 @@ def _score_tool_match(tool, query):
     elif name == "draft_script" and not explicit_script_query:
         score -= 100
     if external_asset_query:
+        if name == "draft_privileged_script" and explicit_script_query:
+            score += 1100
         if name == "start_external_asset_download":
             score += 1200
         elif name == "start_external_asset_import_job":

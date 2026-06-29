@@ -75,7 +75,7 @@ def main():
         helper_script_names = _names(helper_script_tools)
         assert "set_selected_location_delta" in helper_script_names, helper_script_meta
         assert "assign_material_to_selected" in helper_script_names, helper_script_meta
-        assert "draft_script" not in helper_script_names, helper_script_meta
+        assert "draft_script" in helper_script_names, helper_script_meta
 
         asset_script_tools, asset_script_meta = agent_tools.select_blender_tool_definitions(
             "Write a Python script to download and import a Poly Haven sunset HDRI.",
@@ -85,6 +85,25 @@ def main():
         assert "start_external_asset_download" in asset_script_names, asset_script_meta
         assert "start_external_asset_import_job" in asset_script_names, asset_script_meta
         assert "draft_script" not in asset_script_names, asset_script_meta
+        assert "draft_privileged_script" in asset_script_names, asset_script_meta
+
+        custom_asset_script_tools, custom_asset_script_meta = agent_tools.select_blender_tool_definitions(
+            "Write a custom Python script to download and import a Poly Haven sunset HDRI.",
+            bundle,
+        )
+        custom_asset_script_names = _names(custom_asset_script_tools)
+        assert "start_external_asset_download" in custom_asset_script_names, custom_asset_script_meta
+        assert "draft_script" not in custom_asset_script_names, custom_asset_script_meta
+        assert "draft_privileged_script" in custom_asset_script_names, custom_asset_script_meta
+
+        project_file_script_tools, project_file_script_meta = agent_tools.select_blender_tool_definitions(
+            "Write a custom Python script to save this project as a new .blend file.",
+            bundle,
+        )
+        project_file_script_names = _names(project_file_script_tools)
+        assert "save_blend_file" in project_file_script_names, project_file_script_meta
+        assert "draft_script" not in project_file_script_names, project_file_script_meta
+        assert "draft_privileged_script" in project_file_script_names, project_file_script_meta
 
         product_tools, product_meta = agent_tools.select_blender_tool_definitions(
             "Polish this product into a premium catalog studio shot with dimensions and a turntable.",
@@ -227,7 +246,7 @@ def main():
         )
         storyboard_script_names = _names(storyboard_script_tools)
         assert "create_storyboard_panels" in storyboard_script_names, storyboard_script_meta
-        assert "draft_script" not in storyboard_script_names, storyboard_script_meta
+        assert "draft_script" in storyboard_script_names, storyboard_script_meta
 
         procedural_tools, procedural_meta = agent_tools.select_blender_tool_definitions(
             "Make this an advanced 3D procedural hard-surface array stack with bevels and weighted normals.",

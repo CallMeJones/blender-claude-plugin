@@ -194,7 +194,7 @@ def main():
             status=script_runner.NO_EXTERNAL_TRUST_STATUS,
             audit_action="smoke_animation_routing_clear",
         )
-        guarded_script = json.loads(
+        advised_script = json.loads(
             tool_dispatcher.execute_tool(
                 context,
                 "draft_script",
@@ -202,13 +202,16 @@ def main():
                     "intent": "Animate the cube with a two-bounce keyframe sequence.",
                     "expected_changes": "Cube bounces twice with smaller squash/stretch poses.",
                     "risk_level": "low",
-                    "code": "print('animation fallback should not run before workflow')",
+                    "code": "print('animation fallback stages for approval without trust')",
                 },
             )
         )
-        assert guarded_script["ok"] is False, guarded_script
-        assert guarded_script["code"] == "animation_workflow_required", guarded_script
-        assert "run_animation_workflow" in guarded_script["recommended_tools"], guarded_script
+        assert advised_script["ok"] is True, advised_script
+        assert advised_script["requires_user_approval"] is True, advised_script
+        assert advised_script["helper_advisory"]["code"] == "animation_workflow_advised", advised_script
+        assert "run_animation_workflow" in advised_script["helper_advisory"]["recommended_tools"], advised_script
+        rejected_advised_script = script_runner.reject_pending_script(context)
+        assert rejected_advised_script["ok"], rejected_advised_script
 
         explicit_gap_script = json.loads(
             tool_dispatcher.execute_tool(
@@ -382,21 +385,24 @@ def main():
         assert ambiguous_plan["status"] == "needs_clarification", ambiguous_plan
         assert ambiguous_plan["next_tool_calls"] == [], ambiguous_plan
         assert ambiguous_plan["script_fallback_policy"]["allowed"] is False, ambiguous_plan
-        blocked_after_ambiguous = json.loads(
+        advised_after_ambiguous = json.loads(
             tool_dispatcher.execute_tool(
                 context,
                 "draft_script",
                 {
                     "intent": "Animate the cube with a quick Python fallback after an ambiguous workflow.",
-                    "expected_changes": "No script should be staged because the workflow still needs clarification.",
+                    "expected_changes": "Script should stage for approval because static checks pass.",
                     "risk_level": "low",
-                    "code": "print('ambiguous animation fallback should stay blocked')",
+                    "code": "print('ambiguous animation fallback stages for approval')",
                 },
             )
         )
-        assert blocked_after_ambiguous["ok"] is False, blocked_after_ambiguous
-        assert blocked_after_ambiguous["code"] == "animation_workflow_required", blocked_after_ambiguous
-        assert blocked_after_ambiguous["animation_workflow_seen"] is True, blocked_after_ambiguous
+        assert advised_after_ambiguous["ok"] is True, advised_after_ambiguous
+        assert advised_after_ambiguous["requires_user_approval"] is True, advised_after_ambiguous
+        assert advised_after_ambiguous["helper_advisory"]["code"] == "animation_workflow_advised", advised_after_ambiguous
+        assert advised_after_ambiguous["helper_advisory"]["animation_workflow_seen"] is True, advised_after_ambiguous
+        rejected_ambiguous_script = script_runner.reject_pending_script(context)
+        assert rejected_ambiguous_script["ok"], rejected_ambiguous_script
 
         no_count = _execute(
             context,

@@ -501,7 +501,7 @@ Regression prompts for real clients:
 
 | Prompt | Expected route | Pass condition |
 | --- | --- | --- |
-| `make selected cube bounce twice and get smaller each bounce` | `run_animation_task` or `run_animation_workflow`, then `create_progressive_bounce_animation` | No first-call `draft_script`. |
+| `make selected cube bounce twice and get smaller each bounce` | `run_animation_task` or `run_animation_workflow`, then `create_progressive_bounce_animation` | Workflow route preferred; explicit script/Python requests may still use `draft_script` after static checks. |
 | `block a jump with anticipation, contact, apex, settle` | `plan_animation_workflow` or `run_animation_task`, then timing/blocking helpers | Workflow-first path before Python. |
 | `review this animation for spacing/contact` | Workflow/evaluator/review tools | Review helpers before script repair. |
 
@@ -754,8 +754,8 @@ Required scenarios:
 - Approval token is short-lived, bound to the pending script text, one-time use, and rejected when stale or wrong.
 - Runtime external script trust allows tokenless runs only while active and only after static checks pass.
 - Trust is cleared on add-on reload, file load, and bridge start.
-- Animation-like script fallback remains blocked until workflow-first routing allows fallback or an explicit helper gap is stated.
-- Common helper-covered script drafts return recommended helper tools, while explicit custom/procedural/helper-gap scripts still use approval/trust.
+- Animation-like and helper-overlap script drafts can stage or auto-run under trust after static checks pass, with helper advice returned as metadata.
+- External asset download/import and project file lifecycle scripts use `draft_privileged_script` when custom Python is required; they require a review/audit manifest and one-time approval and do not auto-run under normal trust. The manifest is not a runtime filesystem or network sandbox. Persistent simulation/cache bake and static-dangerous Python remain blocked or explicitly approval-gated.
 - Checkpoints, undo, stdout/stderr logs, error tracebacks, and pending script state are visible.
 - Audit logs redact code/token-like fields and record bridge/MCP tool calls.
 - Commit/revert preview status and rollback warnings are returned and shown.
@@ -808,10 +808,10 @@ Render a small scene thumbnail and read its metadata resource.
 
 Pass criteria:
 
-- Client uses helper/workflow tools before `draft_script` for common edits and animation.
+- Client uses helper/workflow tools when they clearly fit, but custom advanced `draft_script` calls can proceed after static checks and approval/trust.
 - Preview changes are visible in Blender and reversible.
 - MCP resources can be read by URI.
-- Blender sidebar Bridge Control Center refresh shows source/hash status, audit status, preview manifest, and visual evidence inventory.
+- Blender sidebar stays lean while bridge/tool responses expose source/hash status, audit status, preview manifest, and visual evidence inventory.
 - Client final responses accurately state what changed, what is pending, and what artifact URIs or paths exist.
 
 ## Phase 8: Negative And Security Tests

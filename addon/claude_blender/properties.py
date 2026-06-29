@@ -132,6 +132,34 @@ class CLAUDEBLENDER_PG_scene_state(bpy.types.PropertyGroup):
         name="Script Warnings",
         default="",
     )
+    pending_script_privileged: bpy.props.BoolProperty(
+        name="Privileged Script",
+        default=False,
+    )
+    pending_script_privileged_kind: bpy.props.StringProperty(
+        name="Privileged Script Kind",
+        default="",
+    )
+    pending_script_privileged_capabilities: bpy.props.StringProperty(
+        name="Privileged Script Capabilities",
+        default="",
+    )
+    pending_script_approval_summary: bpy.props.StringProperty(
+        name="Script Approval Summary",
+        default="",
+    )
+    pending_script_declared_paths: bpy.props.StringProperty(
+        name="Script Declared Paths",
+        default="",
+    )
+    pending_script_declared_urls: bpy.props.StringProperty(
+        name="Script Declared URLs",
+        default="",
+    )
+    pending_script_destructive_actions: bpy.props.StringProperty(
+        name="Script Destructive Actions",
+        default="",
+    )
     pending_script_external_approval_status: bpy.props.StringProperty(
         name="External Script Approval Status",
         default="No external script approval",

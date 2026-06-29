@@ -40,7 +40,7 @@ Blender Agent Bridge is a Blender extension plus a localhost MCP bridge. It lets
    Move the selected cube up 1 Blender unit and make it red. Leave the change as a preview.
    ```
 
-Live helper edits stay pending in Blender until you use `Commit`, `Revert`, or Blender undo. For Sketchfab downloads/imports, add `SKETCHFAB_API_TOKEN` to the copied MCP config `env` block before restarting the MCP client. For generated Python, use Blender's `Run`/`Reject` controls or grant temporary external script trust from the sidebar.
+Live helper edits stay pending in Blender until you use `Commit`, `Revert`, or Blender undo. For Sketchfab downloads/imports, add `SKETCHFAB_API_TOKEN` to the copied MCP config `env` block before restarting the MCP client. For generated Python, use Blender's `Run`/`Reject` controls or grant temporary external script trust from the sidebar. Custom asset/project-file scripts use `draft_privileged_script`, require a path/URL/action manifest for user review and audit, and never auto-run under normal script trust. The privileged manifest is not a filesystem or network sandbox.
 
 After connecting, MCP results may include `guardrail_warnings`. These are advisory client-routing hints, not failures: follow them toward async external asset jobs, queued imports, background render/MP4 polling, user-confirmed file paths, approval-gated scripts, and preview commit/revert controls.
 
@@ -83,7 +83,7 @@ The source `.blend` file and full 1080p videos are not committed here; the repos
 - Apply safe helper edits for transforms, materials, lights, cameras, primitives, keyframes, rigs, constraints, render settings, 2D storyboard/animatic panels, cutout animation layers, camera dolly shots, cloth setup, procedural array stacks, product stages, character/vehicle kits, geometry-node starters, and scene organization.
 - Start long-running render jobs in a background Blender process, poll progress, assemble PNG sequences into MP4, and validate the output before reporting success.
 - Search cached Blender Python API and Manual docs before using version-sensitive APIs, and use status/audit resources to spot stale client configs or timed-out work.
-- Stage arbitrary Blender Python into the `Agent Bridge Pending Script` Text datablock when helpers cannot express the task.
+- Stage custom or larger Blender Python into the `Agent Bridge Pending Script` Text datablock, with helper advice and a 500k-character normal-script ceiling so advanced procedural scene scripts can pass static checks. Use `draft_privileged_script` for custom external asset or project-file scripts that need declared filesystem, network, asset-import, or project-file capabilities.
 
 ## Safety Model
 
@@ -96,6 +96,7 @@ Connected agents do not get blanket access to Blender.
 | Project files | Save-as, save-copy, open, and new-project tools require a user-confirmed path. Autosave only saves an already-bound active `.blend` file in place. |
 | External assets | Poly Haven uses public catalog/file APIs. Sketchfab downloads/imports require a per-call API token or a token inherited by the MCP server environment. Tokens are redacted and not written to job metadata. |
 | Generated Python | Staged into a Text datablock and blocked until approved in Blender, unless runtime-only script trust is active. |
+| Privileged Python | Custom asset/project-file scripts require a manifest and one-time approval; normal script trust cannot auto-run them. |
 | External script trust | Optional sidebar preset for iterative sessions. Trust is runtime-only and can be revoked. Blocked scripts remain refused. |
 | Audit and status | Local redacted JSONL audit events and bridge/MCP diagnostics are available through MCP resources and status calls. |
 | MCP guardrail warnings | Advisory hints in catalog, schema, and tool results steer clients toward async jobs, queued imports, user-confirmed paths, approval gates, dry-run cleanup, preview commit/revert, and background-job polling. |
@@ -205,7 +206,7 @@ Check whether Sketchfab auth is available in this MCP config, then search for a 
 Check the current blend-file diagnostics and autosave only if the scene is already saved to a real .blend path.
 ```
 
-Live helper changes, including external asset imports, remain pending until you use `Commit`, `Revert`, or Blender undo. Generated Python remains pending until you use `Run`, `Approve External`, `Reject`, or an active trusted session allows it.
+Live helper changes, including external asset imports, remain pending until you use `Commit`, `Revert`, or Blender undo. Generated Python remains pending until you use `Run`, `Approve External`, `Reject`, or an active trusted session allows it. Privileged generated Python for custom asset/project-file work remains pending until manual Run or a fresh one-time external approval token.
 
 ## Install From Source
 

@@ -443,23 +443,13 @@ def _draw_ask_section(layout, state, prefs):
     ask_box = _draw_section(layout, "Bridge Control")
     bridge_running = bridge_server.is_running()
     ask_box.label(text=f"{build_info.ADDON_NAME} {build_info.ADDON_VERSION}")
-    ask_box.label(text=f"Bridge {build_info.BRIDGE_VERSION} | MCP {build_info.MCP_SERVER_VERSION}")
-    ask_box.label(text=f"Status: {'On' if bridge_running else 'Off'}")
-    if state.bridge_diagnostics_status != "Bridge diagnostics not checked":
-        _draw_wrapped(ask_box, state.bridge_diagnostics_status, max_lines=2)
-    if state.bridge_source_status != "Source hash not checked":
-        _draw_wrapped(ask_box, state.bridge_source_status, max_lines=2)
-    if state.bridge_operation_status != "No bridge operation recorded":
-        _draw_wrapped(ask_box, state.bridge_operation_status, max_lines=2)
+    ask_box.label(text=f"Bridge: {'On' if bridge_running else 'Off'} | MCP {build_info.MCP_SERVER_VERSION}")
     bridge_row = ask_box.row(align=True)
     if bridge_running:
         bridge_row.operator("claude_blender.stop_bridge", text="Stop Bridge")
     else:
         bridge_row.operator("claude_blender.start_bridge", text="Start Bridge")
     bridge_row.operator("claude_blender.copy_mcp_config", text="Copy MCP Config")
-    center_row = ask_box.row(align=True)
-    center_row.operator("claude_blender.refresh_control_center", text="Refresh Center", icon="FILE_REFRESH")
-    center_row.operator("claude_blender.copy_control_center", text="Copy Center")
     trust_snapshot = script_runner.external_script_trust_snapshot(bpy.context, state=state)
     trust_active = trust_snapshot["active"]
     trust_status = trust_snapshot["status"]
@@ -478,15 +468,6 @@ def _draw_ask_section(layout, state, prefs):
     revoke_row.operator("claude_blender.revoke_external_script_trust", text="Revoke Trust", icon="CANCEL")
     if trust_status != script_runner.NO_EXTERNAL_TRUST_STATUS:
         _draw_field(ask_box, "Script Trust", trust_status, width=44, max_lines=2)
-
-    toggle_row = ask_box.row(align=True)
-    toggle_row.prop(state, "include_screenshot", toggle=True)
-    toggle_row.prop(state, "live_helpers", toggle=True)
-
-    ask_box.operator("claude_blender.capture_context", text="Capture Scene Context", icon="VIEWZOOM")
-
-    if prefs:
-        ask_box.label(text=f"Mode: {prefs.execution_mode.replace('_', ' ').title()}")
 
 
 def _draw_preview_manifest_section(layout, state):
@@ -542,24 +523,35 @@ def _draw_status_section(layout, state):
 
 
 def _draw_action_center(layout, state):
-    actions = _draw_section(layout, "Actions")
-    has_action = False
+    has_script = bool(state.pending_script)
+    has_preview = bool(state.pending_preview)
+    has_error = bool(state.last_script_error_summary)
+    checkpoint = state.last_checkpoint_path or state.last_checkpoint_status
+    has_checkpoint = bool(checkpoint and checkpoint != "No script checkpoint yet")
+    if not (has_script or has_preview or has_error or has_checkpoint):
+        return
 
-    if state.active_tool_name:
-        has_action = True
-        actions.label(text=f"Running: {state.active_tool_name}")
-    elif state.last_tool_name:
-        actions.label(text=f"Last tool: {state.last_tool_name}")
-    if state.tool_call_count:
-        actions.label(text=f"Tool calls this session: {state.tool_call_count}")
+    actions = _draw_section(layout, "Pending")
 
     if state.pending_script:
-        has_action = True
         actions.label(text=f"Script: {state.pending_script_status}")
         if state.pending_script_risk:
             actions.label(text=f"Risk: {state.pending_script_risk}")
         if state.pending_script_text_name:
             actions.label(text=f"Text: {state.pending_script_text_name}")
+        if getattr(state, "pending_script_privileged", False):
+            kind = getattr(state, "pending_script_privileged_kind", "") or "privileged"
+            actions.label(text=f"Privileged: {kind}")
+            if state.pending_script_privileged_capabilities:
+                _draw_field(actions, "Capabilities", state.pending_script_privileged_capabilities, width=44, max_lines=2)
+            if state.pending_script_approval_summary:
+                _draw_field(actions, "Approval", state.pending_script_approval_summary, width=44, max_lines=3)
+            if state.pending_script_declared_paths:
+                _draw_field(actions, "Paths", state.pending_script_declared_paths, width=44, max_lines=3)
+            if state.pending_script_declared_urls:
+                _draw_field(actions, "URLs", state.pending_script_declared_urls, width=44, max_lines=3)
+            if state.pending_script_destructive_actions:
+                _draw_field(actions, "Destructive", state.pending_script_destructive_actions, width=44, max_lines=3)
         if state.pending_script_intent:
             _draw_field(actions, "Intent", state.pending_script_intent, width=44, max_lines=2)
         if state.pending_script_expected_changes:
@@ -585,7 +577,6 @@ def _draw_action_center(layout, state):
                 _draw_field(actions, "Last Error", state.last_script_error_summary, width=44, max_lines=3)
 
     if state.pending_preview:
-        has_action = True
         _draw_field(actions, "Live Preview", state.pending_preview_label or "Pending live changes", max_lines=2)
         if state.pending_preview_summary:
             _draw_field(actions, "Rollback", state.pending_preview_summary, width=44, max_lines=4)
@@ -594,50 +585,15 @@ def _draw_action_center(layout, state):
         row = actions.row(align=True)
         row.operator("claude_blender.commit_preview", text="Commit", icon="CHECKMARK")
         row.operator("claude_blender.revert_preview", text="Revert", icon="LOOP_BACK")
-    elif state.last_preview_warnings:
-        has_action = True
-        _draw_field(actions, "Last Preview Warnings", state.last_preview_warnings, width=44, max_lines=4)
-    actions.operator("claude_blender.undo_last", text="Undo Last", icon="LOOP_BACK")
 
-    screenshot_line = state.last_screenshot_status or "No viewport screenshot captured"
-    if state.include_screenshot or state.last_screenshot_path:
-        has_action = True
-        _draw_wrapped(actions, screenshot_line, max_lines=2)
-        details = []
-        size = _format_bytes(state.last_screenshot_size)
-        if state.last_screenshot_image_name:
-            details.append(state.last_screenshot_image_name)
-        if size:
-            details.append(size)
-        if state.last_screenshot_path:
-            details.append(os.path.basename(state.last_screenshot_path))
-        if details:
-            _draw_wrapped(actions, " | ".join(details), max_lines=2)
-        row = actions.row(align=True)
-        row.enabled = state.include_screenshot
-        row.operator("claude_blender.capture_viewport_preview", text="Capture", icon="IMAGE_DATA")
-        open_row = actions.row(align=True)
-        open_row.enabled = bool(state.last_screenshot_path)
-        open_row.operator("claude_blender.open_last_screenshot", text="Open Screenshot", icon="FILE_FOLDER")
+    if has_error and not state.pending_script:
+        _draw_field(actions, "Last Error", state.last_script_error_summary, width=44, max_lines=3)
 
-    _draw_wrapped(actions, state.docs_cache_status, max_lines=2)
-    docs_row = actions.row(align=True)
-    docs_row.operator("claude_blender.check_docs_cache", text="Check Docs", icon="VIEWZOOM")
-    build_row = docs_row.row(align=True)
-    build_row.enabled = not state.docs_cache_building
-    build = build_row.operator("claude_blender.build_docs_cache", text="Build Docs", icon="FILE_REFRESH")
-    build.force = False
-
-    checkpoint = state.last_checkpoint_path or state.last_checkpoint_status
-    if checkpoint and checkpoint != "No script checkpoint yet":
-        has_action = True
+    if has_checkpoint:
         _draw_field(actions, "Checkpoint", checkpoint, width=44, max_lines=2)
         restore_row = actions.row(align=True)
         restore_row.enabled = bool(state.last_checkpoint_path)
         restore_row.operator("claude_blender.restore_last_checkpoint", text="Restore Checkpoint", icon="FILE_REFRESH")
-
-    if not has_action and not state.active_tool_name:
-        actions.label(text="No pending actions")
 
 
 class CLAUDEBLENDER_OT_run_approved_script(bpy.types.Operator):
@@ -1131,10 +1087,6 @@ class CLAUDEBLENDER_PT_sidebar(bpy.types.Panel):
 
         _draw_ask_section(layout, state, prefs)
         _draw_action_center(layout, state)
-        _draw_preview_manifest_section(layout, state)
-        _draw_audit_section(layout, state)
-        _draw_visual_evidence_section(layout, state)
-        _draw_status_section(layout, state)
 
 
 classes = (

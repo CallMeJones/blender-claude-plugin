@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 
 try:
-    from . import helper_routing
+    from . import helper_routing, script_analysis
 except ImportError:  # Allows direct imports from addon/claude_blender.
     import helper_routing
+    import script_analysis
 
 
 AGENT_GUIDANCE = (
@@ -28,8 +29,8 @@ AGENT_GUIDANCE = (
     "For external assets, use list_poly_haven_categories and search_poly_haven_assets/search_sketchfab_models for discovery, inspect_poly_haven_asset_files before choosing Poly Haven formats, then use start_external_asset_download for any download/cache or import request. Poll get_external_asset_job_status until completed or failed. For scene import, call start_external_asset_import_job and poll get_external_asset_import_job_status until completed or failed. Use download_poly_haven_asset, import_poly_haven_asset, download_sketchfab_model, import_sketchfab_model, and import_external_asset_job_result only for explicit synchronous fallback/debug cases. Use get_external_asset_cache_diagnostics to report cached/imported assets. Sketchfab API tokens must be provided per call or through the MCP server environment, not Blender preferences. "
     "For animation generation, review, or repair, call run_animation_task for simple prompt-in/task-out use, or call plan_animation_workflow first when you need manual control of the generated workflow. plan_animation_workflow returns the brief, scene routing, timing chart, ordered helper calls, evaluator calls, repair calls, and script fallback rules. For common helper-backed generation, call run_animation_workflow to execute the plan, review the result, optionally capture playblast evidence, and leave changes in preview. Use any animation_brief in context as the prompt contract; otherwise call create_animation_brief first when the prompt needs an explicit contract, success criteria, or later validation. Call get_animation_scene_context before advanced animation in scenes with rigs, constraints, drivers, shape keys, physics, or unclear edit targets so you know whether to animate object transforms, rig controls, shape keys, materials, physics, or camera settings. Use create_timing_chart, block_key_poses, add_breakdown_pose, set_pose_hold, set_rig_pose_hold, get_rig_pose_library_details, apply_rig_pose_from_action, apply_rig_pose_marker, apply_rig_action_clip, offset_rig_limb_controls, set_rig_custom_property_keyframes, create_directed_animation_shot, create_camera_dolly_animation, and create_motion_arc for animator-style blocking before spline/f-curve polish; use rig pose/action helpers only after identifying armature controls, pose-library candidates, or existing scalar IK/FK/space properties through rig inspection or repair metadata. Then use analyze_animation_principles plus focused analyzers to check timing, spacing, arcs, pose clarity, anticipation, squash/stretch, contact, center-of-mass support, speed/acceleration plausibility, simulation cache readiness, and settle before repair; use inspect_simulation_bake before persistent bake decisions, and use stage_persistent_simulation_bake when the user intentionally wants a persistent point-cache bake. Use capture_animation_playblast and review_playblast_against_brief when visual frame evidence matters; use capture_object_inspection_renders and review_inspection_renders_against_brief when close-up object detail evidence matters; if review or repair tools return repair_operations, prefer run_animation_repair_loop for bounded helper repair and review-again behavior, or execute relevant tool_call name/input entries deliberately when manual control is needed. Then prefer set_scene_frame_range, set_animation_preview_range, animate_selected_transform, animate_object_bounce, create_progressive_bounce_animation, animate_material_property, animate_light_property, create_follow_path_animation, create_turntable_animation, create_pulse_animation, create_reveal_animation, create_staggered_motion, create_directed_animation_shot, set_action_interpolation, retime_actions, add_action_cycles, clear_animation, create_camera_dolly_animation, and create_camera_orbit. "
     "For complex scene builds that need many objects or more than about eight helper calls, stage one cohesive Blender Python script with draft_script instead of making a long chain of helper calls. "
-    "When helper tools cannot express the requested edit, use draft_script to stage Blender Python for user approval; if the user has granted external script trust, draft_script may auto-run after static checks. "
-    "When calling draft_script, put the complete Python source in the code field. Do not put script code in final chat text for the user to paste manually. "
+    "Use draft_script for custom or larger advanced scene scripts when static checks pass; helper overlap should be treated as advice. Use draft_privileged_script for custom external asset or project-file lifecycle scripts that need declared filesystem, network, asset-import, or project-file capabilities. Privileged scripts require a manifest and never auto-run under normal external script trust. Persistent simulation/cache bakes stay on their dedicated one-time approval path. If the user has granted external script trust, draft_script may auto-run after static checks. "
+    "When calling draft_script or draft_privileged_script, put the complete Python source in the code field. Do not put script code in final chat text for the user to paste manually. "
     "If draft_script reports that code is missing, retry once with a shorter complete script in the code field. "
     "A drafted script runs only when draft_script reports auto_ran true or the user explicitly approves it in Blender, so do not claim it executed from staging alone. "
     "Before drafting unfamiliar or version-sensitive Python, search_blender_docs for the relevant Blender API. "
@@ -38,7 +39,7 @@ AGENT_GUIDANCE = (
     "If a value is absent, say it is not available in the context. "
     "For low-risk changes, call tools instead of merely explaining what should be done. "
     "Leave live preview changes pending for the user; do not call commit_preview or revert_preview unless the user explicitly asks. "
-    "Generated arbitrary Python is approval-gated by default and must be drafted through draft_script. "
+    "Generated arbitrary Python is approval-gated by default and must be drafted through draft_script or draft_privileged_script. "
     "When tool work is complete, provide a concise final summary of what changed and what remains pending."
 )
 
@@ -3171,10 +3172,83 @@ def blender_tool_definitions():
                     },
                     "code": {
                         "type": "string",
+                        "maxLength": script_analysis.MAX_SCRIPT_CHARS,
                         "description": "Complete Blender Python script to stage for approval",
                     },
                 },
                 "required": ["intent", "expected_changes", "risk_level", "code"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "draft_privileged_script",
+            "description": (
+                "Stage custom Blender Python for external asset or project-file workflows that need declared filesystem, network, asset-import, or project-file capabilities. "
+                "Requires an explicit approval manifest with paths/URLs/actions. Never auto-runs under normal external script trust; the user must run it in Blender or issue a one-time external approval token."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "script_kind": {
+                        "type": "string",
+                        "enum": ["external_asset", "project_file", "asset_project_file"],
+                        "description": "Privileged workflow class that determines default capabilities and approval checks.",
+                    },
+                    "intent": {"type": "string", "description": "Plain-language reason for the privileged script"},
+                    "expected_changes": {
+                        "type": "string",
+                        "description": "Visible scene, file, asset-cache, or project-file changes the user should expect",
+                    },
+                    "approval_summary": {
+                        "type": "string",
+                        "description": "Concise approval manifest explaining why helper tools are insufficient and what the script may touch",
+                    },
+                    "capabilities": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": ["filesystem", "network", "asset_import", "project_file"]},
+                        "description": "Requested elevated capabilities. Defaults are inferred from script_kind and merged with this list.",
+                    },
+                    "declared_paths": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Files, directories, cache locations, or .blend paths the script may read/write/open/save",
+                    },
+                    "declared_urls": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Network URLs, API endpoints, providers, or asset sources the script may contact",
+                    },
+                    "destructive_actions": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Expected overwrite, open, delete, import, save, or discard operations. Use an empty list only when none are expected.",
+                    },
+                    "risk_level": {
+                        "type": "string",
+                        "enum": ["low", "medium", "high"],
+                        "description": "Risk estimate based on file/network/project impact. Defaults to high.",
+                    },
+                    "target_objects": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Object or datablock names the script intends to touch",
+                    },
+                    "code": {
+                        "type": "string",
+                        "maxLength": script_analysis.MAX_SCRIPT_CHARS,
+                        "description": "Complete privileged Blender Python script to stage for approval",
+                    },
+                },
+                "required": [
+                    "script_kind",
+                    "intent",
+                    "expected_changes",
+                    "approval_summary",
+                    "declared_paths",
+                    "declared_urls",
+                    "destructive_actions",
+                    "code",
+                ],
                 "additionalProperties": False,
             },
         },
@@ -3202,6 +3276,7 @@ _CORE_TOOL_NAMES = {
 }
 
 _FALLBACK_TOOL_NAMES = {"draft_script"}
+_PRIVILEGED_FALLBACK_TOOL_NAMES = {"draft_privileged_script"}
 
 _TOOL_GROUPS = {
     "project_files": {
@@ -3645,6 +3720,8 @@ def select_blender_tool_definitions(prompt="", context_bundle=None, *, max_schem
 
     if helper_routing.should_include_draft_script(text, matched_groups):
         selected.update(_FALLBACK_TOOL_NAMES)
+    if helper_routing.should_include_privileged_script(text, matched_groups):
+        selected.update(_PRIVILEGED_FALLBACK_TOOL_NAMES)
 
     if not selected.intersection(TOOL_FUNCTIONS_FOR_MUTATION_COMPAT):
         selected.update({"select_objects"})
@@ -3717,6 +3794,8 @@ def select_blender_tool_definitions(prompt="", context_bundle=None, *, max_schem
         )
     if "draft_script" in selected:
         protected.add("draft_script")
+    if "draft_privileged_script" in selected:
+        protected.add("draft_privileged_script")
     while _schema_chars(tools) > budget:
         removable_index = next(
             (index for index in range(len(ordered_names) - 1, -1, -1) if ordered_names[index] not in protected),

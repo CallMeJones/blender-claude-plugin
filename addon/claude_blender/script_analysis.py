@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 
 
-MAX_SCRIPT_CHARS = 80_000
+MAX_SCRIPT_CHARS = 500_000
 
 BLOCKED_NAMES = {
     "eval",
@@ -29,11 +29,26 @@ BLOCKED_MODULES = {
     "urllib",
     "http",
     "importlib",
-    "io",
     "codecs",
     "ftplib",
     "pickle",
 }
+
+BLOCKED_MODULE_FUNCTIONS = {
+    "io": {"FileIO", "open", "open_code"},
+}
+
+FILESYSTEM_CAPABILITIES = {"filesystem", "files", "files:read", "files:write", "asset_import", "project_file"}
+NETWORK_CAPABILITIES = {"network", "asset_import"}
+PROJECT_FILE_CAPABILITIES = {"project_file"}
+
+PROJECT_FILE_OPERATORS = {
+    "bpy.ops.wm.save_as_mainfile",
+    "bpy.ops.wm.open_mainfile",
+    "bpy.ops.wm.read_homefile",
+}
+
+BLENDER_FILE_WINDOW_OPERATORS = PROJECT_FILE_OPERATORS | {"bpy.ops.wm.quit_blender"}
 
 BUILTINS_MODULES = {"builtins", "__builtins__"}
 
@@ -128,13 +143,57 @@ def _resolved_string(node, constant_names):
     return ""
 
 
-def _builtin_reflection_name(node, builtin_module_aliases, constant_names):
+def _normalized_capabilities(capabilities):
+    return {str(capability or "").strip().lower() for capability in (capabilities or []) if str(capability or "").strip()}
+
+
+def _filesystem_allowed(capabilities):
+    return bool(_normalized_capabilities(capabilities).intersection(FILESYSTEM_CAPABILITIES))
+
+
+def _network_allowed(capabilities):
+    return bool(_normalized_capabilities(capabilities).intersection(NETWORK_CAPABILITIES))
+
+
+def _project_file_allowed(capabilities):
+    return bool(_normalized_capabilities(capabilities).intersection(PROJECT_FILE_CAPABILITIES))
+
+
+def _blocked_names_for_capabilities(capabilities):
+    blocked = set(BLOCKED_NAMES)
+    if _filesystem_allowed(capabilities):
+        blocked.discard("open")
+    return blocked
+
+
+def _blocked_modules_for_capabilities(capabilities):
+    blocked = set(BLOCKED_MODULES)
+    if _filesystem_allowed(capabilities):
+        blocked.discard("pathlib")
+    if _network_allowed(capabilities):
+        blocked.difference_update({"requests", "urllib", "http"})
+    return blocked
+
+
+def _blocked_module_functions_for_capabilities(capabilities):
+    blocked = {module: set(functions) for module, functions in BLOCKED_MODULE_FUNCTIONS.items()}
+    if _filesystem_allowed(capabilities):
+        io_blocked = blocked.get("io", set())
+        io_blocked.difference_update({"FileIO", "open"})
+        if io_blocked:
+            blocked["io"] = io_blocked
+        else:
+            blocked.pop("io", None)
+    return blocked
+
+
+def _builtin_reflection_name(node, builtin_module_aliases, constant_names, blocked_names=BLOCKED_NAMES):
     if isinstance(node.func, ast.Call):
         inner_name = _call_name(node.func.func)
         if inner_name.endswith(".__dict__.get") and node.func.args:
             target = inner_name[: -len(".__dict__.get")]
             attr = _resolved_string(node.func.args[0], constant_names)
-            if target in builtin_module_aliases and attr in BLOCKED_NAMES:
+            if target in builtin_module_aliases and attr in blocked_names:
                 return f"{target}.{attr}"
         return ""
     call_name = _call_name(node.func)
@@ -149,32 +208,75 @@ def _builtin_reflection_name(node, builtin_module_aliases, constant_names):
         attr = _resolved_string(node.args[0], constant_names)
     else:
         return ""
-    if target in builtin_module_aliases and attr in BLOCKED_NAMES:
+    if target in builtin_module_aliases and attr in blocked_names:
         return f"{target}.{attr}"
     return ""
 
 
-def _builtin_subscript_name(node, builtin_module_aliases, constant_names):
+def _builtin_subscript_name(node, builtin_module_aliases, constant_names, blocked_names=BLOCKED_NAMES):
     if not isinstance(node, ast.Subscript):
         return ""
     target = _builtin_container_name(node.value, builtin_module_aliases)
     key = _resolved_string(node.slice, constant_names)
-    if target in builtin_module_aliases and key in BLOCKED_NAMES:
+    if target in builtin_module_aliases and key in blocked_names:
         return f"{target}.{key}"
     return ""
 
 
-def _blocked_reference_name(node, blocked_name_aliases, builtin_module_aliases, constant_names):
+def _blocked_module_container_name(node, blocked_module_aliases):
+    name = _call_name(node)
+    if name in blocked_module_aliases:
+        return blocked_module_aliases[name]
+    if name.endswith(".__dict__"):
+        root_name = name[: -len(".__dict__")]
+        return blocked_module_aliases.get(root_name, "")
+    return ""
+
+
+def _blocked_module_function_name(node, blocked_module_aliases, constant_names, blocked_module_functions=None):
+    blocked_module_functions = BLOCKED_MODULE_FUNCTIONS if blocked_module_functions is None else blocked_module_functions
+    reference_name = _call_name(node)
+    if "." in reference_name:
+        parts = reference_name.split(".")
+        module_name = blocked_module_aliases.get(parts[0], parts[0])
+        attr_name = parts[-1]
+        if attr_name in blocked_module_functions.get(module_name, set()):
+            return reference_name
+    if isinstance(node, ast.Call):
+        call_name = _call_name(node.func)
+        if call_name == "getattr" and len(node.args) >= 2:
+            module_name = _blocked_module_container_name(node.args[0], blocked_module_aliases)
+            attr_name = _resolved_string(node.args[1], constant_names)
+        elif call_name.endswith(".__dict__.get") and node.args:
+            module_name = _blocked_module_container_name(node.func.value, blocked_module_aliases)
+            attr_name = _resolved_string(node.args[0], constant_names)
+        elif call_name.endswith(".__getattribute__") and node.args:
+            module_name = _blocked_module_container_name(node.func.value, blocked_module_aliases)
+            attr_name = _resolved_string(node.args[0], constant_names)
+        else:
+            module_name = ""
+            attr_name = ""
+        if attr_name in blocked_module_functions.get(module_name, set()):
+            return f"{module_name}.{attr_name}"
+    if isinstance(node, ast.Subscript):
+        module_name = _blocked_module_container_name(node.value, blocked_module_aliases)
+        attr_name = _resolved_string(node.slice, constant_names)
+        if attr_name in blocked_module_functions.get(module_name, set()):
+            return f"{module_name}.{attr_name}"
+    return ""
+
+
+def _blocked_reference_name(node, blocked_name_aliases, builtin_module_aliases, constant_names, blocked_names=BLOCKED_NAMES):
     reference_name = _call_name(node)
     root_name = reference_name.split(".")[0]
     attr_name = reference_name.split(".")[-1]
     if root_name in blocked_name_aliases:
         return reference_name
-    if root_name in builtin_module_aliases and attr_name in BLOCKED_NAMES:
+    if root_name in builtin_module_aliases and attr_name in blocked_names:
         return reference_name
     if isinstance(node, ast.Call):
-        return _builtin_reflection_name(node, builtin_module_aliases, constant_names)
-    return _builtin_subscript_name(node, builtin_module_aliases, constant_names)
+        return _builtin_reflection_name(node, builtin_module_aliases, constant_names, blocked_names)
+    return _builtin_subscript_name(node, builtin_module_aliases, constant_names, blocked_names)
 
 
 def _risk_max(*levels):
@@ -192,39 +294,97 @@ def _requires_explicit_approval(call_name):
     )
 
 
-def _resolved_getattr_name(node, constant_names):
+def _resolved_getattr_name(node, constant_names, approval_aliases=None, getattr_aliases=None):
     if not isinstance(node, ast.Call):
         return ""
-    if _call_name(node.func) != "getattr" or len(node.args) < 2:
+    getattr_aliases = getattr_aliases or {"getattr"}
+    if _call_name(node.func) not in getattr_aliases or len(node.args) < 2:
         return ""
-    target = _approval_reference_name(node.args[0], constant_names)
+    target = _approval_reference_name(node.args[0], constant_names, approval_aliases, getattr_aliases)
     attr = _resolved_string(node.args[1], constant_names)
     if target and attr:
         return f"{target}.{attr}"
     return ""
 
 
-def _approval_reference_name(node, constant_names):
+def _approval_reference_name(node, constant_names, approval_aliases=None, getattr_aliases=None):
+    approval_aliases = approval_aliases or {}
     if isinstance(node, ast.Name):
-        return node.id
+        return approval_aliases.get(node.id, node.id)
     if isinstance(node, ast.Attribute):
-        parent = _approval_reference_name(node.value, constant_names)
-        return f"{parent}.{node.attr}" if parent else node.attr
+        parent = _approval_reference_name(node.value, constant_names, approval_aliases, getattr_aliases)
+        reference = f"{parent}.{node.attr}" if parent else node.attr
+        return approval_aliases.get(reference, reference)
     if isinstance(node, ast.Call):
-        return _resolved_getattr_name(node, constant_names)
+        reference = _resolved_getattr_name(node, constant_names, approval_aliases, getattr_aliases)
+        return approval_aliases.get(reference, reference)
     return ""
 
 
-def _approval_call_name(node, constant_names):
-    return _approval_reference_name(node, constant_names) or _call_name(node)
+def _approval_call_name(node, constant_names, approval_aliases=None, getattr_aliases=None):
+    return _approval_reference_name(node, constant_names, approval_aliases, getattr_aliases) or _call_name(node)
 
 
-def analyze_script(source):
+def _is_blender_reference(reference):
+    return reference == "bpy" or reference.startswith("bpy.")
+
+
+def _imported_approval_aliases(node):
+    aliases = {}
+    if isinstance(node, ast.Import):
+        for alias in node.names:
+            if alias.name == "bpy":
+                aliases[alias.asname or "bpy"] = "bpy"
+    elif isinstance(node, ast.ImportFrom) and node.module:
+        module = node.module
+        for alias in node.names:
+            local_name = alias.asname or alias.name
+            if module == "bpy" and alias.name == "ops":
+                aliases[local_name] = "bpy.ops"
+            elif module == "bpy.ops" and alias.name == "wm":
+                aliases[local_name] = "bpy.ops.wm"
+            elif module == "bpy.ops.wm":
+                aliases[local_name] = f"bpy.ops.wm.{alias.name}"
+    return aliases
+
+
+def _imported_getattr_aliases(node):
+    aliases = set()
+    if isinstance(node, ast.Import):
+        for alias in node.names:
+            if alias.name in BUILTINS_MODULES:
+                aliases.add(f"{alias.asname or alias.name}.getattr")
+    elif isinstance(node, ast.ImportFrom) and node.module in BUILTINS_MODULES:
+        for alias in node.names:
+            if alias.name == "getattr":
+                aliases.add(alias.asname or alias.name)
+    return aliases
+
+
+def analyze_script(source, *, privileged_capabilities=None):
+    privileged_capabilities = _normalized_capabilities(privileged_capabilities)
+    blocked_names = _blocked_names_for_capabilities(privileged_capabilities)
+    blocked_modules = _blocked_modules_for_capabilities(privileged_capabilities)
+    blocked_module_functions = _blocked_module_functions_for_capabilities(privileged_capabilities)
     blocks = []
     warnings = []
     explicit_approval_reasons = []
     risk_reasons = []
     risk_level = "low"
+    if len(source) > MAX_SCRIPT_CHARS:
+        return {
+            "ok": False,
+            "blocked": True,
+            "issues": [f"Script is too large: {len(source)} chars > {MAX_SCRIPT_CHARS}"],
+            "warnings": [],
+            "risk_level": "blocked",
+            "risk_reasons": ["script_too_large"],
+            "checkpoint_recommended": True,
+            "explicit_approval_required": False,
+            "explicit_approval_reasons": [],
+            "privileged_capabilities": sorted(privileged_capabilities),
+            "trust_window_allowed": False,
+        }
     try:
         tree = ast.parse(source)
     except SyntaxError as exc:
@@ -238,13 +398,16 @@ def analyze_script(source):
             "checkpoint_recommended": True,
             "explicit_approval_required": False,
             "explicit_approval_reasons": [],
+            "privileged_capabilities": sorted(privileged_capabilities),
             "trust_window_allowed": False,
         }
-    if len(source) > MAX_SCRIPT_CHARS:
-        blocks.append(f"Script is too large: {len(source)} chars > {MAX_SCRIPT_CHARS}")
-        risk_reasons.append("script_too_large")
-    blocked_name_aliases = set(BLOCKED_NAMES)
+    for capability in sorted(privileged_capabilities):
+        risk_reasons.append(f"privileged_capability:{capability}")
+    blocked_name_aliases = set(blocked_names)
     builtin_module_aliases = set(BUILTINS_MODULES)
+    blocked_module_aliases = {}
+    approval_aliases = {"bpy": "bpy"}
+    getattr_aliases = {"getattr"}
     constant_names = {}
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign):
@@ -258,14 +421,30 @@ def analyze_script(source):
                 local_name = alias.asname or root_name
                 if root_name in BUILTINS_MODULES:
                     builtin_module_aliases.add(local_name)
+                if root_name in blocked_module_functions:
+                    blocked_module_aliases[local_name] = root_name
+            approval_aliases.update(_imported_approval_aliases(node))
+            getattr_aliases.update(_imported_getattr_aliases(node))
         if isinstance(node, ast.ImportFrom) and node.module:
+            approval_aliases.update(_imported_approval_aliases(node))
+            getattr_aliases.update(_imported_getattr_aliases(node))
             root_name = node.module.split(".")[0]
+            blocked_functions = blocked_module_functions.get(root_name, set())
+            for alias in node.names:
+                if blocked_functions and alias.name == "*":
+                    blocks.append(f"Line {_line(node)} blocked import: {node.module}.*")
+                    risk_reasons.append(f"blocked_import:{node.module}.*")
+                elif alias.name in blocked_functions:
+                    local_name = alias.asname or alias.name
+                    blocked_name_aliases.add(local_name)
+                    blocks.append(f"Line {_line(node)} blocked import: {node.module}.{alias.name}")
+                    risk_reasons.append(f"blocked_import:{node.module}.{alias.name}")
             if root_name in BUILTINS_MODULES:
                 for alias in node.names:
                     if alias.name == "*":
                         blocks.append(f"Line {_line(node)} blocked import: {node.module}.*")
                         risk_reasons.append(f"blocked_import:{node.module}.*")
-                    elif alias.name in BLOCKED_NAMES:
+                    elif alias.name in blocked_names:
                         local_name = alias.asname or alias.name
                         blocked_name_aliases.add(local_name)
                         blocks.append(f"Line {_line(node)} blocked import: {node.module}.{alias.name}")
@@ -275,12 +454,48 @@ def analyze_script(source):
         changed = False
         for node in ast.walk(tree):
             if isinstance(node, ast.Assign):
-                if not _blocked_reference_name(
+                builtin_container = _builtin_container_name(node.value, builtin_module_aliases)
+                blocked_module_container = _blocked_module_container_name(node.value, blocked_module_aliases)
+                if builtin_container:
+                    for name in _assigned_names(node):
+                        if name not in builtin_module_aliases:
+                            builtin_module_aliases.add(name)
+                            changed = True
+                if blocked_module_container:
+                    for name in _assigned_names(node):
+                        if blocked_module_aliases.get(name) != blocked_module_container:
+                            blocked_module_aliases[name] = blocked_module_container
+                            changed = True
+                if _call_name(node.value) in getattr_aliases:
+                    for name in _assigned_names(node):
+                        if name not in getattr_aliases:
+                            getattr_aliases.add(name)
+                            changed = True
+                approval_reference = _approval_reference_name(
+                    node.value,
+                    constant_names,
+                    approval_aliases,
+                    getattr_aliases,
+                )
+                if _is_blender_reference(approval_reference):
+                    for name in _assigned_names(node):
+                        if approval_aliases.get(name) != approval_reference:
+                            approval_aliases[name] = approval_reference
+                            changed = True
+                blocked_reference = _blocked_reference_name(
                     node.value,
                     blocked_name_aliases,
                     builtin_module_aliases,
                     constant_names,
-                ):
+                    blocked_names,
+                )
+                blocked_module_reference = _blocked_module_function_name(
+                    node.value,
+                    blocked_module_aliases,
+                    constant_names,
+                    blocked_module_functions,
+                )
+                if not (blocked_reference or blocked_module_reference):
                     continue
                 for name in _assigned_names(node):
                     if name not in blocked_name_aliases:
@@ -289,15 +504,15 @@ def analyze_script(source):
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
             call_name = _call_name(node.func)
-            approval_call_name = _approval_call_name(node.func, constant_names)
+            approval_call_name = _approval_call_name(node.func, constant_names, approval_aliases, getattr_aliases)
             root_name = call_name.split(".")[0]
-            attr_name = call_name.split(".")[-1]
-            reflected_builtin = _builtin_reflection_name(node, builtin_module_aliases, constant_names)
-            subscript_builtin = _builtin_subscript_name(node.func, builtin_module_aliases, constant_names)
+            attr_name = (approval_call_name or call_name).split(".")[-1]
+            reflected_builtin = _builtin_reflection_name(node, builtin_module_aliases, constant_names, blocked_names)
+            subscript_builtin = _builtin_subscript_name(node.func, builtin_module_aliases, constant_names, blocked_names)
             if root_name in blocked_name_aliases:
                 blocks.append(f"Line {_line(node)} blocked call: {call_name}")
                 risk_reasons.append(f"blocked_call:{call_name}")
-            if root_name in builtin_module_aliases and attr_name in BLOCKED_NAMES:
+            if root_name in builtin_module_aliases and attr_name in blocked_names:
                 blocks.append(f"Line {_line(node)} blocked builtin call: {call_name}")
                 risk_reasons.append(f"blocked_builtin_call:{call_name}")
             if reflected_builtin:
@@ -306,9 +521,20 @@ def analyze_script(source):
             if subscript_builtin:
                 blocks.append(f"Line {_line(node)} blocked builtin subscript call: {subscript_builtin}")
                 risk_reasons.append(f"blocked_builtin_subscript:{subscript_builtin}")
-            if call_name in {"bpy.ops.wm.save_as_mainfile", "bpy.ops.wm.open_mainfile", "bpy.ops.wm.quit_blender"}:
-                blocks.append(f"Line {_line(node)} blocked Blender file/window operation: {call_name}")
-                risk_reasons.append(f"blocked_blender_file_op:{call_name}")
+            blocked_module_call = _blocked_module_function_name(
+                node.func,
+                blocked_module_aliases,
+                constant_names,
+                blocked_module_functions,
+            )
+            if blocked_module_call:
+                blocks.append(f"Line {_line(node)} blocked module call: {blocked_module_call}")
+                risk_reasons.append(f"blocked_module_call:{blocked_module_call}")
+            if approval_call_name in BLENDER_FILE_WINDOW_OPERATORS and (
+                approval_call_name == "bpy.ops.wm.quit_blender" or not _project_file_allowed(privileged_capabilities)
+            ):
+                blocks.append(f"Line {_line(node)} blocked Blender file/window operation: {approval_call_name}")
+                risk_reasons.append(f"blocked_blender_file_op:{approval_call_name}")
             if _requires_explicit_approval(approval_call_name):
                 reason = (
                     f"Line {_line(node)} persistent simulation/cache operator requires explicit "
@@ -318,24 +544,25 @@ def analyze_script(source):
                 explicit_approval_reasons.append(reason)
                 risk_level = _risk_max(risk_level, "high")
                 risk_reasons.append(f"explicit_approval_call:{approval_call_name}")
-            if attr_name in WARNING_ATTRS or call_name in HIGH_RISK_CALLS:
-                warnings.append(f"Line {_line(node)} risky call: {call_name}")
+            risk_call_name = approval_call_name or call_name
+            if attr_name in WARNING_ATTRS or call_name in HIGH_RISK_CALLS or risk_call_name in HIGH_RISK_CALLS:
+                warnings.append(f"Line {_line(node)} risky call: {risk_call_name}")
                 risk_level = _risk_max(risk_level, "high")
-                risk_reasons.append(f"risky_call:{call_name}")
-            elif call_name.startswith("bpy.ops.") or attr_name in MUTATION_HINTS:
+                risk_reasons.append(f"risky_call:{risk_call_name}")
+            elif call_name.startswith("bpy.ops.") or risk_call_name.startswith("bpy.ops.") or attr_name in MUTATION_HINTS:
                 risk_level = _risk_max(risk_level, "medium")
-                risk_reasons.append(f"mutation_hint:{call_name}")
+                risk_reasons.append(f"mutation_hint:{risk_call_name}")
         if isinstance(node, ast.While) and isinstance(node.test, ast.Constant) and node.test.value is True:
             warnings.append(f"Line {_line(node)} possible unbounded loop: while True")
             risk_level = _risk_max(risk_level, "high")
             risk_reasons.append("possible_unbounded_loop")
         if isinstance(node, ast.Import):
             for alias in node.names:
-                if alias.name.split(".")[0] in BLOCKED_MODULES:
+                if alias.name.split(".")[0] in blocked_modules:
                     blocks.append(f"Line {_line(node)} blocked import: {alias.name}")
                     risk_reasons.append(f"blocked_import:{alias.name}")
         if isinstance(node, ast.ImportFrom) and node.module:
-            if node.module.split(".")[0] in BLOCKED_MODULES:
+            if node.module.split(".")[0] in blocked_modules:
                 blocks.append(f"Line {_line(node)} blocked import: {node.module}")
                 risk_reasons.append(f"blocked_import:{node.module}")
     if blocks:
@@ -350,5 +577,6 @@ def analyze_script(source):
         "checkpoint_recommended": risk_level in {"medium", "high", "blocked"},
         "explicit_approval_required": bool(explicit_approval_reasons),
         "explicit_approval_reasons": explicit_approval_reasons,
-        "trust_window_allowed": bool(not blocks and not explicit_approval_reasons),
+        "privileged_capabilities": sorted(privileged_capabilities),
+        "trust_window_allowed": bool(not blocks and not explicit_approval_reasons and not privileged_capabilities),
     }

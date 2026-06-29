@@ -40,35 +40,77 @@ def main():
             assert tool_name in known_tools, (code, tool_name)
 
     helper_prompt = "Write a Python script to move the selected cube up and make it red."
-    assert not helper_routing.should_include_draft_script(helper_prompt, ["basic_edit", "materials"])
+    assert helper_routing.should_include_draft_script(helper_prompt, ["basic_edit", "materials"])
 
     custom_prompt = "Draft a custom procedural material node network that helpers cannot express."
     assert helper_routing.should_include_draft_script(custom_prompt, ["materials"])
+    assert not helper_routing.should_include_draft_script(
+        "Draft a custom Python script to download and import a Poly Haven sunset HDRI.",
+        ["external_assets"],
+    )
+    assert helper_routing.should_include_privileged_script(
+        "Draft a custom Python script to download and import a Poly Haven sunset HDRI.",
+        ["external_assets"],
+    )
+    assert not helper_routing.should_include_draft_script(
+        "Draft a custom Python script to save this blend file.",
+        ["project_files"],
+    )
+    assert helper_routing.should_include_privileged_script(
+        "Draft a custom Python script to save this blend file.",
+        ["project_files"],
+    )
+    assert not helper_routing.should_include_privileged_script(custom_prompt, ["materials"])
 
-    material_guard = helper_routing.helper_first_script_guard(
+    material_guard = helper_routing.helper_first_script_advisory(
         "Make the selected cube red with bpy.data.materials and a material script."
     )
     assert material_guard, material_guard
     assert material_guard["code"] == "material_helper_required", material_guard
+    assert not material_guard["blocked"], material_guard
     assert "create_shader_material" in material_guard["recommended_tools"], material_guard
+    assert helper_routing.helper_first_script_guard(
+        "Make the selected cube red with bpy.data.materials and a material script."
+    ) is None
 
-    storyboard_guard = helper_routing.helper_first_script_guard(
+    storyboard_guard = helper_routing.helper_first_script_advisory(
         "Write a Python script to create a storyboard animatic with 2D panels."
     )
     assert storyboard_guard["code"] == "two_d_storyboard_helper_required", storyboard_guard
+    assert not storyboard_guard["blocked"], storyboard_guard
     assert "create_storyboard_panels" in storyboard_guard["recommended_tools"], storyboard_guard
 
-    procedural_guard = helper_routing.helper_first_script_guard(
+    procedural_guard = helper_routing.helper_first_script_advisory(
         "Write Python for a non-destructive procedural array stack with bevels."
     )
     assert procedural_guard["code"] == "procedural_3d_helper_required", procedural_guard
+    assert not procedural_guard["blocked"], procedural_guard
     assert "apply_procedural_array_stack" in procedural_guard["recommended_tools"], procedural_guard
 
-    cloth_guard = helper_routing.helper_first_script_guard(
+    cloth_guard = helper_routing.helper_first_script_advisory(
         "Draft a script to add cloth simulation setup to the selected mesh."
     )
     assert cloth_guard["code"] == "simulation_setup_helper_required", cloth_guard
+    assert not cloth_guard["blocked"], cloth_guard
     assert "add_cloth_simulation_to_selected" in cloth_guard["recommended_tools"], cloth_guard
+
+    asset_guard = helper_routing.helper_first_script_guard(
+        "Write a Python script to download and import a Poly Haven sunset HDRI."
+    )
+    assert asset_guard["blocked"], asset_guard
+    assert asset_guard["code"] == "external_asset_workflow_required", asset_guard
+
+    custom_asset_guard = helper_routing.helper_first_script_guard(
+        "Write a custom Python script to download and import a Poly Haven sunset HDRI."
+    )
+    assert custom_asset_guard["blocked"], custom_asset_guard
+    assert custom_asset_guard["code"] == "external_asset_workflow_required", custom_asset_guard
+
+    bake_guard = helper_routing.helper_first_script_guard(
+        "Draft Python to run bpy.ops.ptcache.bake_all and free_bake_all."
+    )
+    assert bake_guard["blocked"], bake_guard
+    assert bake_guard["code"] == "simulation_helper_required", bake_guard
 
     assert helper_routing.helper_first_script_guard(custom_prompt) is None
     print("smoke_helper_routing: ok")
