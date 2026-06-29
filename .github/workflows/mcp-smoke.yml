@@ -54,6 +54,9 @@ jobs:
       - name: Run script analysis smoke test
         run: python tests\smoke_script_analysis.py
 
+      - name: Run script analysis bypass probe
+        run: python tests\smoke_script_analysis_bypass.py
+
       - name: Run helper routing smoke test
         run: python tests\smoke_helper_routing.py
 
@@ -110,6 +113,53 @@ jobs:
         uses: actions/upload-pages-artifact@v5
         with:
           path: public
+
+  blender-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      BLENDER_SERIES: "5.1"
+      BLENDER_VERSION: "5.1.2"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Cache Blender
+        id: cache-blender
+        uses: actions/cache@v4
+        with:
+          path: blender
+          key: blender-${{ env.BLENDER_VERSION }}-linux-x64
+
+      - name: Download Blender
+        if: steps.cache-blender.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          url="https://download.blender.org/release/Blender${BLENDER_SERIES}/blender-${BLENDER_VERSION}-linux-x64.tar.xz"
+          echo "Downloading $url"
+          curl -fsSL "$url" -o blender.tar.xz
+          mkdir -p blender
+          tar -xJf blender.tar.xz -C blender --strip-components=1
+          rm blender.tar.xz
+
+      - name: Install headless GL dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxi6 libxxf86vm1 libxfixes3 libxrender1 libgl1 xvfb
+
+      - name: Show Blender version
+        run: ./blender/blender --version
+
+      - name: Run Blender headless smoke tests
+        run: |
+          set -euo pipefail
+          for t in smoke_advanced_helpers smoke_refinement_helpers smoke_refinement_visual_qa smoke_script_runner smoke_context_docs; do
+            echo "::group::$t"
+            out=$(xvfb-run -a ./blender/blender --background --factory-startup --python "tests/$t.py" 2>&1) || { echo "$out"; echo "::endgroup::"; exit 1; }
+            echo "$out"
+            echo "$out" | grep -q "$t: ok" || { echo "MISSING SUCCESS SENTINEL for $t"; echo "::endgroup::"; exit 1; }
+            echo "::endgroup::"
+          done
 
   deploy-pages:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
