@@ -8,7 +8,6 @@ import shutil
 import sys
 import tempfile
 import zipfile
-import base64
 import json
 
 import bpy
@@ -465,13 +464,68 @@ def main():
             ignore_errors=True,
         )
 
-        tiny_png = os.path.join(cache_dir, "tiny.png")
-        with open(tiny_png, "wb") as handle:
-            handle.write(
-                base64.b64decode(
-                    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
-                )
+        preferred_base = tempfile.mkdtemp(prefix="claude-blender-preferred-evidence-", dir=cache_dir)
+        preferred_capture = viewport_capture.resolve_capture_dir(
+            bpy.context,
+            preferred_dir=preferred_base,
+            create=True,
+        )
+        preferred_png = os.path.join(preferred_capture["capture_dir"], "viewport-preferred-smoke.png")
+        preferred_image = bpy.data.images.new("Preferred Evidence Smoke PNG", width=1, height=1, alpha=True)
+        try:
+            preferred_image.filepath_raw = preferred_png
+            preferred_image.file_format = "PNG"
+            preferred_image.pixels[0:4] = (1.0, 1.0, 1.0, 1.0)
+            preferred_image.save()
+        finally:
+            bpy.data.images.remove(preferred_image)
+        preferred_playblast_dir = os.path.join(
+            preferred_capture["capture_dir"],
+            "playblasts",
+            "preferred-playblast",
+        )
+        os.makedirs(preferred_playblast_dir, exist_ok=True)
+        preferred_playblast_frame = os.path.join(preferred_playblast_dir, "frame-0001.png")
+        shutil.copyfile(preferred_png, preferred_playblast_frame)
+        with open(os.path.join(preferred_playblast_dir, "metadata.json"), "w", encoding="utf-8") as handle:
+            json.dump(
+                {
+                    "ok": True,
+                    "available": True,
+                    "playblast_id": "preferred-playblast",
+                    "project_id": preferred_capture["project_id"],
+                    "session_id": preferred_capture["session_id"],
+                    "storage_scope": preferred_capture["storage_scope"],
+                    "capture_dir": preferred_capture["capture_dir"],
+                    "playblast_dir": preferred_playblast_dir,
+                    "metadata_uri": "blender://playblasts/preferred-playblast/metadata",
+                    "latest_metadata_uri": "blender://playblasts/latest/metadata",
+                    "created_at": 3000.0,
+                    "frame_count": 1,
+                    "frames": [
+                        {
+                            "frame": 1,
+                            "available": True,
+                            "path": preferred_playblast_frame,
+                            "resource_uri": "blender://playblasts/preferred-playblast/frames/1",
+                            "size_bytes": 8,
+                            "width": 1,
+                            "height": 1,
+                        }
+                    ],
+                },
+                handle,
             )
+        preferred_inventory = lab_parity.get_visual_evidence_resources(
+            bpy.context,
+            include_unavailable=False,
+            capture_dir=preferred_base,
+        )
+        preferred_kinds = {item["kind"] for item in preferred_inventory["resources"]}
+        assert {"viewport_capture", "playblast"}.issubset(preferred_kinds), preferred_inventory
+
+        tiny_png = os.path.join(cache_dir, "tiny.png")
+        shutil.copyfile(preferred_png, tiny_png)
         image = viewport_capture.load_preview_image(tiny_png)
         assert image.name == viewport_capture.PREVIEW_IMAGE_NAME
         assert bpy.data.images.get(viewport_capture.PREVIEW_IMAGE_NAME) is not None

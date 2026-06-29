@@ -193,23 +193,23 @@ def get_visual_evidence_resources(context, *, include_unavailable=True, capture_
     entries = [
         _visual_resource_entry(
             "viewport_capture",
-            viewport_capture.latest_capture_metadata(capture_dir, context=context, preferred_dir=capture_dir),
+            viewport_capture.latest_capture_metadata(context=context, preferred_dir=capture_dir),
         ),
         _visual_resource_entry(
             "playblast",
-            playblast_capture.latest_playblast_metadata(capture_dir, context=context, preferred_dir=capture_dir),
+            playblast_capture.latest_playblast_metadata(context=context, preferred_dir=capture_dir),
         ),
         _visual_resource_entry(
             "inspection_render",
-            inspection_render.latest_inspection_render_metadata(capture_dir, context=context, preferred_dir=capture_dir),
+            inspection_render.latest_inspection_render_metadata(context=context, preferred_dir=capture_dir),
         ),
         _visual_resource_entry(
             "render_thumbnail",
-            latest_render_thumbnail_metadata(capture_dir, context=context, preferred_dir=capture_dir),
+            latest_render_thumbnail_metadata(context=context, preferred_dir=capture_dir),
         ),
         _visual_resource_entry(
             "render_job",
-            render_jobs.latest_render_job_metadata(capture_dir, context=context, preferred_dir=capture_dir),
+            render_jobs.latest_render_job_metadata(context=context, preferred_dir=capture_dir),
         ),
     ]
     if not include_unavailable:
