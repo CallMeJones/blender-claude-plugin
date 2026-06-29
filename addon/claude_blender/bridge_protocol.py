@@ -1432,7 +1432,10 @@ TOOL_CONTRACTS = {
         "input_schema": {
             "type": "object",
             "properties": {
-                "template": {"type": "string", "enum": ["kitbash_tower", "radial_array", "scatter_grid", "product_stack"]},
+                "template": {
+                    "type": "string",
+                    "enum": ["kitbash_tower", "radial_array", "scatter_grid", "product_stack", "mechanical_joint", "control_panel"],
+                },
                 "name_prefix": {"type": "string"},
                 "location": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
                 "count": {"type": "integer", "minimum": 1, "maximum": 80},
@@ -1477,7 +1480,16 @@ TOOL_CONTRACTS = {
             "properties": {
                 "shot_type": {
                     "type": "string",
-                    "enum": ["camera_push_reveal", "orbit_reveal", "product_turntable", "path_slide", "staggered_reveal", "storyboard_dolly"],
+                    "enum": [
+                        "camera_push_reveal",
+                        "orbit_reveal",
+                        "product_turntable",
+                        "path_slide",
+                        "staggered_reveal",
+                        "storyboard_dolly",
+                        "crane_reveal",
+                        "truck_slide",
+                    ],
                 },
                 "object_names": {"type": "array", "items": {"type": "string"}},
                 "selected_only": {"type": "boolean"},

@@ -8,9 +8,9 @@
 - Raised the approval-gated script size ceiling to 500k characters for larger procedural scene scripts and allowed safe in-memory `io` use while continuing to block file-opening aliases such as `io.open`.
 - Hardened script analysis so aliased Blender project-file/window operators such as `ops.wm.save_as_mainfile`, `wm.open_mainfile`, and assigned `save_as_mainfile` functions cannot bypass the privileged approval path.
 - Clarified that privileged script manifests are user review/audit context rather than a runtime filesystem or network sandbox.
-- Added bounded `create_procedural_object_kit` templates for kitbash towers, radial arrays, scatter grids, and product stacks, all using live-preview rollback.
-- Added bounded `create_directed_animation_shot` templates for camera push/reveal, orbit reveal, product turntable, path slide, staggered reveal, and storyboard dolly shots.
-- Expanded animation workflow generation so move/path/orbit/fall prompts can route through directed shot helpers before script fallback.
+- Added bounded `create_procedural_object_kit` templates for kitbash towers, radial arrays, scatter grids, product stacks, mechanical joints, and control panels, all using live-preview rollback.
+- Added bounded `create_directed_animation_shot` templates for camera push/reveal, orbit reveal, product turntable, path slide, staggered reveal, storyboard dolly, crane reveal, and truck slide shots.
+- Expanded animation workflow generation so move/path/orbit/fall/crane/truck prompts can route through directed shot helpers before script fallback.
 - Added smoke coverage for the sidebar control center, audit log preview, visual evidence inventory, object-kit helpers, directed-shot helpers, and MCP search routing.
 - Hardened the optional live Pages smoke so it downloads the advertised extension ZIP and verifies the repository index hash and archive size.
 - Updated the release workflow to current Node 24-compatible official GitHub Actions.

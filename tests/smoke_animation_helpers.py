@@ -309,6 +309,38 @@ def main():
         assert "create_directed_animation_shot" in move_call_names, move_plan
         assert not move_plan["generation_blockers"], move_plan
 
+        crane_workflow = _execute(
+            context,
+            "plan_animation_workflow",
+            {
+                "prompt": "Create a crane reveal camera move on the cube over 48 frames.",
+                "subject_names": ["Cube"],
+                "frame_start": 1,
+                "frame_end": 48,
+                "mode": "full",
+            },
+        )
+        crane_plan = crane_workflow["workflow"]
+        crane_call = next(call for call in crane_plan["next_tool_calls"] if call["name"] == "create_directed_animation_shot")
+        assert crane_plan["brief"]["action"] == "crane", crane_plan
+        assert crane_call["input"]["shot_type"] == "crane_reveal", crane_plan
+
+        truck_workflow = _execute(
+            context,
+            "plan_animation_workflow",
+            {
+                "prompt": "Create a truck slide camera move on the cube over 48 frames.",
+                "subject_names": ["Cube"],
+                "frame_start": 1,
+                "frame_end": 48,
+                "mode": "full",
+            },
+        )
+        truck_plan = truck_workflow["workflow"]
+        truck_call = next(call for call in truck_plan["next_tool_calls"] if call["name"] == "create_directed_animation_shot")
+        assert truck_plan["brief"]["action"] == "truck", truck_plan
+        assert truck_call["input"]["shot_type"] == "truck_slide", truck_plan
+
         workflow_run = _execute(
             context,
             "run_animation_workflow",

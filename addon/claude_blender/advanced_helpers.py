@@ -49,6 +49,26 @@ LIGHTING_PRESETS = {
     ],
 }
 
+PROCEDURAL_OBJECT_KIT_TEMPLATES = {
+    "kitbash_tower",
+    "radial_array",
+    "scatter_grid",
+    "product_stack",
+    "mechanical_joint",
+    "control_panel",
+}
+
+DIRECTED_SHOT_TYPES = {
+    "camera_push_reveal",
+    "orbit_reveal",
+    "product_turntable",
+    "path_slide",
+    "staggered_reveal",
+    "storyboard_dolly",
+    "crane_reveal",
+    "truck_slide",
+}
+
 MATERIAL_PALETTES = {
     "product_neutral": [
         ("Graphite", (0.04, 0.045, 0.05, 1.0)),
@@ -3723,7 +3743,7 @@ ADVANCED_WORKFLOW_DOMAINS = {
         "script_boundary": "Prefer storyboard/cutout helpers when they fit; draft_script can handle custom Grease Pencil stroke editing, SVG conversion, or bespoke vector workflows after static checks.",
     },
     "procedural_3d": {
-        "keywords": {"advanced 3d", "procedural", "array", "scatter", "kitbash", "hard surface", "hard-surface", "geometry nodes", "node group", "modifier stack"},
+        "keywords": {"advanced 3d", "procedural", "array", "scatter", "kitbash", "mechanical", "mechanical joint", "control panel", "hard surface", "hard-surface", "geometry nodes", "node group", "modifier stack"},
         "tools": [
             "get_geometry_nodes_details",
             "apply_procedural_array_stack",
@@ -3736,7 +3756,7 @@ ADVANCED_WORKFLOW_DOMAINS = {
         "script_boundary": "Use draft_script for custom node graphs or destructive mesh operators after inspection and Blender API lookup.",
     },
     "advanced_animation": {
-        "keywords": {"advanced animation", "shot", "blocking", "dolly", "camera move", "camera animation", "nla", "retime", "f-curve", "pose", "acting", "motion arc"},
+        "keywords": {"advanced animation", "shot", "blocking", "dolly", "crane", "truck", "camera move", "camera animation", "nla", "retime", "f-curve", "pose", "acting", "motion arc"},
         "tools": [
             "plan_animation_workflow",
             "run_animation_workflow",
@@ -4178,10 +4198,10 @@ def create_procedural_object_kit(
     """Create bounded reusable object-kit templates without arbitrary script mutation."""
 
     template = str(template or "kitbash_tower").strip().lower().replace("-", "_").replace(" ", "_")
-    if template not in {"kitbash_tower", "radial_array", "scatter_grid", "product_stack"}:
+    if template not in PROCEDURAL_OBJECT_KIT_TEMPLATES:
         return {
             "ok": False,
-            "message": "template must be one of kitbash_tower, radial_array, scatter_grid, or product_stack",
+            "message": f"template must be one of {', '.join(sorted(PROCEDURAL_OBJECT_KIT_TEMPLATES))}",
             "template": template,
         }
     count = max(1, min(80, int(count or 1)))
@@ -4256,7 +4276,7 @@ def create_procedural_object_kit(
             block_height = max(0.04, height * factor)
             remember(_create_cube_object(context, f"{prefix} Scatter {index + 1:02d}", (x, y, origin[2] + block_height / 2.0), (spacing * 0.36, spacing * 0.36, block_height / 2.0), material))
 
-    else:
+    elif template == "product_stack":
         remember(_create_cylinder_object(context, f"{prefix} Plinth", origin, radius * 0.7, height * 0.12, primary, vertices=64))
         tier_count = max(2, min(8, count))
         for index in range(tier_count):
@@ -4266,6 +4286,140 @@ def create_procedural_object_kit(
             remember(_create_cube_object(context, f"{prefix} Riser {index + 1:02d}", (origin[0], origin[1], z), (scale, scale * 0.62, height * 0.045), material))
         hero = remember(_create_cylinder_object(context, f"{prefix} Hero Stand", (origin[0], origin[1], origin[2] + height * 0.58), radius * 0.22, height * 0.22, accent, vertices=48))
         hero.show_name = True
+
+    elif template == "mechanical_joint":
+        arm_count = max(3, min(16, count))
+        bearing = remember(
+            _create_cylinder_object(
+                context,
+                f"{prefix} Bearing Ring",
+                origin,
+                radius * 0.36,
+                height * 0.18,
+                primary,
+                vertices=64,
+            )
+        )
+        cap = remember(
+            _create_cylinder_object(
+                context,
+                f"{prefix} Bearing Cap",
+                (origin[0], origin[1], origin[2] + height * 0.11),
+                radius * 0.2,
+                height * 0.08,
+                accent,
+                vertices=48,
+            )
+        )
+        axle = remember(
+            _create_cylinder_object(
+                context,
+                f"{prefix} Axle",
+                origin,
+                radius * 0.08,
+                radius * 1.8,
+                accent,
+                vertices=32,
+                rotation=_axis_rotation("X"),
+            )
+        )
+        bearing.show_name = True
+        cap.show_name = True
+        arm_length = radius * 0.72
+        for index in range(arm_count):
+            angle = math.tau * index / arm_count
+            x = origin[0] + math.cos(angle) * arm_length * 0.5
+            y = origin[1] + math.sin(angle) * arm_length * 0.5
+            arm = remember(
+                _create_cube_object(
+                    context,
+                    f"{prefix} Link Arm {index + 1:02d}",
+                    (x, y, origin[2]),
+                    (arm_length, max(0.05, radius * 0.07), max(0.04, height * 0.055)),
+                    primary,
+                )
+            )
+            arm.rotation_euler[2] = angle
+            bolt = remember(
+                _create_cylinder_object(
+                    context,
+                    f"{prefix} Bolt {index + 1:02d}",
+                    (origin[0] + math.cos(angle) * arm_length, origin[1] + math.sin(angle) * arm_length, origin[2] + height * 0.08),
+                    radius * 0.055,
+                    height * 0.08,
+                    accent,
+                    vertices=20,
+                )
+            )
+            bolt.rotation_euler[2] = angle
+        remember(
+            _create_cube_object(
+                context,
+                f"{prefix} Mount Block",
+                (origin[0], origin[1] - radius * 0.62, origin[2] - height * 0.18),
+                (radius * 0.82, radius * 0.18, height * 0.11),
+                primary,
+            )
+        )
+
+    else:
+        panel_width = radius * 1.6
+        panel_height = height * 0.82
+        panel_depth = max(0.05, radius * 0.08)
+        face_y = origin[1] - panel_depth * 0.65
+        panel = remember(
+            _create_cube_object(
+                context,
+                f"{prefix} Control Panel Body",
+                (origin[0], origin[1], origin[2] + panel_height * 0.45),
+                (panel_width, panel_depth, panel_height),
+                primary,
+            )
+        )
+        panel.show_name = True
+        remember(
+            _create_cube_object(
+                context,
+                f"{prefix} Display Screen",
+                (origin[0] - panel_width * 0.18, face_y, origin[2] + panel_height * 0.68),
+                (panel_width * 0.42, panel_depth * 0.28, panel_height * 0.16),
+                accent,
+            )
+        )
+        knob_count = max(3, min(18, count))
+        columns = max(2, min(6, int(math.ceil(math.sqrt(knob_count)))))
+        rows = max(1, int(math.ceil(knob_count / columns)))
+        for index in range(knob_count):
+            col = index % columns
+            row = index // columns
+            x = origin[0] + (col - (columns - 1) / 2.0) * (panel_width * 0.16)
+            z = origin[2] + panel_height * (0.42 - row * 0.16 / max(1, rows - 1))
+            control_material = accent if index % 3 == 0 else primary
+            knob = remember(
+                _create_cylinder_object(
+                    context,
+                    f"{prefix} Control Knob {index + 1:02d}",
+                    (x, face_y - panel_depth * 0.12, z),
+                    radius * 0.045,
+                    panel_depth * 0.55,
+                    control_material,
+                    vertices=24,
+                    rotation=_axis_rotation("Y"),
+                )
+            )
+            knob.show_name = index == 0
+        for index in range(3):
+            z = origin[2] + panel_height * (0.18 + index * 0.09)
+            slot = remember(
+                _create_cube_object(
+                    context,
+                    f"{prefix} Slider Slot {index + 1:02d}",
+                    (origin[0] + panel_width * 0.24, face_y - panel_depth * 0.08, z),
+                    (panel_width * 0.32, panel_depth * 0.18, panel_height * 0.025),
+                    accent if index == 1 else primary,
+                )
+            )
+            slot.show_name = index == 0
 
     transaction["applied_steps"].append(
         {
@@ -4444,9 +4598,8 @@ def create_directed_animation_shot(
     """Create bounded director-style shot templates for common animation requests."""
 
     shot_type = str(shot_type or "camera_push_reveal").strip().lower().replace("-", "_").replace(" ", "_")
-    allowed = {"camera_push_reveal", "orbit_reveal", "product_turntable", "path_slide", "staggered_reveal", "storyboard_dolly"}
-    if shot_type not in allowed:
-        return {"ok": False, "message": f"shot_type must be one of {', '.join(sorted(allowed))}", "shot_type": shot_type}
+    if shot_type not in DIRECTED_SHOT_TYPES:
+        return {"ok": False, "message": f"shot_type must be one of {', '.join(sorted(DIRECTED_SHOT_TYPES))}", "shot_type": shot_type}
     objects, missing = _resolve_edit_objects(context, object_names=object_names, selected_only=selected_only, include_active=True)
     objects = [obj for obj in objects if obj is not None]
     if not objects and shot_type not in {"storyboard_dolly"}:
@@ -4474,7 +4627,10 @@ def create_directed_animation_shot(
     actions = []
     keyed_objects = []
     frame_span = max(1, end - start)
+    object_keyed_shots = {"camera_push_reveal", "orbit_reveal", "staggered_reveal", "path_slide", "product_turntable"}
     for index, obj in enumerate(objects):
+        if shot_type not in object_keyed_shots:
+            continue
         live_preview._record_object_transform(obj)
         action = live_preview._assign_preview_action(obj)
         original_location = Vector(obj.location)
@@ -4530,6 +4686,14 @@ def create_directed_animation_shot(
         elif shot_type == "path_slide":
             start_location = center + Vector((0.0, -camera_distance, radius * 1.0)) - axis_vec * max(0.5, abs(distance) * 0.25)
             end_location = center + Vector((0.0, -camera_distance, radius * 1.0)) + axis_vec * max(0.5, abs(distance) * 0.25)
+        elif shot_type == "crane_reveal":
+            start_location = center + Vector((0.0, -camera_distance * 1.05, radius * 0.35))
+            end_location = center + Vector((0.0, -camera_distance * 0.8, radius * 2.0))
+        elif shot_type == "truck_slide":
+            travel = max(0.5, abs(distance) if abs(distance) > 0.0001 else radius * 1.4)
+            base_location = center + Vector((0.0, -camera_distance, radius * 1.05))
+            start_location = base_location - axis_vec * travel * 0.5
+            end_location = base_location + axis_vec * travel * 0.5
         camera.location = start_location
         camera.keyframe_insert(data_path="location", frame=start)
         if target and not any(constraint.type == "TRACK_TO" and constraint.target == target for constraint in camera.constraints):
@@ -4557,6 +4721,7 @@ def create_directed_animation_shot(
             "type": "create_directed_animation_shot",
             "label": label,
             "shot_type": shot_type,
+            "subjects": [obj.name for obj in objects],
             "objects": keyed_objects,
             "camera": camera.name if camera else "",
             "target": target.name if target else "",
@@ -4570,6 +4735,7 @@ def create_directed_animation_shot(
         "ok": True,
         "message": f"Created {shot_type} directed shot",
         "shot_type": shot_type,
+        "subjects": [obj.name for obj in objects],
         "objects": keyed_objects,
         "missing_object_names": missing,
         "camera": camera.name if camera else "",

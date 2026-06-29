@@ -318,6 +318,38 @@ def main():
         assert len(object_kit["objects"]) >= 7, object_kit
         assert bpy.data.objects[object_kit["objects"][0]].type == "MESH"
 
+        mechanical_kit = _execute(
+            context,
+            "create_procedural_object_kit",
+            {
+                "template": "mechanical_joint",
+                "name_prefix": "Agent Bridge Mechanical Kit",
+                "location": [-3.0, 0.0, 0.0],
+                "count": 5,
+                "radius": 1.2,
+                "height": 0.8,
+            },
+        )
+        assert mechanical_kit["template"] == "mechanical_joint", mechanical_kit
+        assert any("Bearing" in name for name in mechanical_kit["objects"]), mechanical_kit
+        assert any("Bolt" in name for name in mechanical_kit["objects"]), mechanical_kit
+
+        control_panel = _execute(
+            context,
+            "create_procedural_object_kit",
+            {
+                "template": "control_panel",
+                "name_prefix": "Agent Bridge Control Panel Kit",
+                "location": [0.0, 3.0, 0.0],
+                "count": 6,
+                "radius": 1.1,
+                "height": 1.5,
+            },
+        )
+        assert control_panel["template"] == "control_panel", control_panel
+        assert any("Display Screen" in name for name in control_panel["objects"]), control_panel
+        assert any("Control Knob" in name for name in control_panel["objects"]), control_panel
+
         directed = _execute(
             context,
             "create_directed_animation_shot",
@@ -335,6 +367,42 @@ def main():
         assert directed["shot_type"] == "path_slide", directed
         assert "Cube" in directed["objects"], directed
         assert directed["camera"] == "Camera", directed
+
+        crane = _execute(
+            context,
+            "create_directed_animation_shot",
+            {
+                "shot_type": "crane_reveal",
+                "object_names": ["Cube"],
+                "selected_only": False,
+                "frame_start": 1,
+                "frame_end": 48,
+                "camera_name": "Camera",
+            },
+        )
+        assert crane["shot_type"] == "crane_reveal", crane
+        assert crane["subjects"] == ["Cube"], crane
+        assert crane["objects"] == [], crane
+        assert crane["camera_action"] in bpy.data.actions, crane
+
+        truck = _execute(
+            context,
+            "create_directed_animation_shot",
+            {
+                "shot_type": "truck_slide",
+                "object_names": ["Cube"],
+                "selected_only": False,
+                "frame_start": 1,
+                "frame_end": 48,
+                "travel_axis": "X",
+                "travel_distance": 1.6,
+                "camera_name": "Camera",
+            },
+        )
+        assert truck["shot_type"] == "truck_slide", truck
+        assert truck["subjects"] == ["Cube"], truck
+        assert truck["objects"] == [], truck
+        assert truck["camera_action"] in bpy.data.actions, truck
 
         invalid_directed = json.loads(
             tool_dispatcher.execute_tool(

@@ -228,6 +228,46 @@ def _generation_tool_calls(brief, chart, *, frame_start, frame_end):
                 requires_live_preview=True,
             )
         )
+    elif action == "crane":
+        calls.append(
+            _tool_call(
+                "create_directed_animation_shot",
+                {
+                    "shot_type": "crane_reveal",
+                    "object_names": subject_names,
+                    "selected_only": False,
+                    "frame_start": frame_start,
+                    "frame_end": frame_end,
+                    "scale_start": 1.0,
+                    "scale_end": 1.0,
+                    "interpolation": "BEZIER",
+                },
+                reason="Use the bounded directed-shot helper for a crane-style camera reveal around the subject.",
+                mutates_scene=True,
+                requires_live_preview=True,
+            )
+        )
+    elif action == "truck":
+        calls.append(
+            _tool_call(
+                "create_directed_animation_shot",
+                {
+                    "shot_type": "truck_slide",
+                    "object_names": subject_names,
+                    "selected_only": False,
+                    "frame_start": frame_start,
+                    "frame_end": frame_end,
+                    "travel_axis": "X",
+                    "travel_distance": 2.0,
+                    "scale_start": 1.0,
+                    "scale_end": 1.0,
+                    "interpolation": "BEZIER",
+                },
+                reason="Use the bounded directed-shot helper for a lateral truck camera move around the subject.",
+                mutates_scene=True,
+                requires_live_preview=True,
+            )
+        )
     elif action in {"move", "follow path"}:
         calls.append(
             _tool_call(
