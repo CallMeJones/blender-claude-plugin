@@ -309,6 +309,27 @@ def main():
         assert "create_directed_animation_shot" in move_call_names, move_plan
         assert not move_plan["generation_blockers"], move_plan
 
+        move_run = _execute(
+            context,
+            "run_animation_workflow",
+            {
+                "prompt": "Move the cube across the frame over 48 frames with a camera shot.",
+                "subject_names": ["Cube"],
+                "frame_start": 1,
+                "frame_end": 48,
+                "mode": "full",
+                "run_review": False,
+                "capture_playblast": False,
+                "apply_repairs": False,
+            },
+        )
+        assert any(item["tool"] == "create_directed_animation_shot" and item["ok"] for item in move_run["executed"]), move_run
+        assert move_run["pending_preview"] is True, move_run
+        reverted_move_run = _execute(context, "revert_preview", {})
+        assert not reverted_move_run.get("rollback_warnings"), reverted_move_run
+        assert not scene.claude_blender.pending_preview
+        _select_object(context, cube)
+
         assert animation_brief._infer_action("Animate the truck moving forward over 48 frames.") == "move"
         subject_truck_workflow = _execute(
             context,
@@ -1018,6 +1039,18 @@ def main():
                         "message": "Detected repeated action count does not match the requested count.",
                         "evidence": {"requested_count": 2, "detected_count": 1, "sampled_frames": [1, 36, 72]},
                     },
+                    {
+                        "severity": "warning",
+                        "object": "Cube",
+                        "message": "Shape key squash morph is missing during the landing frame.",
+                        "frame": 36,
+                    },
+                    {
+                        "severity": "warning",
+                        "object": "Cube",
+                        "message": "Material glow and emission animation is missing from the screen accent.",
+                        "frame": 48,
+                    },
                 ],
                 "brief": contract,
             },
@@ -1036,6 +1069,35 @@ def main():
         assert contact_advisory["metadata"]["advisory"] is True, repair_plan
         assert contact_advisory["metadata"]["needs_user_planning"] is True, repair_plan
         assert any(item["tool"] == "retime_actions" for item in repair_plan["repair_operations"]), repair_plan
+        repair_tools = [item["tool"] for item in repair_plan["repair_operations"]]
+        assert "get_simulation_details" in repair_tools, repair_plan
+        simulation_bake = next(item for item in repair_plan["repair_operations"] if item["tool"] == "inspect_simulation_bake")
+        assert simulation_bake["metadata"]["persistent_bake_requires_approval"] is True, repair_plan
+        assert "get_shape_key_details" in repair_tools, repair_plan
+        shape_repair = next(item for item in repair_plan["repair_operations"] if item["tool"] == "animate_shape_key")
+        assert shape_repair["arguments"]["object_name"] == "Cube", repair_plan
+        assert shape_repair["arguments"]["key_name"] == "Agent Bridge Repair Shape", repair_plan
+        material_repair = next(item for item in repair_plan["repair_operations"] if item["tool"] == "animate_material_property")
+        assert material_repair["arguments"]["object_name"] == "Cube", repair_plan
+        assert material_repair["arguments"]["property_name"] == "emission_strength", repair_plan
+
+        scale_repair_plan = _execute(
+            context,
+            "repair_animation_from_findings",
+            {
+                "findings": [
+                    {
+                        "severity": "warning",
+                        "object": "Cube",
+                        "message": "Requested secondary scale change is missing; the cube should get smaller each bounce.",
+                    },
+                ],
+                "brief": contract,
+            },
+        )
+        scale_repair = next(item for item in scale_repair_plan["repair_operations"] if item["tool"] == "create_progressive_bounce_animation")
+        assert scale_repair["metadata"]["repairs_secondary_action"] == "scale_decrease", scale_repair_plan
+        assert scale_repair["metadata"]["replaces_existing_action"] is True, scale_repair_plan
 
         rig_create = _execute(
             context,

@@ -56,6 +56,10 @@ PROCEDURAL_OBJECT_KIT_TEMPLATES = {
     "product_stack",
     "mechanical_joint",
     "control_panel",
+    "studio_prop_set",
+    "mechanical_part",
+    "modular_wall_panel",
+    "pipe_run",
 }
 
 DIRECTED_SHOT_TYPES = {
@@ -131,9 +135,31 @@ SHADER_MATERIAL_PRESETS = {
         "alpha": 1.0,
         "emission_strength": 0.0,
     },
+    "rubber_black": {
+        "base_color": (0.008, 0.008, 0.007, 1.0),
+        "metallic": 0.0,
+        "roughness": 0.86,
+        "alpha": 1.0,
+        "emission_strength": 0.0,
+    },
+    "warm_wood": {
+        "base_color": (0.48, 0.28, 0.12, 1.0),
+        "metallic": 0.0,
+        "roughness": 0.42,
+        "alpha": 1.0,
+        "emission_strength": 0.0,
+    },
+    "screen_glow": {
+        "base_color": (0.02, 0.08, 0.16, 1.0),
+        "metallic": 0.0,
+        "roughness": 0.2,
+        "alpha": 1.0,
+        "emission_color": (0.02, 0.62, 1.0, 1.0),
+        "emission_strength": 2.4,
+    },
 }
 
-GEOMETRY_NODE_TEMPLATES = {"passthrough", "transform", "join_geometry"}
+GEOMETRY_NODE_TEMPLATES = {"passthrough", "transform", "join_geometry", "set_position", "subdivide_mesh"}
 
 PRODUCT_REFINEMENT_STYLES = {
     "studio": {
@@ -817,6 +843,22 @@ def _build_geometry_node_template(group, template):
         if transform is not None:
             _link_node_sockets(group, source, transform.inputs.get("Geometry"), warnings)
             _link_node_sockets(group, transform.outputs.get("Geometry"), target, warnings)
+        else:
+            _link_node_sockets(group, source, target, warnings)
+    elif template_key == "set_position":
+        set_position = _new_geometry_node(group, "GeometryNodeSetPosition", "Agent Bridge Set Position", (-80, 0), warnings)
+        if set_position is not None:
+            _link_node_sockets(group, source, set_position.inputs.get("Geometry"), warnings)
+            _link_node_sockets(group, set_position.outputs.get("Geometry"), target, warnings)
+        else:
+            _link_node_sockets(group, source, target, warnings)
+    elif template_key == "subdivide_mesh":
+        subdivide = _new_geometry_node(group, "GeometryNodeSubdivideMesh", "Agent Bridge Subdivide Mesh", (-80, 0), warnings)
+        if subdivide is not None:
+            if subdivide.inputs.get("Level") is not None:
+                _set_socket_value(subdivide.inputs.get("Level"), 1)
+            _link_node_sockets(group, source, subdivide.inputs.get("Mesh"), warnings)
+            _link_node_sockets(group, subdivide.outputs.get("Mesh"), target, warnings)
         else:
             _link_node_sockets(group, source, target, warnings)
     elif template_key == "join_geometry":
@@ -3865,7 +3907,7 @@ ADVANCED_WORKFLOW_DOMAINS = {
         "script_boundary": "Prefer storyboard/cutout helpers when they fit; draft_script can handle custom Grease Pencil stroke editing, SVG conversion, or bespoke vector workflows after static checks.",
     },
     "procedural_3d": {
-        "keywords": {"advanced 3d", "procedural", "array", "scatter", "kitbash", "mechanical", "mechanical joint", "control panel", "hard surface", "hard-surface", "geometry nodes", "node group", "modifier stack"},
+        "keywords": {"advanced 3d", "procedural", "array", "scatter", "kit", "object kit", "kitbash", "mechanical", "mechanical joint", "mechanical part", "control panel", "modular", "wall panel", "pipe run", "hard surface", "hard-surface", "geometry nodes", "node group", "modifier stack"},
         "tools": [
             "get_geometry_nodes_details",
             "apply_procedural_array_stack",
@@ -3902,6 +3944,22 @@ ADVANCED_WORKFLOW_DOMAINS = {
             "stage_persistent_simulation_bake",
         ],
         "script_boundary": "Persistent bake/free operators remain explicit one-time approval only; inspect first, then stage the fixed bake helper.",
+    },
+    "asset_import": {
+        "keywords": {"external asset", "asset import", "import asset", "import model", "download asset", "poly haven", "polyhaven", "sketchfab", "hdri", "texture library"},
+        "tools": [
+            "plan_asset_import_workflow",
+            "search_poly_haven_assets",
+            "search_sketchfab_models",
+            "start_external_asset_download",
+            "get_external_asset_job_status",
+            "start_external_asset_import_job",
+            "get_external_asset_import_job_status",
+            "organize_scene_for_production",
+            "create_studio_product_stage",
+            "capture_viewport",
+        ],
+        "script_boundary": "Use the async asset job workflow first; custom provider/project lifecycle scripts require draft_privileged_script with declared paths, URLs, and actions.",
     },
     "compositor_render": {
         "keywords": {"compositor", "compositing", "post", "post process", "transparent", "alpha", "render preset", "render pass", "mp4", "preview"},
@@ -3971,6 +4029,398 @@ def plan_advanced_scene_workflow(context, *, prompt="", domains=None, target_obj
             "domain_boundaries": script_boundaries,
         },
         "label": label,
+    }
+
+
+def _planned_tool_call(name, arguments=None, *, reason="", mutates_scene=False, requires_live_preview=False):
+    return {
+        "name": str(name or ""),
+        "input": dict(arguments or {}),
+        "reason": str(reason or ""),
+        "mutates_scene": bool(mutates_scene),
+        "requires_live_preview": bool(requires_live_preview),
+    }
+
+
+def _prompt_has_any(prompt, terms):
+    text = str(prompt or "").lower()
+    return any(term in text for term in terms)
+
+
+def _infer_asset_provider(prompt, provider=""):
+    requested = str(provider or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if requested in {"poly_haven", "sketchfab"}:
+        return requested
+    text = str(prompt or "").lower()
+    if "sketchfab" in text:
+        return "sketchfab"
+    return "poly_haven" if any(term in text for term in ("poly haven", "polyhaven", "hdri", "texture", "environment map")) else ""
+
+
+def _infer_object_kit_template(prompt):
+    text = str(prompt or "").lower()
+    if any(term in text for term in ("pipe", "pipes", "conduit")):
+        return "pipe_run"
+    if any(term in text for term in ("wall panel", "modular panel", "sci fi panel", "sci-fi panel")):
+        return "modular_wall_panel"
+    if any(term in text for term in ("gearbox", "machine part", "mechanical part", "flange", "shaft")):
+        return "mechanical_part"
+    if any(term in text for term in ("studio prop", "prop set", "display props", "set dressing")):
+        return "studio_prop_set"
+    if "control panel" in text:
+        return "control_panel"
+    if "mechanical joint" in text or "joint" in text:
+        return "mechanical_joint"
+    if "radial" in text:
+        return "radial_array"
+    if "scatter" in text:
+        return "scatter_grid"
+    if "product" in text or "stack" in text:
+        return "product_stack"
+    return "kitbash_tower"
+
+
+def plan_asset_import_workflow(
+    context,
+    *,
+    prompt="",
+    provider="",
+    asset_id="",
+    uid="",
+    target_object_name="",
+    presentation_preset="studio",
+    label="Plan asset import workflow",
+):
+    """Plan the async external-asset path plus post-import presentation helpers."""
+
+    prompt = str(prompt or "").strip()
+    provider_key = _infer_asset_provider(prompt, provider)
+    asset_id_text = str(asset_id or "").strip()
+    uid_text = str(uid or "").strip()
+    target_name = str(target_object_name or "").strip()
+    target_exists = bool(target_name and bpy.data.objects.get(target_name))
+    discovery_tools = []
+    if provider_key == "sketchfab":
+        discovery_tools.append(
+            _planned_tool_call(
+                "search_sketchfab_models",
+                {"query": prompt[:200]},
+                reason="Discover a Sketchfab model before starting a cached download job.",
+            )
+        )
+    elif provider_key == "poly_haven":
+        discovery_tools.extend(
+            [
+                _planned_tool_call("list_poly_haven_categories", {}, reason="Inspect Poly Haven categories before choosing an asset type."),
+                _planned_tool_call(
+                    "search_poly_haven_assets",
+                    {"query": prompt[:200], "asset_type": "all"},
+                    reason="Find a Poly Haven asset id for the requested import.",
+                ),
+            ]
+        )
+        if asset_id_text:
+            discovery_tools.append(
+                _planned_tool_call(
+                    "inspect_poly_haven_asset_files",
+                    {"asset_id": asset_id_text},
+                    reason="Choose resolution and file formats before downloading.",
+                )
+            )
+    else:
+        discovery_tools.extend(
+            [
+                _planned_tool_call("search_poly_haven_assets", {"query": prompt[:200], "asset_type": "all"}, reason="Search Poly Haven when no provider is specified."),
+                _planned_tool_call("search_sketchfab_models", {"query": prompt[:200]}, reason="Search Sketchfab when no provider is specified."),
+            ]
+        )
+
+    provider_selection_required = not bool(provider_key)
+    asset_selection_required = (provider_key == "poly_haven" and not asset_id_text) or (provider_key == "sketchfab" and not uid_text)
+    selection_required = provider_selection_required or asset_selection_required
+    if provider_selection_required:
+        selection_fields = ["provider", "asset_id or uid"]
+        selection_message = "Choose one discovered provider result before starting download/cache."
+        selection_blocker = "provider and asset_id/uid are selected from discovery results"
+    elif provider_key == "poly_haven":
+        selection_fields = ["asset_id"]
+        selection_message = "Choose a concrete Poly Haven asset_id before starting download/cache."
+        selection_blocker = "Poly Haven asset_id is selected from discovery results"
+    else:
+        selection_fields = ["uid"]
+        selection_message = "Choose a concrete Sketchfab uid before starting download/cache."
+        selection_blocker = "Sketchfab uid is selected from discovery results"
+    download_args = {
+        "provider": provider_key,
+        "asset_id": asset_id_text,
+        "uid": uid_text,
+    }
+    import_args = {"source_job_id": "<asset_job_id>", "target_object_name": target_name}
+    post_import_target = target_name or "<imported_object_name>"
+    presentation = [
+        _planned_tool_call(
+            "organize_scene_for_production",
+            {"collection_prefix": "Agent Bridge Imported Asset", "selected_only": False},
+            reason="Link imported data into production-oriented collections without deleting source links.",
+            mutates_scene=True,
+            requires_live_preview=True,
+        ),
+        _planned_tool_call(
+            "create_material_palette",
+            {"palette": "product_neutral", "create_swatches": False},
+            reason="Prepare a bounded material palette for asset cleanup or presentation.",
+            mutates_scene=True,
+            requires_live_preview=True,
+        ),
+        _planned_tool_call(
+            "create_studio_product_stage",
+            {"target_name": post_import_target, "stage_name": f"Agent Bridge {presentation_preset or 'Studio'} Asset Stage"},
+            reason="Create a safe product/studio presentation stage around the imported asset.",
+            mutates_scene=True,
+            requires_live_preview=True,
+        ),
+        _planned_tool_call(
+            "capture_viewport",
+            {"max_bytes": 900000},
+            reason="Capture visual evidence after import and staging.",
+        ),
+    ]
+    phases = [{"name": "discover", "tool_calls": discovery_tools}]
+    if selection_required:
+        phases.append(
+            {
+                "name": "select_asset",
+                "tool_calls": [],
+                "requires_user_or_client_selection": True,
+                "selection_fields": selection_fields,
+                "message": selection_message,
+            }
+        )
+        phases.extend(
+            [
+                {
+                    "name": "download",
+                    "tool_calls": [],
+                    "blocked_until": selection_blocker,
+                },
+                {
+                    "name": "import",
+                    "tool_calls": [],
+                    "blocked_until": "asset download/cache job completes",
+                },
+                {
+                    "name": "present",
+                    "tool_calls": [],
+                    "blocked_until": "asset import completes and imported object name is known",
+                },
+            ]
+        )
+    else:
+        phases.extend(
+            [
+                {
+                    "name": "download",
+                    "tool_calls": [
+                        _planned_tool_call(
+                            "start_external_asset_download",
+                            download_args,
+                            reason="Start the async download/cache job. Do not use synchronous fallback paths for normal workflows.",
+                        ),
+                        _planned_tool_call(
+                            "get_external_asset_job_status",
+                            {"job_id": "<asset_job_id>"},
+                            reason="Poll until the cached manifest is completed or failed.",
+                        ),
+                    ],
+                },
+                {
+                    "name": "import",
+                    "tool_calls": [
+                        _planned_tool_call(
+                            "start_external_asset_import_job",
+                            import_args,
+                            reason="Queue Blender main-thread import after the cache job completes.",
+                        ),
+                        _planned_tool_call(
+                            "get_external_asset_import_job_status",
+                            {"job_id": "<asset_import_job_id>"},
+                            reason="Poll until import completes before claiming scene changes.",
+                        ),
+                    ],
+                },
+                {"name": "present", "tool_calls": presentation},
+            ]
+        )
+
+    return {
+        "ok": True,
+        "message": "Planned async external asset import and presentation workflow",
+        "label": label,
+        "provider": provider_key,
+        "provider_selection_required": provider_selection_required,
+        "asset_selection_required": asset_selection_required,
+        "selection_required": selection_required,
+        "target_object_name": target_name,
+        "target_exists": target_exists,
+        "phases": phases,
+        "script_fallback_policy": {
+            "helper_first": True,
+            "normal_path": [
+                "discover provider asset",
+                "select provider and asset id/uid",
+                "start_external_asset_download",
+                "get_external_asset_job_status",
+                "start_external_asset_import_job",
+                "get_external_asset_import_job_status",
+            ],
+            "synchronous_fallbacks_debug_only": ["download_poly_haven_asset", "import_poly_haven_asset", "download_sketchfab_model", "import_sketchfab_model", "import_external_asset_job_result"],
+            "custom_asset_scripts": "Use draft_privileged_script with declared paths/URLs/actions when provider helpers cannot express the workflow.",
+        },
+    }
+
+
+def plan_director_workflow(
+    context,
+    *,
+    prompt="",
+    target_objects=None,
+    deliverables=None,
+    label="Plan director workflow",
+):
+    """Read-only director plan that composes existing helper-first workflows."""
+
+    prompt = str(prompt or "").strip()
+    target_names = [str(item) for item in (target_objects or []) if str(item).strip()]
+    deliverable_names = [str(item) for item in (deliverables or []) if str(item).strip()]
+    asset_requested = _prompt_has_any(prompt, {"asset", "assets", "poly haven", "polyhaven", "sketchfab", "download", "import model", "import asset", "hdri", "texture"})
+    domains = _advanced_domain_matches(prompt)
+    if asset_requested and "asset_import" not in domains:
+        domains.append("asset_import")
+    if _prompt_has_any(prompt, {"director", "shot", "review", "playblast", "evidence"}) and "advanced_animation" not in domains:
+        domains.append("advanced_animation")
+
+    phases = [
+        {
+            "name": "inspect",
+            "tool_calls": [
+                _planned_tool_call("list_scene_objects", {"max_objects": 80}, reason="Establish the current scene contents before planning edits."),
+                _planned_tool_call("get_blend_file_diagnostics", {}, reason="Check file/checkpoint/missing-data state before broad work."),
+                _planned_tool_call(
+                    "plan_advanced_scene_workflow",
+                    {"prompt": prompt, "domains": [domain for domain in domains if domain != "asset_import"], "target_objects": target_names},
+                    reason="Resolve helper-first domain paths and script boundaries.",
+                ),
+            ],
+        }
+    ]
+
+    if asset_requested:
+        phases.append(
+            {
+                "name": "asset_import",
+                "tool_calls": [
+                    _planned_tool_call(
+                        "plan_asset_import_workflow",
+                        {"prompt": prompt, "target_object_name": target_names[0] if target_names else ""},
+                        reason="Plan async asset discovery, cache, import, and post-import presentation.",
+                    )
+                ],
+            }
+        )
+
+    if "procedural_3d" in domains:
+        phases.append(
+            {
+                "name": "create",
+                "tool_calls": [
+                    _planned_tool_call(
+                        "create_procedural_object_kit",
+                        {"template": _infer_object_kit_template(prompt), "name_prefix": "Director Kit"},
+                        reason="Create a bounded procedural kit before custom mesh or Geometry Nodes scripts.",
+                        mutates_scene=True,
+                        requires_live_preview=True,
+                    ),
+                    _planned_tool_call(
+                        "add_geometry_nodes_modifier",
+                        {
+                            "name": "Director Geometry Nodes",
+                            "node_group_name": "Director Geometry Nodes Group",
+                            "template": "set_position",
+                            "selected_only": True,
+                        },
+                        reason="Add a reversible starter Geometry Nodes group when procedural editing is requested.",
+                        mutates_scene=True,
+                        requires_live_preview=True,
+                    ),
+                ],
+            }
+        )
+
+    if "advanced_animation" in domains:
+        phases.append(
+            {
+                "name": "animate_review_repair",
+                "tool_calls": [
+                    _planned_tool_call("plan_animation_workflow", {"prompt": prompt, "subject_names": target_names}, reason="Create the animation brief, scene routing, and timing chart."),
+                    _planned_tool_call(
+                        "run_animation_workflow",
+                        {"prompt": prompt, "subject_names": target_names, "capture_playblast": True, "apply_repairs": True},
+                        reason="Run helper-backed generation, visual review, and bounded repair when helpers fit.",
+                        mutates_scene=True,
+                        requires_live_preview=True,
+                    ),
+                ],
+            }
+        )
+
+    preview_decision_options = [
+        {
+            "decision": "commit",
+            "blocked_until": "user explicitly approves the pending preview",
+            "tool_call": _planned_tool_call("commit_preview", {}, reason="Call only after the user explicitly approves the preview.", mutates_scene=True),
+        },
+        {
+            "decision": "revert",
+            "blocked_until": "user explicitly rejects the pending preview or a smoke test must clean up",
+            "tool_call": _planned_tool_call("revert_preview", {}, reason="Call only after the user rejects the preview or a smoke test cleans up.", mutates_scene=True),
+        },
+    ]
+    phases.append(
+        {
+            "name": "evidence_and_decision",
+            "tool_calls": [
+                _planned_tool_call("capture_viewport", {"max_bytes": 900000}, reason="Capture final viewport evidence for the user."),
+                _planned_tool_call("get_visual_evidence_resources", {"include_unavailable": True}, reason="Report latest viewport, playblast, render, and inspection artifacts."),
+            ],
+            "decision_options": preview_decision_options,
+        }
+    )
+
+    flat_calls = []
+    for phase in phases:
+        flat_calls.extend(phase.get("tool_calls") or [])
+    return {
+        "ok": True,
+        "message": f"Planned director workflow across {len(phases)} phase(s)",
+        "label": label,
+        "prompt": prompt,
+        "domains": domains,
+        "target_objects": target_names,
+        "deliverables": deliverable_names or ["preview", "visual evidence", "commit/revert decision"],
+        "phases": phases,
+        "next_tool_calls": flat_calls,
+        "preview_decision_options": preview_decision_options,
+        "preview_policy": {
+            "leave_pending": True,
+            "commit_only_on_user_request": True,
+            "revert_after_smoke": True,
+        },
+        "script_fallback_policy": {
+            "helper_first": True,
+            "draft_script_allowed_after_helper_gap": True,
+            "draft_privileged_script_for_asset_or_project_file_custom_work": True,
+            "persistent_bake_requires_one_time_approval": True,
+        },
     }
 
 
@@ -4483,6 +4933,92 @@ def create_procedural_object_kit(
                 primary,
             )
         )
+
+    elif template == "studio_prop_set":
+        remember(_create_cube_object(context, f"{prefix} Sweep Floor", (origin[0], origin[1], origin[2] - height * 0.05), (radius * 1.45, radius * 1.1, height * 0.035), primary))
+        backdrop = remember(_create_cube_object(context, f"{prefix} Backdrop", (origin[0], origin[1] + radius * 0.52, origin[2] + height * 0.42), (radius * 1.45, height * 0.035, height * 0.75), primary))
+        backdrop.show_name = True
+        remember(_create_cylinder_object(context, f"{prefix} Hero Plinth", (origin[0], origin[1], origin[2] + height * 0.12), radius * 0.3, height * 0.24, accent, vertices=64))
+        prop_count = max(3, min(16, count))
+        for index in range(prop_count):
+            angle = math.tau * index / prop_count
+            x = origin[0] + math.cos(angle) * radius * 0.55
+            y = origin[1] + math.sin(angle) * radius * 0.32
+            z = origin[2] + height * (0.15 + 0.04 * (index % 3))
+            if index % 2:
+                prop = remember(_create_cylinder_object(context, f"{prefix} Accent Cylinder {index + 1:02d}", (x, y, z), radius * 0.075, height * 0.2, accent, vertices=32))
+            else:
+                prop = remember(_create_cube_object(context, f"{prefix} Accent Block {index + 1:02d}", (x, y, z), (radius * 0.13, radius * 0.08, height * 0.16), accent))
+                prop.rotation_euler[2] = angle
+            prop.show_name = index == 0
+
+    elif template == "mechanical_part":
+        shaft = remember(_create_cylinder_object(context, f"{prefix} Main Shaft", origin, radius * 0.12, radius * 1.65, accent, vertices=48, rotation=_axis_rotation("X")))
+        shaft.show_name = True
+        for side, sx in (("Left", -1.0), ("Right", 1.0)):
+            remember(
+                _create_cylinder_object(
+                    context,
+                    f"{prefix} {side} Flange",
+                    (origin[0] + sx * radius * 0.62, origin[1], origin[2]),
+                    radius * 0.32,
+                    height * 0.16,
+                    primary,
+                    vertices=64,
+                    rotation=_axis_rotation("X"),
+                )
+            )
+        rib_count = max(4, min(18, count))
+        for index in range(rib_count):
+            x = origin[0] + (index - (rib_count - 1) / 2.0) * (radius * 1.15 / max(1, rib_count - 1))
+            rib = remember(_create_cube_object(context, f"{prefix} Cooling Rib {index + 1:02d}", (x, origin[1], origin[2]), (radius * 0.045, radius * 0.38, height * 0.18), primary))
+            rib.rotation_euler[0] = math.radians(90.0)
+        for index in range(6):
+            angle = math.tau * index / 6.0
+            remember(
+                _create_cylinder_object(
+                    context,
+                    f"{prefix} Fastener {index + 1:02d}",
+                    (origin[0] + math.cos(angle) * radius * 0.31, origin[1] + math.sin(angle) * radius * 0.31, origin[2] + height * 0.12),
+                    radius * 0.035,
+                    height * 0.05,
+                    accent,
+                    vertices=16,
+                )
+            )
+
+    elif template == "modular_wall_panel":
+        panel_width = radius * 1.7
+        panel_height = height
+        panel = remember(_create_cube_object(context, f"{prefix} Wall Panel Body", origin, (panel_width, max(0.06, radius * 0.08), panel_height * 0.55), primary))
+        panel.show_name = True
+        bay_count = max(3, min(12, count))
+        for index in range(bay_count):
+            x = origin[0] + (index - (bay_count - 1) / 2.0) * (panel_width * 0.82 / max(1, bay_count - 1))
+            inset = remember(
+                _create_cube_object(
+                    context,
+                    f"{prefix} Inset Bay {index + 1:02d}",
+                    (x, origin[1] - radius * 0.055, origin[2] + panel_height * (0.08 if index % 2 else -0.08)),
+                    (panel_width * 0.08, radius * 0.035, panel_height * 0.34),
+                    accent if index % 3 == 0 else primary,
+                )
+            )
+            inset.show_name = index == 0
+        for z_factor, name in ((0.34, "Top Rail"), (-0.34, "Bottom Rail")):
+            remember(_create_cube_object(context, f"{prefix} {name}", (origin[0], origin[1] - radius * 0.07, origin[2] + panel_height * z_factor), (panel_width * 0.92, radius * 0.035, panel_height * 0.035), accent))
+
+    elif template == "pipe_run":
+        pipe_count = max(2, min(10, count))
+        for index in range(pipe_count):
+            z = origin[2] + (index - (pipe_count - 1) / 2.0) * height * 0.16
+            pipe = remember(_create_cylinder_object(context, f"{prefix} Pipe {index + 1:02d}", (origin[0], origin[1], z), radius * 0.045, radius * 1.8, primary if index % 2 else accent, vertices=24, rotation=_axis_rotation("X")))
+            pipe.show_name = index == 0
+        support_count = max(2, min(8, int(math.ceil(pipe_count / 2.0)) + 1))
+        for index in range(support_count):
+            x = origin[0] + (index - (support_count - 1) / 2.0) * radius * 0.62
+            remember(_create_cube_object(context, f"{prefix} Pipe Support {index + 1:02d}", (x, origin[1], origin[2] - height * 0.28), (radius * 0.055, radius * 0.18, height * 0.22), primary))
+            remember(_create_cube_object(context, f"{prefix} Pipe Clamp {index + 1:02d}", (x, origin[1], origin[2] + height * 0.02), (radius * 0.06, radius * 0.2, height * 0.045), accent))
 
     else:
         panel_width = radius * 1.6

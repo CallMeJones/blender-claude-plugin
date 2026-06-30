@@ -18,6 +18,8 @@ from claude_blender import agent_tools, context_bundle, live_preview, tool_dispa
 
 ADVANCED_TOOLS = {
     "plan_advanced_scene_workflow",
+    "plan_asset_import_workflow",
+    "plan_director_workflow",
     "get_2d_animation_details",
     "create_storyboard_panels",
     "create_2d_cutout_layer",
@@ -78,11 +80,12 @@ def _snapshot(scene, cube, camera):
 
 
 def _material_topology(material):
-    if not material or not material.use_nodes or not material.node_tree:
-        return {"use_nodes": bool(material and material.use_nodes), "nodes": [], "links": []}
+    node_tree = getattr(material, "node_tree", None) if material else None
+    if not node_tree:
+        return {"has_node_tree": False, "nodes": [], "links": []}
     return {
-        "use_nodes": bool(material.use_nodes),
-        "nodes": sorted(node.name for node in material.node_tree.nodes),
+        "has_node_tree": True,
+        "nodes": sorted(node.name for node in node_tree.nodes),
         "links": sorted(
             (
                 link.from_node.name,
@@ -90,7 +93,7 @@ def _material_topology(material):
                 link.to_node.name,
                 getattr(link.to_socket, "identifier", link.to_socket.name),
             )
-            for link in material.node_tree.links
+            for link in node_tree.links
         ),
     }
 
@@ -102,13 +105,14 @@ def main():
     cube = bpy.data.objects["Cube"]
     camera = bpy.data.objects["Camera"]
     existing_material = bpy.data.materials.new("Agent Bridge Existing Node Material")
-    existing_material.use_nodes = True
-    nodes = existing_material.node_tree.nodes
+    node_tree = existing_material.node_tree
+    assert node_tree is not None, "New Blender materials should expose a shader node tree"
+    nodes = node_tree.nodes
     for node in list(nodes):
         nodes.remove(node)
     diffuse = nodes.new(type="ShaderNodeBsdfDiffuse")
     output = nodes.new(type="ShaderNodeOutputMaterial")
-    existing_material.node_tree.links.new(diffuse.outputs["BSDF"], output.inputs["Surface"])
+    node_tree.links.new(diffuse.outputs["BSDF"], output.inputs["Surface"])
     cube.data.materials.clear()
     cube.data.materials.append(existing_material)
     existing_topology = _material_topology(existing_material)
@@ -132,6 +136,80 @@ def main():
             {"prompt": "Plan advanced 2D storyboard, procedural 3D, cloth simulation, and camera animation helpers."},
         )
         assert {"two_d_storyboard", "procedural_3d", "advanced_animation", "simulation_setup"}.intersection(set(workflow["domains"]))
+        asset_plan = _execute(
+            context,
+            "plan_asset_import_workflow",
+            {"prompt": "Find a Poly Haven product prop, import it, organize it, stage it, and capture evidence."},
+        )
+        asset_phase_names = [phase["name"] for phase in asset_plan["phases"]]
+        assert asset_phase_names == ["discover", "select_asset", "download", "import", "present"], asset_plan
+        assert asset_plan["provider"] == "poly_haven", asset_plan
+        assert asset_plan["provider_selection_required"] is False, asset_plan
+        assert asset_plan["asset_selection_required"] is True, asset_plan
+        assert asset_plan["selection_required"] is True, asset_plan
+        asset_tool_names = [call["name"] for phase in asset_plan["phases"] for call in phase["tool_calls"]]
+        assert "start_external_asset_download" not in asset_tool_names, asset_plan
+        assert "start_external_asset_import_job" not in asset_tool_names, asset_plan
+        assert "inspect_poly_haven_asset_files" not in asset_tool_names, asset_plan
+        assert "<poly_haven_asset_id>" not in str(asset_plan), asset_plan
+        assert asset_plan["phases"][-1]["tool_calls"] == [], asset_plan
+        concrete_asset_plan = _execute(
+            context,
+            "plan_asset_import_workflow",
+            {
+                "prompt": "Import the selected Poly Haven model and stage it.",
+                "provider": "poly_haven",
+                "asset_id": "agent_bridge_test_asset",
+            },
+        )
+        concrete_phase_names = [phase["name"] for phase in concrete_asset_plan["phases"]]
+        assert concrete_phase_names == ["discover", "download", "import", "present"], concrete_asset_plan
+        assert concrete_asset_plan["asset_selection_required"] is False, concrete_asset_plan
+        assert concrete_asset_plan["selection_required"] is False, concrete_asset_plan
+        concrete_download = next(call for phase in concrete_asset_plan["phases"] for call in phase["tool_calls"] if call["name"] == "start_external_asset_download")
+        assert concrete_download["input"]["asset_id"] == "agent_bridge_test_asset", concrete_asset_plan
+        assert not concrete_download["input"]["uid"], concrete_asset_plan
+        ambiguous_asset_plan = _execute(
+            context,
+            "plan_asset_import_workflow",
+            {"prompt": "Find a product prop asset, import it, organize it, stage it, and capture evidence."},
+        )
+        ambiguous_phase_names = [phase["name"] for phase in ambiguous_asset_plan["phases"]]
+        assert ambiguous_phase_names == ["discover", "select_asset", "download", "import", "present"], ambiguous_asset_plan
+        assert ambiguous_asset_plan["provider"] == "", ambiguous_asset_plan
+        assert ambiguous_asset_plan["provider_selection_required"] is True, ambiguous_asset_plan
+        assert ambiguous_asset_plan["asset_selection_required"] is False, ambiguous_asset_plan
+        assert ambiguous_asset_plan["selection_required"] is True, ambiguous_asset_plan
+        ambiguous_tool_names = [
+            call["name"]
+            for phase in ambiguous_asset_plan["phases"]
+            for call in phase["tool_calls"]
+        ]
+        assert "search_poly_haven_assets" in ambiguous_tool_names, ambiguous_asset_plan
+        assert "search_sketchfab_models" in ambiguous_tool_names, ambiguous_asset_plan
+        assert "start_external_asset_download" not in ambiguous_tool_names, ambiguous_asset_plan
+        assert ambiguous_asset_plan["phases"][-1]["tool_calls"] == [], ambiguous_asset_plan
+
+        director_plan = _execute(
+            context,
+            "plan_director_workflow",
+            {
+                "prompt": "Director workflow: import an asset, create a modular wall panel kit, animate a reveal, review evidence, and ask before commit.",
+                "target_objects": ["Cube"],
+            },
+        )
+        director_tool_names = [call["name"] for call in director_plan["next_tool_calls"]]
+        assert "plan_asset_import_workflow" in director_tool_names, director_plan
+        assert "create_procedural_object_kit" in director_tool_names, director_plan
+        assert "run_animation_workflow" in director_tool_names, director_plan
+        assert "commit_preview" not in director_tool_names, director_plan
+        assert "revert_preview" not in director_tool_names, director_plan
+        director_decision_names = [option["tool_call"]["name"] for option in director_plan["preview_decision_options"]]
+        assert director_decision_names == ["commit_preview", "revert_preview"], director_plan
+        gn_plan_call = next(call for call in director_plan["next_tool_calls"] if call["name"] == "add_geometry_nodes_modifier")
+        assert gn_plan_call["input"]["name"], director_plan
+        assert gn_plan_call["input"]["node_group_name"], director_plan
+        assert director_plan["preview_policy"]["commit_only_on_user_request"] is True, director_plan
         details = _execute(context, "get_2d_animation_details", {"max_items": 12})
         assert "recommended_tools" in details
 
@@ -192,6 +270,18 @@ def main():
         glass_material = bpy.data.materials[glass["material"]]
         assert round(float(glass_material.diffuse_color[3]), 2) == 0.32, tuple(glass_material.diffuse_color)
         assert cube.material_slots[0].material.name == glass["material"]
+        glow = _execute(
+            context,
+            "create_shader_material",
+            {
+                "name": "Agent Bridge Advanced Screen Glow Preset",
+                "preset": "screen_glow",
+            },
+        )
+        assert glow["preset"] == "screen_glow", glow
+        glow_material = bpy.data.materials[glow["material"]]
+        glow_principled = next(node for node in glow_material.node_tree.nodes if node.type == "BSDF_PRINCIPLED")
+        assert round(float(glow_principled.inputs["Emission Strength"].default_value), 1) == 2.4, glow["material"]
         bpy.ops.object.select_all(action="DESELECT")
         unassigned_material = _execute(
             context,
@@ -228,6 +318,20 @@ def main():
         assert not geometry_nodes["warnings"], geometry_nodes
         assert bpy.data.node_groups[geometry_nodes["node_group"]].nodes.get("Agent Bridge Transform Geometry")
         assert cube.modifiers.get("Agent Bridge Advanced GN")
+        set_position_nodes = _execute(
+            context,
+            "add_geometry_nodes_modifier",
+            {"name": "Agent Bridge Advanced GN Set Position", "node_group_name": "Agent Bridge Advanced GN Set Position Group", "template": "set_position"},
+        )
+        assert set_position_nodes["template"] == "set_position", set_position_nodes
+        assert bpy.data.node_groups[set_position_nodes["node_group"]].nodes.get("Agent Bridge Set Position")
+        subdivide_nodes = _execute(
+            context,
+            "add_geometry_nodes_modifier",
+            {"name": "Agent Bridge Advanced GN Subdivide", "node_group_name": "Agent Bridge Advanced GN Subdivide Group", "template": "subdivide_mesh"},
+        )
+        assert subdivide_nodes["template"] == "subdivide_mesh", subdivide_nodes
+        assert bpy.data.node_groups[subdivide_nodes["node_group"]].nodes.get("Agent Bridge Subdivide Mesh")
 
         procedural = _execute(
             context,
@@ -375,6 +479,38 @@ def main():
         assert control_panel["template"] == "control_panel", control_panel
         assert any("Display Screen" in name for name in control_panel["objects"]), control_panel
         assert any("Control Knob" in name for name in control_panel["objects"]), control_panel
+
+        modular_panel = _execute(
+            context,
+            "create_procedural_object_kit",
+            {
+                "template": "modular_wall_panel",
+                "name_prefix": "Agent Bridge Modular Wall Kit",
+                "location": [3.0, 3.0, 0.0],
+                "count": 4,
+                "radius": 1.0,
+                "height": 1.4,
+            },
+        )
+        assert modular_panel["template"] == "modular_wall_panel", modular_panel
+        assert any("Wall Panel Body" in name for name in modular_panel["objects"]), modular_panel
+        assert any("Inset Bay" in name for name in modular_panel["objects"]), modular_panel
+
+        pipe_run = _execute(
+            context,
+            "create_procedural_object_kit",
+            {
+                "template": "pipe_run",
+                "name_prefix": "Agent Bridge Pipe Run Kit",
+                "location": [-3.0, 3.0, 0.0],
+                "count": 4,
+                "radius": 1.0,
+                "height": 1.0,
+            },
+        )
+        assert pipe_run["template"] == "pipe_run", pipe_run
+        assert any("Pipe 01" in name for name in pipe_run["objects"]), pipe_run
+        assert any("Pipe Support" in name for name in pipe_run["objects"]), pipe_run
 
         directed = _execute(
             context,

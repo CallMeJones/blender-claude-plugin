@@ -82,6 +82,7 @@ $PureTests = @(
   "tests\smoke_extension_repository.py",
   "tests\smoke_external_assets.py",
   "tests\smoke_helper_routing.py",
+  "tests\smoke_real_client_routing.py",
   "tests\smoke_mcp_server.py",
   "tests\smoke_script_analysis.py",
   "tests\smoke_tool_contract_inventory.py"
@@ -103,6 +104,7 @@ What this covers:
 - Static extension repository generation.
 - External asset catalog/cache helpers that do not need Blender imports.
 - Helper-first script routing metadata and recommended-tool drift.
+- Real-client prompt routing fixtures for animation, visual inspection, advanced creation, asset import, preview/revert, and director orchestration.
 - Stdio MCP protocol, compact catalog, pagination, prompts, resources, wrappers, and error paths.
 - Static script analysis and risk classification.
 - Catalog-to-contract inventory drift, including intentional external-only tools.
@@ -814,6 +816,14 @@ Capture a viewport screenshot, then read the latest capture metadata resource.
 Render a small scene thumbnail and read its metadata resource.
 ```
 
+For a repeatable live bridge sweep that covers the same major workflow families without a real external asset download:
+
+```powershell
+python scripts\live_workflow_sweep.py
+```
+
+Use `--skip-viewport` when Blender is running headless or the foreground viewport capture path is not available. The sweep reverts its preview changes by default; pass `--keep-preview` only when you want to inspect the result in Blender.
+
 Pass criteria:
 
 - Client uses helper/workflow tools when they clearly fit, but custom advanced `draft_script` calls can proceed after static checks and approval/trust.
@@ -853,7 +863,7 @@ At the end of a comprehensive run, report these gaps explicitly if they were not
 
 Known current gaps to prioritize:
 
-- There is no single automated happy-path sweep that invokes all 144 dispatcher tools through the live bridge.
+- `scripts\live_workflow_sweep.py` now covers the major bridge workflow families, but there is still no exhaustive automated happy-path sweep that invokes every dispatcher tool through the live bridge.
 - Background tests verify many visual paths, but true viewport/playblast capture still needs a foreground Blender window for full confidence.
 - Real-client MCP routing is still necessary after tool-surface changes because clients can cache old tools and configs.
 

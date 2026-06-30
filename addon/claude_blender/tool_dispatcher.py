@@ -606,6 +606,10 @@ _WORKFLOW_GENERATION_TOOLS = {
     "create_turntable_animation",
     "create_reveal_animation",
     "create_pulse_animation",
+    "create_directed_animation_shot",
+    "create_camera_dolly_animation",
+    "animate_shape_key",
+    "animate_material_property",
 }
 
 
@@ -1033,6 +1037,9 @@ _REPAIR_LOOP_READ_ONLY_TOOLS = {
     "capture_animation_playblast",
     "capture_object_inspection_renders",
     "create_timing_chart",
+    "get_shape_key_details",
+    "get_simulation_details",
+    "inspect_simulation_bake",
     "get_rig_pose_library_details",
     "get_rigging_details",
     "review_playblast_against_brief",
@@ -1057,8 +1064,13 @@ _REPAIR_LOOP_DEFAULT_TOOLS = {
     "create_camera_orbit",
     "animate_object_bounce",
     "create_progressive_bounce_animation",
+    "animate_shape_key",
+    "animate_material_property",
     "set_scene_frame_range",
     "retime_actions",
+    "get_shape_key_details",
+    "get_simulation_details",
+    "inspect_simulation_bake",
     "get_rigging_details",
 }
 
@@ -1138,6 +1150,10 @@ def _repair_operation_blocker(tool, tool_args):
         return "capture_object_inspection_renders requires object_names"
     if tool in {"animate_object_bounce", "create_progressive_bounce_animation"} and not tool_args.get("object_name"):
         return f"{tool} requires object_name"
+    if tool == "animate_shape_key" and not tool_args.get("object_name"):
+        return "animate_shape_key requires object_name"
+    if tool == "animate_material_property" and not (tool_args.get("material_name") or tool_args.get("object_name")):
+        return "animate_material_property requires material_name or object_name"
     if tool == "retime_actions" and not (tool_args.get("object_names") or tool_args.get("action_names")):
         return "retime_actions requires object_names or action_names"
     if tool == "create_camera_orbit" and not tool_args.get("target_name"):
@@ -2289,6 +2305,29 @@ def plan_advanced_scene_workflow(context, args):
         domains=_name_list(args.get("domains")),
         target_objects=_name_list(args.get("target_objects")),
         label=args.get("label", "Plan advanced scene workflow"),
+    )
+
+
+def plan_asset_import_workflow(context, args):
+    return advanced_helpers.plan_asset_import_workflow(
+        context,
+        prompt=str(args.get("prompt") or ""),
+        provider=str(args.get("provider") or ""),
+        asset_id=str(args.get("asset_id") or ""),
+        uid=str(args.get("uid") or ""),
+        target_object_name=str(args.get("target_object_name") or args.get("object_name") or ""),
+        presentation_preset=str(args.get("presentation_preset") or "studio"),
+        label=args.get("label", "Plan asset import workflow"),
+    )
+
+
+def plan_director_workflow(context, args):
+    return advanced_helpers.plan_director_workflow(
+        context,
+        prompt=str(args.get("prompt") or ""),
+        target_objects=_name_list(args.get("target_objects")),
+        deliverables=_name_list(args.get("deliverables")),
+        label=args.get("label", "Plan director workflow"),
     )
 
 
@@ -3656,6 +3695,8 @@ TOOL_FUNCTIONS = {
     "set_camera_settings": set_camera_settings,
     "set_world_background": set_world_background,
     "plan_advanced_scene_workflow": plan_advanced_scene_workflow,
+    "plan_asset_import_workflow": plan_asset_import_workflow,
+    "plan_director_workflow": plan_director_workflow,
     "get_2d_animation_details": get_2d_animation_details,
     "create_storyboard_panels": create_storyboard_panels,
     "create_2d_cutout_layer": create_2d_cutout_layer,

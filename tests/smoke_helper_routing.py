@@ -73,6 +73,12 @@ def main():
         "Make the selected cube red with bpy.data.materials and a material script."
     ) is None
 
+    advanced_guard = helper_routing.helper_first_script_advisory(
+        "Write a Python script for a director workflow plan across asset import, animation, evidence, and preview commit."
+    )
+    assert advanced_guard["code"] == "advanced_workflow_helper_required", advanced_guard
+    assert "plan_director_workflow" in advanced_guard["recommended_tools"], advanced_guard
+
     storyboard_guard = helper_routing.helper_first_script_advisory(
         "Write a Python script to create a storyboard animatic with 2D panels."
     )
@@ -87,6 +93,12 @@ def main():
     assert not procedural_guard["blocked"], procedural_guard
     assert "apply_procedural_array_stack" in procedural_guard["recommended_tools"], procedural_guard
 
+    modular_guard = helper_routing.helper_first_script_advisory(
+        "Write Python for a modular wall panel object kit with pipe run details."
+    )
+    assert modular_guard["code"] == "procedural_3d_helper_required", modular_guard
+    assert "create_procedural_object_kit" in modular_guard["recommended_tools"], modular_guard
+
     cloth_guard = helper_routing.helper_first_script_advisory(
         "Draft a script to add cloth simulation setup to the selected mesh."
     )
@@ -99,6 +111,7 @@ def main():
     )
     assert asset_guard["blocked"], asset_guard
     assert asset_guard["code"] == "external_asset_workflow_required", asset_guard
+    assert "plan_asset_import_workflow" in asset_guard["recommended_tools"], asset_guard
 
     custom_asset_guard = helper_routing.helper_first_script_guard(
         "Write a custom Python script to download and import a Poly Haven sunset HDRI."

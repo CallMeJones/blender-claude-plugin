@@ -844,10 +844,12 @@ def _assert_animation_search_routes_first(response, *, query):
 def _assert_external_asset_search_routes_first(response, *, query):
     tools = response["result"]["structuredContent"]["tools"]
     names = [tool["name"] for tool in tools]
-    assert names[0] == "start_external_asset_download", (query, names)
-    assert "start_external_asset_import_job" in names[:4], (query, names)
-    assert "get_external_asset_job_status" in names[:5], (query, names)
-    assert "get_external_asset_import_job_status" in names[:6], (query, names)
+    assert names[0] in {"plan_asset_import_workflow", "start_external_asset_download"}, (query, names)
+    assert "plan_asset_import_workflow" in names[:3], (query, names)
+    assert "start_external_asset_download" in names[:4], (query, names)
+    assert "start_external_asset_import_job" in names[:5], (query, names)
+    assert "get_external_asset_job_status" in names[:6], (query, names)
+    assert "get_external_asset_import_job_status" in names[:7], (query, names)
     for direct_name in (
         "download_poly_haven_asset",
         "import_poly_haven_asset",
@@ -999,6 +1001,10 @@ def main():
                 {"create_procedural_object_kit"},
             ),
             (
+                "Create a modular wall panel object kit with pipe run details and geometry nodes.",
+                {"create_procedural_object_kit", "add_geometry_nodes_modifier"},
+            ),
+            (
                 "Create a directed shot template with a camera push reveal.",
                 {"create_directed_animation_shot"},
             ),
@@ -1039,6 +1045,25 @@ def main():
                 },
             )
             _assert_external_asset_search_routes_first(offline_asset_search, query=query)
+        offline_director_search = _send(
+            offline_proc,
+            {
+                "jsonrpc": "2.0",
+                "id": 95,
+                "method": "tools/call",
+                "params": {
+                    "name": "search_blender_tools",
+                    "arguments": {
+                        "query": "Director workflow import an asset build a product scene animate a reveal review evidence commit revert",
+                        "limit": 10,
+                    },
+                },
+            },
+        )
+        offline_director_names = [tool["name"] for tool in offline_director_search["result"]["structuredContent"]["tools"]]
+        assert offline_director_names[0] == "plan_director_workflow", offline_director_names
+        assert "plan_asset_import_workflow" in offline_director_names[:5], offline_director_names
+        assert "run_animation_workflow" in offline_director_names[:10], offline_director_names
         for query in (
             "Create a wood texture material on the selected cube.",
             "Assign a procedural texture material to the selected cube.",
@@ -1845,6 +1870,7 @@ def main():
         prompts = _send(proc, {"jsonrpc": "2.0", "id": 41, "method": "prompts/list"})
         prompt_names = {item["name"] for item in prompts["result"]["prompts"]}
         assert "safe_scene_change" in prompt_names, prompts
+        assert "director_workflow" in prompt_names, prompts
         assert "advanced_scene_workflow" in prompt_names, prompts
         assert "advanced_animation_workflow" in prompt_names, prompts
         assert "external_asset_workflow" in prompt_names, prompts
@@ -1873,6 +1899,19 @@ def main():
         assert "run_animation_workflow" in animation_prompt_text, animation_prompt
         assert "capture_object_inspection_renders" in animation_prompt_text, animation_prompt
         assert "draft_script for custom advanced animation code" in animation_prompt_text, animation_prompt
+        director_prompt = _send(
+            proc,
+            {
+                "jsonrpc": "2.0",
+                "id": 46,
+                "method": "prompts/get",
+                "params": {"name": "director_workflow", "arguments": {"goal": "import an asset and animate a reveal"}},
+            },
+        )
+        director_prompt_text = director_prompt["result"]["messages"][0]["content"]["text"]
+        assert "plan_director_workflow" in director_prompt_text, director_prompt
+        assert "plan_asset_import_workflow" in director_prompt_text, director_prompt
+        assert "run_animation_workflow" in director_prompt_text, director_prompt
         advanced_prompt = _send(
             proc,
             {

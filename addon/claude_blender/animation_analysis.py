@@ -37,7 +37,10 @@ INSPECTION_DETAIL_KEYWORDS = {
 EVIDENCE_COLLECTION_TOOLS = {"capture_animation_playblast", "capture_object_inspection_renders"}
 READ_ONLY_REVIEW_TOOLS = {
     "create_timing_chart",
+    "get_shape_key_details",
+    "get_simulation_details",
     "get_rigging_details",
+    "inspect_simulation_bake",
     "review_playblast_against_brief",
     "review_inspection_renders_against_brief",
 }
@@ -2335,6 +2338,25 @@ def _finding_target_range(finding, frame_start, frame_end):
     return []
 
 
+def _repair_frame_range(target_frame_range, frame_start, frame_end):
+    if target_frame_range and len(target_frame_range) >= 2:
+        start = int(target_frame_range[0])
+        end = int(target_frame_range[1])
+    else:
+        start = int(frame_start)
+        end = int(frame_end)
+    if start > end:
+        start, end = end, start
+    if start == end:
+        if start > int(frame_start):
+            start = max(int(frame_start), start - 4)
+        if start == end and end < int(frame_end):
+            end = min(int(frame_end), end + 4)
+        if start == end:
+            start, end = int(frame_start), int(frame_end)
+    return start, end
+
+
 def _finding_evidence(finding):
     return finding.get("evidence") if isinstance(finding, dict) and isinstance(finding.get("evidence"), dict) else {}
 
@@ -2908,6 +2930,7 @@ def repair_animation_from_findings(context, *, findings=None, brief=None):
     for index, finding in enumerate(findings or []):
         target_frames = _finding_target_frames(finding)
         target_frame_range = _finding_target_range(finding, frame_start, frame_end)
+        repair_frame_start, repair_frame_end = _repair_frame_range(target_frame_range, frame_start, frame_end)
         repair_tool = str(finding.get("repair_tool") or "").lower()
         evidence = _finding_evidence(finding)
         severity = str(finding.get("severity", "")).lower()
@@ -3070,6 +3093,118 @@ def repair_animation_from_findings(context, *, findings=None, brief=None):
                     confidence="high" if object_names else "medium",
                     target_frames=target_frames,
                     target_frame_range=target_frame_range,
+                )
+            )
+        if scale_decreases and action in {"bounce", "jump"} and primary_subject and (
+            "scale" in text or "smaller" in text or "secondary" in text or "size change" in text
+        ):
+            operations.append(
+                _operation(
+                    "create_progressive_bounce_animation",
+                    "Regenerate the helper-backed bounce so the requested scale decrease is keyed with the motion.",
+                    arguments={
+                        "object_name": primary_subject,
+                        "frame_start": frame_start,
+                        "frame_end": frame_end,
+                        "axis": "Z",
+                        "cycles": requested_count or 2,
+                        "scale_end_factor": 0.6,
+                        "interpolation": "BEZIER",
+                    },
+                    source_index=index,
+                    finding=finding,
+                    confidence="high",
+                    target_frames=target_frames,
+                    target_frame_range=target_frame_range,
+                    metadata={"repairs_secondary_action": "scale_decrease", "replaces_existing_action": True},
+                )
+            )
+        if any(term in text for term in ("shape key", "shapekey", "blendshape", "morph", "facial", "squash shape")):
+            object_names = _finding_object_names(finding, subject_names)
+            operations.append(
+                _operation(
+                    "get_shape_key_details",
+                    "Inspect shape keys before applying morph or squash/stretch repair.",
+                    arguments={"object_names": object_names or subject_names, "max_objects": 8},
+                    source_index=index,
+                    finding=finding,
+                    confidence="high" if object_names or subject_names else "medium",
+                    target_frames=target_frames,
+                    target_frame_range=target_frame_range,
+                )
+            )
+            if primary_subject:
+                operations.append(
+                    _operation(
+                        "animate_shape_key",
+                        "Key a bounded repair shape key over the problem frame range.",
+                        arguments={
+                            "object_name": primary_subject,
+                            "key_name": "Agent Bridge Repair Shape",
+                            "frame_start": repair_frame_start,
+                            "frame_end": repair_frame_end,
+                            "value_start": 0.0,
+                            "value_end": 1.0,
+                            "create_if_missing": True,
+                        },
+                        source_index=index,
+                        finding=finding,
+                        confidence="medium",
+                        target_frames=target_frames,
+                        target_frame_range=target_frame_range,
+                        metadata={"repairs_secondary_action": "shape_key"},
+                    )
+                )
+        if any(term in text for term in ("material", "shader", "emission", "glow", "alpha", "fade", "color change", "colour change")):
+            property_name = "emission_strength" if any(term in text for term in ("emission", "glow", "screen")) else "alpha" if "fade" in text or "transparent" in text else "base_color"
+            value_start = 0.0 if property_name in {"emission_strength", "alpha"} else [0.2, 0.2, 0.2, 1.0]
+            value_end = 2.0 if property_name == "emission_strength" else 1.0 if property_name == "alpha" else [1.0, 0.62, 0.08, 1.0]
+            operations.append(
+                _operation(
+                    "animate_material_property",
+                    "Key a bounded material property repair instead of falling back to custom shader Python.",
+                    arguments={
+                        "object_name": primary_subject,
+                        "property_name": property_name,
+                        "frame_start": repair_frame_start,
+                        "frame_end": repair_frame_end,
+                        "value_start": value_start,
+                        "value_end": value_end,
+                        "create_if_missing": True,
+                        "interpolation": "BEZIER",
+                    },
+                    source_index=index,
+                    finding=finding,
+                    confidence="medium" if primary_subject else "low",
+                    target_frames=target_frames,
+                    target_frame_range=target_frame_range,
+                    metadata={"repairs_secondary_action": "material_property", "property_name": property_name},
+                )
+            )
+        if any(term in text for term in ("physics", "simulation", "cache", "bake", "cloth", "rigid body", "settle")):
+            operations.append(
+                _operation(
+                    "get_simulation_details",
+                    "Inspect simulation modifiers and physics state before deciding whether repair needs a bake or helper change.",
+                    arguments={"object_names": target_object_names or subject_names, "max_objects": 12},
+                    source_index=index,
+                    finding=finding,
+                    confidence="medium",
+                    target_frames=target_frames,
+                    target_frame_range=target_frame_range,
+                )
+            )
+            operations.append(
+                _operation(
+                    "inspect_simulation_bake",
+                    "Check sampled simulation/cache readiness; persistent bake/free still requires explicit approval.",
+                    arguments={"object_names": target_object_names or subject_names, "frame_start": frame_start, "frame_end": frame_end},
+                    source_index=index,
+                    finding=finding,
+                    confidence="medium",
+                    target_frames=target_frames,
+                    target_frame_range=target_frame_range,
+                    metadata={"persistent_bake_requires_approval": True},
                 )
             )
         if "camera" in text or "framing" in text:

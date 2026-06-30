@@ -1216,7 +1216,17 @@ TOOL_CONTRACTS = {
                 "name": {"type": "string"},
                 "preset": {
                     "type": "string",
-                    "enum": ["custom", "brushed_metal", "matte_plastic", "clear_glass", "emissive_accent", "matte_ceramic"],
+                    "enum": [
+                        "custom",
+                        "brushed_metal",
+                        "matte_plastic",
+                        "clear_glass",
+                        "emissive_accent",
+                        "matte_ceramic",
+                        "rubber_black",
+                        "warm_wood",
+                        "screen_glow",
+                    ],
                 },
                 "base_color": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 4},
                 "metallic": {"type": "number"},
@@ -1239,7 +1249,7 @@ TOOL_CONTRACTS = {
             "properties": {
                 "name": {"type": "string"},
                 "node_group_name": {"type": "string"},
-                "template": {"type": "string", "enum": ["passthrough", "transform", "join_geometry"]},
+                "template": {"type": "string", "enum": ["passthrough", "transform", "join_geometry", "set_position", "subdivide_mesh"]},
                 "selected_only": {"type": "boolean"},
                 "label": {"type": "string"},
             },
@@ -1416,9 +1426,65 @@ TOOL_CONTRACTS = {
         "requires_live_preview": True,
     },
     "plan_advanced_scene_workflow": {
-        "description": "Plan helper-first workflows for advanced 3D, 2D/storyboard, animation, simulation, compositor/render, and script-fallback work",
+        "description": "Plan helper-first workflows for advanced 3D, 2D/storyboard, animation, simulation, asset import, compositor/render, and script-fallback work",
         "mutates_scene": False,
         "supports_headless": True,
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "prompt": {"type": "string"},
+                "domains": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": [
+                            "2d_storyboard",
+                            "procedural_3d",
+                            "advanced_animation",
+                            "simulation_setup",
+                            "asset_import",
+                            "compositor_render",
+                        ],
+                    },
+                },
+                "target_objects": {"type": "array", "items": {"type": "string"}},
+                "label": {"type": "string"},
+            },
+            "additionalProperties": False,
+        },
+    },
+    "plan_asset_import_workflow": {
+        "description": "Plan async external-asset discovery, download/cache, queued import, post-import staging, and visual-evidence workflow",
+        "mutates_scene": False,
+        "supports_headless": True,
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "prompt": {"type": "string"},
+                "provider": {"type": "string", "enum": ["", "poly_haven", "sketchfab"]},
+                "asset_id": {"type": "string"},
+                "uid": {"type": "string"},
+                "target_object_name": {"type": "string"},
+                "presentation_preset": {"type": "string"},
+                "label": {"type": "string"},
+            },
+            "additionalProperties": False,
+        },
+    },
+    "plan_director_workflow": {
+        "description": "Plan a multi-step director workflow across inspection, asset import, creation, animation/review/repair, evidence, and preview decisions",
+        "mutates_scene": False,
+        "supports_headless": True,
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "prompt": {"type": "string"},
+                "target_objects": {"type": "array", "items": {"type": "string"}},
+                "deliverables": {"type": "array", "items": {"type": "string"}},
+                "label": {"type": "string"},
+            },
+            "additionalProperties": False,
+        },
     },
     "get_2d_animation_details": {
         "description": "Inspect 2D/storyboard, Grease Pencil-like, cutout, camera, render, and compositor context",
@@ -1464,7 +1530,18 @@ TOOL_CONTRACTS = {
             "properties": {
                 "template": {
                     "type": "string",
-                    "enum": ["kitbash_tower", "radial_array", "scatter_grid", "product_stack", "mechanical_joint", "control_panel"],
+                    "enum": [
+                        "kitbash_tower",
+                        "radial_array",
+                        "scatter_grid",
+                        "product_stack",
+                        "mechanical_joint",
+                        "control_panel",
+                        "studio_prop_set",
+                        "mechanical_part",
+                        "modular_wall_panel",
+                        "pipe_run",
+                    ],
                 },
                 "name_prefix": {"type": "string"},
                 "location": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},

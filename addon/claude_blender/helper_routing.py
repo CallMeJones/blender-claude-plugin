@@ -123,12 +123,14 @@ HELPER_FIRST_SCRIPT_RULES = (
             "what tools",
             "helper path",
             "workflow plan",
+            "director workflow",
         },
         "message": (
             "Use the advanced workflow planner and domain helpers before drafting Python for broad advanced "
             "3D, 2D, animation, simulation, or compositor/render work."
         ),
         "recommended_tools": [
+            "plan_director_workflow",
             "plan_advanced_scene_workflow",
             "get_2d_animation_details",
             "get_geometry_nodes_details",
@@ -172,6 +174,10 @@ HELPER_FIRST_SCRIPT_RULES = (
             "kitbash",
             "scatter grid",
             "radial array",
+            "modular wall panel",
+            "wall panel",
+            "mechanical part",
+            "pipe run",
             "hard surface",
             "hard-surface",
             "non destructive",
@@ -253,6 +259,7 @@ HELPER_FIRST_SCRIPT_RULES = (
             "drafting Python for asset download or import."
         ),
         "recommended_tools": [
+            "plan_asset_import_workflow",
             "search_poly_haven_assets",
             "search_sketchfab_models",
             "start_external_asset_download",

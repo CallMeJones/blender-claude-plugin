@@ -20,14 +20,14 @@ AGENT_GUIDANCE = (
     "When target objects are unclear, use list_scene_objects and select_objects before applying selected-object tools. "
     "When the user asks to change the scene, use safe helper tools first so Blender changes immediately. "
     "Use direct Blender data concepts: objects, collections, materials, cameras, lights, actions, keyframes. "
-    "For advanced 3D, 2D/storyboard, animation, simulation, compositor/render, or script-heavy tasks, call plan_advanced_scene_workflow first when the helper path is not obvious. It returns domain-specific helpers and script fallback boundaries. "
-    "For scene building and layout, prefer create_primitive, create_empty, duplicate_selected_objects, parent_selected_to_empty, align_selected_objects, distribute_selected_objects, set_object_visibility, set_object_display, assign_material_to_selected, assign_emission_material_to_selected, create_shader_material, create_text_object, create_curve_path, create_collection, link_selected_to_collection, add_light, add_camera, add_modifier_to_selected, add_geometry_nodes_modifier, apply_procedural_array_stack, create_procedural_object_kit, add_track_to_constraint, add_copy_transform_constraint, create_basic_armature, add_particle_system_to_selected, add_cloth_simulation_to_selected, set_render_settings, set_camera_settings, and set_world_background. create_shader_material includes bounded material presets; add_geometry_nodes_modifier includes passthrough, transform, and join-geometry starter templates. "
+    "For broad multi-step scene, asset, animation, and evidence work, call plan_director_workflow first to get an ordered helper/evidence/preview plan without mutating the scene. For advanced 3D, 2D/storyboard, animation, simulation, compositor/render, asset-import, or script-heavy tasks, call plan_advanced_scene_workflow first when the helper path is not obvious. It returns domain-specific helpers and script fallback boundaries. "
+    "For scene building and layout, prefer create_primitive, create_empty, duplicate_selected_objects, parent_selected_to_empty, align_selected_objects, distribute_selected_objects, set_object_visibility, set_object_display, assign_material_to_selected, assign_emission_material_to_selected, create_shader_material, create_text_object, create_curve_path, create_collection, link_selected_to_collection, add_light, add_camera, add_modifier_to_selected, add_geometry_nodes_modifier, apply_procedural_array_stack, create_procedural_object_kit, add_track_to_constraint, add_copy_transform_constraint, create_basic_armature, add_particle_system_to_selected, add_cloth_simulation_to_selected, set_render_settings, set_camera_settings, and set_world_background. create_shader_material includes bounded material presets; add_geometry_nodes_modifier includes passthrough, transform, join-geometry, set-position, and subdivide-mesh starter templates. "
     "For 2D, storyboard, animatic, cutout, or motion-graphics work, inspect first with get_2d_animation_details, then prefer create_storyboard_panels, create_2d_cutout_layer, create_camera_dolly_animation, capture_animation_playblast, and render jobs before drafting custom Grease Pencil or SVG Python. "
-    "For model refinement and production presentation, prefer shade_smooth_selected, add_bevel_and_subsurf, apply_procedural_array_stack, create_procedural_object_kit, create_wheel_assembly, add_panel_seams, add_window_materials, apply_vehicle_refinement_template, apply_product_refinement_template, apply_character_refinement_template, create_studio_product_stage, add_dimension_callouts, apply_lighting_preset, create_material_palette, create_product_turntable_setup, and organize_scene_for_production when they fit the task. create_procedural_object_kit includes kitbash, radial/scatter/product, mechanical-joint, and control-panel templates for bounded prop generation before custom mesh scripts. "
+    "For model refinement and production presentation, prefer shade_smooth_selected, add_bevel_and_subsurf, apply_procedural_array_stack, create_procedural_object_kit, create_wheel_assembly, add_panel_seams, add_window_materials, apply_vehicle_refinement_template, apply_product_refinement_template, apply_character_refinement_template, create_studio_product_stage, add_dimension_callouts, apply_lighting_preset, create_material_palette, create_product_turntable_setup, and organize_scene_for_production when they fit the task. create_procedural_object_kit includes kitbash, radial/scatter/product, mechanical-joint, control-panel, studio-prop, mechanical-part, modular-wall-panel, and pipe-run templates for bounded prop generation before custom mesh scripts. "
     "For shape-key animation, prefer create_shape_key and animate_shape_key before drafting Python. "
     "For quick animation playblasts and visual review, use low-resolution preview defaults unless the user explicitly asks for HD/final/1080p/4K quality. For long-running or high-resolution renders, frame sequences, 1080p/4K previews, or MP4 quality checks, use start_render_job and poll get_render_job_status instead of blocking render_scene_thumbnail, capture tools, or draft_script; report the returned rough estimate/poll interval to the user; use assemble_render_job_video for PNG sequences and validate_render_job_output before reporting success; use cancel_render_job if the user wants to stop it. If a render, playblast, or visual-review tool times out, treat it as recoverable: wait the returned poll_after_seconds, call blender_bridge_status, inspect get_visual_evidence_resources and the audit log, and only rerun if no artifact/result appears. "
     "For simulation setup, prefer add_cloth_simulation_to_selected or add_particle_system_to_selected for bounded setup, then inspect with get_simulation_details or inspect_simulation_bake. For persistent simulation/cache bakes or cache-freeing operations, use stage_persistent_simulation_bake for a fixed approval-gated script. Session-wide external script trust is not enough for bpy.ops.fluid.* or bpy.ops.ptcache.* bake/free operators; they require explicit one-time user approval. Do not hand the user a checkpoint or recovery .blend path unless you just verified that it exists and is restorable through checkpoint metadata, diagnostics, or a filesystem check. "
-    "For external assets, use list_poly_haven_categories and search_poly_haven_assets/search_sketchfab_models for discovery, inspect_poly_haven_asset_files before choosing Poly Haven formats, then use start_external_asset_download for any download/cache or import request. Poll get_external_asset_job_status until completed or failed. For scene import, call start_external_asset_import_job and poll get_external_asset_import_job_status until completed or failed. Use download_poly_haven_asset, import_poly_haven_asset, download_sketchfab_model, import_sketchfab_model, and import_external_asset_job_result only for explicit synchronous fallback/debug cases. Use get_external_asset_cache_diagnostics to report cached/imported assets. Sketchfab API tokens must be provided per call or through the MCP server environment, not Blender preferences. "
+    "For external assets, call plan_asset_import_workflow when the request includes import plus cleanup/presentation. Use list_poly_haven_categories and search_poly_haven_assets/search_sketchfab_models for discovery, inspect_poly_haven_asset_files before choosing Poly Haven formats, and only call start_external_asset_download after a concrete Poly Haven asset_id or Sketchfab uid is selected. Poll get_external_asset_job_status until completed or failed. For scene import, call start_external_asset_import_job only after the cache job completes, then poll get_external_asset_import_job_status until completed or failed. Use download_poly_haven_asset, import_poly_haven_asset, download_sketchfab_model, import_sketchfab_model, and import_external_asset_job_result only for explicit synchronous fallback/debug cases. Use get_external_asset_cache_diagnostics to report cached/imported assets. Sketchfab API tokens must be provided per call or through the MCP server environment, not Blender preferences. "
     "For animation generation, review, or repair, call run_animation_task for simple prompt-in/task-out use, or call plan_animation_workflow first when you need manual control of the generated workflow. plan_animation_workflow returns the brief, scene routing, timing chart, ordered helper calls, evaluator calls, repair calls, and script fallback rules. For common helper-backed generation, call run_animation_workflow to execute the plan, review the result, optionally capture playblast evidence, and leave changes in preview. Use any animation_brief in context as the prompt contract; otherwise call create_animation_brief first when the prompt needs an explicit contract, success criteria, or later validation. Call get_animation_scene_context before advanced animation in scenes with rigs, constraints, drivers, shape keys, physics, or unclear edit targets so you know whether to animate object transforms, rig controls, shape keys, materials, physics, or camera settings. Use create_timing_chart, block_key_poses, add_breakdown_pose, set_pose_hold, set_rig_pose_hold, get_rig_pose_library_details, apply_rig_pose_from_action, apply_rig_pose_marker, apply_rig_action_clip, offset_rig_limb_controls, set_rig_custom_property_keyframes, create_directed_animation_shot, create_camera_dolly_animation, and create_motion_arc for animator-style blocking before spline/f-curve polish; use rig pose/action helpers only after identifying armature controls, pose-library candidates, or existing scalar IK/FK/space properties through rig inspection or repair metadata. Then use analyze_animation_principles plus focused analyzers to check timing, spacing, arcs, pose clarity, anticipation, squash/stretch, contact, center-of-mass support, speed/acceleration plausibility, simulation cache readiness, and settle before repair; use inspect_simulation_bake before persistent bake decisions, and use stage_persistent_simulation_bake when the user intentionally wants a persistent point-cache bake. Use capture_animation_playblast and review_playblast_against_brief when visual frame evidence matters; use capture_object_inspection_renders and review_inspection_renders_against_brief when close-up object detail evidence matters; if review or repair tools return repair_operations, prefer run_animation_repair_loop for bounded helper repair and review-again behavior, or execute relevant tool_call name/input entries deliberately when manual control is needed. Then prefer set_scene_frame_range, set_animation_preview_range, animate_selected_transform, animate_object_bounce, create_progressive_bounce_animation, animate_material_property, animate_light_property, create_follow_path_animation, create_turntable_animation, create_pulse_animation, create_reveal_animation, create_staggered_motion, create_directed_animation_shot, set_action_interpolation, retime_actions, add_action_cycles, clear_animation, create_camera_dolly_animation, and create_camera_orbit. "
     "For complex scene builds that need many objects or more than about eight helper calls, stage one cohesive Blender Python script with draft_script instead of making a long chain of helper calls. "
     "Use draft_script for custom or larger advanced scene scripts when static checks pass; helper overlap should be treated as advice. Use draft_privileged_script for custom external asset or project-file lifecycle scripts that need declared filesystem, network, asset-import, or project-file capabilities. Privileged scripts require a manifest and never auto-run under normal external script trust. Persistent simulation/cache bakes stay on their dedicated one-time approval path. If the user has granted external script trust, draft_script may auto-run after static checks. "
@@ -1246,7 +1246,17 @@ def blender_tool_definitions():
                     "name": {"type": "string"},
                     "preset": {
                         "type": "string",
-                        "enum": ["custom", "brushed_metal", "matte_plastic", "clear_glass", "emissive_accent", "matte_ceramic"],
+                        "enum": [
+                            "custom",
+                            "brushed_metal",
+                            "matte_plastic",
+                            "clear_glass",
+                            "emissive_accent",
+                            "matte_ceramic",
+                            "rubber_black",
+                            "warm_wood",
+                            "screen_glow",
+                        ],
                     },
                     "base_color": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 4},
                     "metallic": {"type": "number"},
@@ -1262,13 +1272,13 @@ def blender_tool_definitions():
         },
         {
             "name": "add_geometry_nodes_modifier",
-            "description": "Add a valid Geometry Nodes modifier and starter node group to selected mesh objects. Templates include passthrough, transform, and join geometry. Applies immediately with preview revert support.",
+            "description": "Add a valid Geometry Nodes modifier and starter node group to selected mesh objects. Templates include passthrough, transform, join geometry, set position, and subdivide mesh. Applies immediately with preview revert support.",
             "input_schema": {
                 "type": "object",
                 "properties": {
                     "name": {"type": "string"},
                     "node_group_name": {"type": "string"},
-                    "template": {"type": "string", "enum": ["passthrough", "transform", "join_geometry"]},
+                    "template": {"type": "string", "enum": ["passthrough", "transform", "join_geometry", "set_position", "subdivide_mesh"]},
                     "selected_only": {"type": "boolean"},
                     "label": {"type": "string"},
                 },
@@ -2145,7 +2155,7 @@ def blender_tool_definitions():
         },
         {
             "name": "plan_advanced_scene_workflow",
-            "description": "Plan a helper-first workflow for advanced 3D, 2D/storyboard, animation, simulation, compositor/render, and script-fallback work. Does not mutate the scene.",
+            "description": "Plan a helper-first workflow for advanced 3D, 2D/storyboard, animation, simulation, asset import, compositor/render, and script-fallback work. Does not mutate the scene.",
             "input_schema": {
                 "type": "object",
                 "properties": {
@@ -2159,11 +2169,43 @@ def blender_tool_definitions():
                                 "procedural_3d",
                                 "advanced_animation",
                                 "simulation_setup",
+                                "asset_import",
                                 "compositor_render",
                             ],
                         },
                     },
                     "target_objects": {"type": "array", "items": {"type": "string"}},
+                    "label": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "plan_asset_import_workflow",
+            "description": "Plan the async external-asset discovery, download/cache, queued import, post-import organization, staging, and visual-evidence workflow. Does not mutate the scene.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string"},
+                    "provider": {"type": "string", "enum": ["", "poly_haven", "sketchfab"]},
+                    "asset_id": {"type": "string"},
+                    "uid": {"type": "string"},
+                    "target_object_name": {"type": "string"},
+                    "presentation_preset": {"type": "string"},
+                    "label": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "plan_director_workflow",
+            "description": "Plan a multi-step director workflow across inspection, optional asset import, creation, animation/review/repair, evidence capture, and commit/revert decision points. Does not mutate the scene.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string"},
+                    "target_objects": {"type": "array", "items": {"type": "string"}},
+                    "deliverables": {"type": "array", "items": {"type": "string"}},
                     "label": {"type": "string"},
                 },
                 "additionalProperties": False,
@@ -2245,13 +2287,24 @@ def blender_tool_definitions():
         },
         {
             "name": "create_procedural_object_kit",
-            "description": "Create a reversible procedural object kit from bounded templates such as kitbash towers, radial arrays, scatter grids, product stacks, mechanical joints, or control panels. Use before custom mesh or geometry-node scripts.",
+            "description": "Create a reversible procedural object kit from bounded templates such as kitbash towers, radial arrays, scatter grids, product stacks, mechanical joints, control panels, studio prop sets, mechanical parts, modular wall panels, or pipe runs. Use before custom mesh or geometry-node scripts.",
             "input_schema": {
                 "type": "object",
                 "properties": {
                     "template": {
                         "type": "string",
-                        "enum": ["kitbash_tower", "radial_array", "scatter_grid", "product_stack", "mechanical_joint", "control_panel"],
+                        "enum": [
+                            "kitbash_tower",
+                            "radial_array",
+                            "scatter_grid",
+                            "product_stack",
+                            "mechanical_joint",
+                            "control_panel",
+                            "studio_prop_set",
+                            "mechanical_part",
+                            "modular_wall_panel",
+                            "pipe_run",
+                        ],
                     },
                     "name_prefix": {"type": "string"},
                     "location": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
@@ -3442,6 +3495,7 @@ _TOOL_GROUPS = {
         "compare_animation_to_brief",
         "review_playblast_against_brief",
         "review_inspection_renders_against_brief",
+        "repair_animation_from_findings",
         "capture_viewport",
         "capture_animation_playblast",
         "capture_object_inspection_renders",
@@ -3456,6 +3510,8 @@ _TOOL_GROUPS = {
         "run_animation_repair_loop",
     },
     "external_assets": {
+        "plan_director_workflow",
+        "plan_asset_import_workflow",
         "list_poly_haven_categories",
         "search_poly_haven_assets",
         "inspect_poly_haven_asset_files",
@@ -3476,7 +3532,9 @@ _TOOL_GROUPS = {
         "prune_external_asset_cache",
     },
     "advanced_create": {
+        "plan_director_workflow",
         "plan_advanced_scene_workflow",
+        "plan_asset_import_workflow",
         "get_2d_animation_details",
         "create_storyboard_panels",
         "create_2d_cutout_layer",
@@ -3610,11 +3668,16 @@ _TOOL_GROUPS = {
     },
     "curves_text": {"get_curve_text_details", "create_text_object", "create_curve_path", "create_follow_path_animation"},
     "advanced_workflow": {
+        "plan_director_workflow",
         "plan_advanced_scene_workflow",
+        "plan_asset_import_workflow",
         "get_2d_animation_details",
         "get_geometry_nodes_details",
         "get_simulation_details",
         "get_render_camera_compositor_details",
+        "capture_viewport",
+        "capture_animation_playblast",
+        "get_visual_evidence_resources",
         "plan_animation_workflow",
         "run_animation_workflow",
     },
@@ -3648,7 +3711,7 @@ _TOOL_GROUPS = {
         "stage_persistent_simulation_bake",
     },
     "particles": {"get_simulation_details", "inspect_simulation_bake", "stage_persistent_simulation_bake", "add_particle_system_to_selected", "add_cloth_simulation_to_selected"},
-    "geometry_nodes": {"get_geometry_nodes_details", "add_geometry_nodes_modifier", "apply_procedural_array_stack", "create_procedural_object_kit"},
+    "geometry_nodes": {"plan_advanced_scene_workflow", "get_geometry_nodes_details", "add_geometry_nodes_modifier", "apply_procedural_array_stack", "create_procedural_object_kit"},
     "preview_control": {"commit_preview", "revert_preview"},
 }
 
@@ -3661,19 +3724,19 @@ _GROUP_KEYWORDS = {
     "project_files": {"save", "save as", "save-as", "save copy", "autosave", "auto save", "open blend", "open file", "load blend", "new project", "create project", "blend file", ".blend", "project folder", "project directory", "checkpoint"},
     "deep_inspect": {"inspect", "analyze", "analyse", "summarize", "summary", "details", "world model", "what", "list", "screenshot", "viewport", "visual", "visual evidence", "evidence resource", "resource uri", "image", "capture", "playblast", "review", "diagnostic", "diagnostics", "missing external", "linked library", "linked libraries", "blend file", "data-block", "datablock", "backup", "workspace", "layout json", "underside", "gear"},
     "external_assets": {"asset", "assets", "asset catalog", "asset library", "external asset", "external assets", "asset cache", "cache diagnostics", "poly haven", "polyhaven", "sketchfab", "hdri", "hdris", "environment map", "texture", "textures", "model library", "download model", "download asset", "import model", "import asset", "import hdri", "import texture", "sketchfab uid"},
-    "advanced_create": {"advanced", "advanced 3d", "advanced 2d", "geometry nodes", "shape key", "text", "curve", "particle", "armature", "constraint", "rig", "driver", "callout", "dimension", "label", "palette", "swatch", "organize", "collection", "cutout", "storyboard", "animatic", "procedural array", "object kit", "kitbash", "scatter grid", "radial array", "mechanical", "joint", "control panel", "prop generator", "directed shot", "shot template"},
+    "advanced_create": {"advanced", "advanced 3d", "advanced 2d", "geometry nodes", "geometry-node", "node network", "shape key", "text", "curve", "particle", "armature", "constraint", "rig", "driver", "callout", "dimension", "label", "palette", "swatch", "organize", "collection", "cutout", "storyboard", "animatic", "procedural array", "object kit", "kit", "kitbash", "scatter grid", "radial array", "mechanical", "mechanical part", "joint", "control panel", "modular", "wall panel", "pipe run", "prop generator", "directed shot", "shot template"},
     "refinement": {"refine", "polish", "smooth", "high poly", "high-poly", "detail", "bevel", "subdivision", "subsurf", "seam", "panel", "dimension", "callout", "stage", "palette", "lighting", "modifier stack"},
     "vehicle": {"car", "vehicle", "truck", "wheel", "tire", "tyre", "rim", "headlight", "taillight", "windshield", "door", "grille"},
     "product": {"product", "catalog", "catalogue", "packshot", "presentation", "hero shot", "studio shot"},
     "character": {"character", "humanoid", "person", "head", "face", "eyes", "shoulder", "body", "toon", "avatar"},
     "rigging": {"rig", "armature", "bone", "constraint", "copy location", "copy rotation", "track to", "pose library", "pose marker", "ik", "fk", "space switch", "limb", "pole"},
     "curves_text": {"curve", "path", "text", "label", "spline"},
-    "advanced_workflow": {"advanced workflow", "advanced 3d", "advanced 2d", "advanced animation", "helper path", "helper gap", "which tools", "what tools", "workflow plan"},
+    "advanced_workflow": {"advanced workflow", "advanced 3d", "advanced 2d", "advanced animation", "director", "director workflow", "helper path", "helper gap", "which tools", "what tools", "workflow plan"},
     "two_d_storyboard": {"2d", "two dimensional", "storyboard", "animatic", "storyboard panel", "storyboard panels", "2d panel", "2d panels", "cutout", "cut-out", "motion graphic", "motion graphics", "grease pencil", "grease-pencil", "2d animation"},
-    "procedural_3d": {"procedural", "procedural 3d", "array stack", "modifier stack", "scatter", "scatter grid", "kitbash", "object kit", "radial array", "mechanical", "mechanical joint", "control panel", "hard surface", "hard-surface", "non destructive", "non-destructive"},
+    "procedural_3d": {"procedural", "procedural 3d", "array stack", "modifier stack", "scatter", "scatter grid", "kitbash", "object kit", "kit", "radial array", "mechanical", "mechanical joint", "mechanical part", "control panel", "modular", "wall panel", "pipe run", "hard surface", "hard-surface", "non destructive", "non-destructive"},
     "simulation_setup": {"cloth", "cloth sim", "cloth simulation", "simulation setup", "physics setup", "sim setup"},
     "particles": {"particle", "particles", "simulation", "sim", "physics", "bake", "persistent bake", "cache", "point cache", "spark", "dust", "cloth"},
-    "geometry_nodes": {"geometry node", "geometry nodes", "node group", "procedural array", "array stack", "radial array"},
+    "geometry_nodes": {"geometry node", "geometry-node", "geometry nodes", "geometry-node network", "node network", "node group", "procedural array", "array stack", "radial array"},
     "preview_control": {"commit", "revert", "undo", "cancel preview", "accept preview"},
 }
 
@@ -3755,6 +3818,10 @@ def select_blender_tool_definitions(prompt="", context_bundle=None, *, max_schem
                 "plan_animation_workflow",
                 "run_animation_workflow",
                 "run_animation_task",
+                "capture_viewport",
+                "capture_animation_playblast",
+                "capture_object_inspection_renders",
+                "get_visual_evidence_resources",
                 "block_key_poses",
                 "add_breakdown_pose",
                 "set_pose_hold",
@@ -3803,6 +3870,19 @@ def select_blender_tool_definitions(prompt="", context_bundle=None, *, max_schem
                 "create_2d_cutout_layer",
             }
         )
+    if "deep_inspect" in matched_groups:
+        protected.update(
+            {
+                "capture_viewport",
+                "capture_animation_playblast",
+                "capture_object_inspection_renders",
+                "get_visual_evidence_resources",
+                "review_playblast_against_brief",
+                "review_inspection_renders_against_brief",
+                "repair_animation_from_findings",
+                "run_animation_repair_loop",
+            }
+        )
     if "draft_script" in selected:
         protected.add("draft_script")
     if "draft_privileged_script" in selected:
@@ -3842,6 +3922,9 @@ TOOL_FUNCTIONS_FOR_MUTATION_COMPAT = {
     "assign_material_to_selected",
     "assign_emission_material_to_selected",
     "create_shader_material",
+    "plan_director_workflow",
+    "plan_asset_import_workflow",
+    "plan_advanced_scene_workflow",
     "animate_object_bounce",
     "create_progressive_bounce_animation",
     "animate_material_property",

@@ -82,6 +82,7 @@ def main():
             bundle,
         )
         asset_script_names = _names(asset_script_tools)
+        assert "plan_asset_import_workflow" in asset_script_names, asset_script_meta
         assert "start_external_asset_download" in asset_script_names, asset_script_meta
         assert "start_external_asset_import_job" in asset_script_names, asset_script_meta
         assert "draft_script" not in asset_script_names, asset_script_meta
@@ -92,6 +93,7 @@ def main():
             bundle,
         )
         custom_asset_script_names = _names(custom_asset_script_tools)
+        assert "plan_asset_import_workflow" in custom_asset_script_names, custom_asset_script_meta
         assert "start_external_asset_download" in custom_asset_script_names, custom_asset_script_meta
         assert "draft_script" not in custom_asset_script_names, custom_asset_script_meta
         assert "draft_privileged_script" in custom_asset_script_names, custom_asset_script_meta
@@ -221,9 +223,22 @@ def main():
             bundle,
         )
         advanced_names = _names(advanced_tools)
+        assert "plan_director_workflow" in advanced_names, advanced_meta
         assert "plan_advanced_scene_workflow" in advanced_names, advanced_meta
         assert "get_2d_animation_details" in advanced_names, advanced_meta
         assert "get_render_camera_compositor_details" in advanced_names, advanced_meta
+
+        director_tools, director_meta = agent_tools.select_blender_tool_definitions(
+            "Director workflow: import an asset, build a product scene, animate a reveal, review evidence, repair, then ask me to commit or revert.",
+            bundle,
+        )
+        director_names = _names(director_tools)
+        assert "plan_director_workflow" in director_names, director_meta
+        assert "plan_asset_import_workflow" in director_names, director_meta
+        assert "plan_advanced_scene_workflow" in director_names, director_meta
+        assert "run_animation_workflow" in director_names, director_meta
+        assert "capture_viewport" in director_names, director_meta
+        assert "draft_script" not in director_names, director_meta
 
         storyboard_tools, storyboard_meta = agent_tools.select_blender_tool_definitions(
             "Create a 2D storyboard animatic with panels, cutout layers, and a camera move.",
@@ -253,7 +268,10 @@ def main():
             bundle,
         )
         procedural_names = _names(procedural_tools)
+        assert "plan_advanced_scene_workflow" in procedural_names, procedural_meta
+        assert "create_procedural_object_kit" in procedural_names, procedural_meta
         assert "apply_procedural_array_stack" in procedural_names, procedural_meta
+        assert "add_geometry_nodes_modifier" in procedural_names, procedural_meta
         assert "get_geometry_nodes_details" in procedural_names, procedural_meta
 
         cloth_tools, cloth_meta = agent_tools.select_blender_tool_definitions(

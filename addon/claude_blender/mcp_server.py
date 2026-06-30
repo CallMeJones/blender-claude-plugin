@@ -48,7 +48,9 @@ MCP_TIMEOUT_GRACE_SECONDS = 15.0
 SKETCHFAB_AUTH_FORWARD_TOOLS = {"download_sketchfab_model", "import_sketchfab_model", "start_external_asset_download"}
 COMPACT_DIRECT_TOOL_NAMES = (
     "list_scene_objects",
+    "plan_director_workflow",
     "plan_advanced_scene_workflow",
+    "plan_asset_import_workflow",
     "get_2d_animation_details",
     "plan_animation_workflow",
     "run_animation_workflow",
@@ -107,6 +109,8 @@ ANIMATION_ROUTE_TERMS = {
     "spacing",
     "directed shot",
     "shot template",
+    "shape key",
+    "material animation",
 }
 ANIMATION_ROUTE_TOOLS = {
     "run_animation_task",
@@ -142,6 +146,10 @@ ADVANCED_ROUTE_TERMS = {
     "motion graphics",
     "grease pencil",
     "procedural",
+    "geometry node",
+    "geometry-node",
+    "geometry nodes",
+    "node network",
     "array stack",
     "modifier stack",
     "hard surface",
@@ -154,9 +162,16 @@ ADVANCED_ROUTE_TERMS = {
     "kitbash",
     "scatter grid",
     "radial array",
+    "pipe run",
+    "modular wall panel",
+    "director",
+    "director workflow",
+    "asset import",
 }
 ADVANCED_ROUTE_TOOLS = {
+    "plan_director_workflow",
     "plan_advanced_scene_workflow",
+    "plan_asset_import_workflow",
     "get_2d_animation_details",
     "create_storyboard_panels",
     "create_2d_cutout_layer",
@@ -165,9 +180,30 @@ ADVANCED_ROUTE_TOOLS = {
     "create_camera_dolly_animation",
     "create_directed_animation_shot",
     "add_cloth_simulation_to_selected",
+    "capture_viewport",
+    "get_visual_evidence_resources",
 }
 TWO_D_ROUTE_TERMS = {"advanced 2d", "storyboard", "animatic", "cutout", "cut-out", "motion graphics", "grease pencil"}
-PROCEDURAL_ROUTE_TERMS = {"advanced 3d", "procedural", "array stack", "modifier stack", "hard surface", "object kit", "kitbash", "scatter grid", "radial array"}
+PROCEDURAL_ROUTE_TERMS = {
+    "advanced 3d",
+    "procedural",
+    "geometry node",
+    "geometry-node",
+    "geometry nodes",
+    "node network",
+    "array stack",
+    "modifier stack",
+    "hard surface",
+    "object kit",
+    "kit",
+    "kitbash",
+    "scatter grid",
+    "radial array",
+    "mechanical part",
+    "modular wall panel",
+    "wall panel",
+    "pipe run",
+}
 SIMULATION_SETUP_ROUTE_TERMS = {"cloth simulation", "cloth sim", "simulation setup", "physics setup"}
 CAMERA_MOVE_ROUTE_TERMS = {"camera dolly", "dolly shot", "camera move", "camera animation", "lens keyframe", "directed shot", "shot template"}
 GENERIC_SELECTED_OBJECT_TOOLS = {
@@ -506,6 +542,26 @@ PROMPTS = {
             "Only call draft_script when helper tools cannot express the change."
         ),
     },
+    "director_workflow": {
+        "name": "director_workflow",
+        "title": "Plan Director Workflow",
+        "description": "Guide an MCP client through a multi-step helper-first scene, asset, animation, evidence, and preview decision workflow.",
+        "arguments": [
+            {
+                "name": "goal",
+                "description": "The broad scene, asset, animation, or presentation goal.",
+                "required": True,
+            }
+        ],
+        "template": (
+            "Handle this Blender goal through Director Workflow v0: {goal}\n\n"
+            "Call plan_director_workflow first. Follow its phases for inspection, asset import planning, "
+            "bounded creation helpers, animation workflow/review/repair, viewport/playblast/render evidence, "
+            "and explicit commit/revert decisions. Keep helper changes in live preview until the user asks to "
+            "commit. Use plan_asset_import_workflow for external assets, run_animation_workflow for animation, "
+            "and draft_script or draft_privileged_script only after the helper plan identifies a concrete gap."
+        ),
+    },
     "advanced_animation_workflow": {
         "name": "advanced_animation_workflow",
         "title": "Run Advanced Animation Workflow",
@@ -566,9 +622,9 @@ PROMPTS = {
         "template": (
             "Handle this Blender external asset task through the async job workflow: {goal}\n\n"
             "Use list_poly_haven_categories, search_poly_haven_assets, inspect_poly_haven_asset_files, "
-            "or search_sketchfab_models for discovery. For any download/cache or import request, call "
-            "start_external_asset_download first, poll get_external_asset_job_status until completed or failed, "
-            "then call start_external_asset_import_job for scene import and poll "
+            "or search_sketchfab_models for discovery. For any download/cache or import request, first choose "
+            "a concrete Poly Haven asset_id or Sketchfab uid, then call start_external_asset_download and "
+            "poll get_external_asset_job_status until completed or failed. Then call start_external_asset_import_job for scene import and poll "
             "get_external_asset_import_job_status until completed or failed. Use cancel_external_asset_job or "
             "cancel_external_asset_import_job if the user asks to stop. Treat download_poly_haven_asset, "
             "import_poly_haven_asset, download_sketchfab_model, import_sketchfab_model, and "
@@ -1212,8 +1268,12 @@ def _score_tool_match(tool, query):
         if name == "draft_script" and not explicit_script_query:
             score -= 1000
     if advanced_query:
+        if name == "plan_director_workflow" and any(term in normalized_query for term in ("director", "whole workflow", "end to end", "end-to-end")):
+            score += 3600
         if name == "plan_advanced_scene_workflow":
             score += 3000
+        if name == "plan_asset_import_workflow" and external_asset_query:
+            score += 1800
         if two_d_query:
             if name == "get_2d_animation_details":
                 score += 900
@@ -1245,6 +1305,10 @@ def _score_tool_match(tool, query):
     elif name == "draft_script" and not explicit_script_query:
         score -= 100
     if external_asset_query:
+        if name == "plan_asset_import_workflow":
+            score += 1300
+        elif name == "plan_director_workflow" and any(term in normalized_query for term in ("present", "presentation", "stage", "organize", "workflow")):
+            score += 900
         if name == "draft_privileged_script" and explicit_script_query:
             score += 1100
         if name == "start_external_asset_download":
@@ -1650,8 +1714,8 @@ class BlenderMCPServer:
                 "Blender helper catalog. Mutating tools affect the live scene and may leave preview changes pending. "
                 "For broad advanced 3D, 2D/storyboard, animation, simulation, or render tasks, call "
                 "plan_advanced_scene_workflow first when the helper path is unclear. "
-                "For external asset downloads/imports, use the async path by default: start_external_asset_download, "
-                "poll get_external_asset_job_status, then start_external_asset_import_job and poll "
+                "For external asset downloads/imports, use the async path by default after discovery selects a concrete "
+                "asset_id or uid: start_external_asset_download, poll get_external_asset_job_status, then start_external_asset_import_job and poll "
                 "get_external_asset_import_job_status. Treat direct provider download/import tools as synchronous "
                 "fallbacks for explicit direct/debug use. "
                 "If a bridge_timeout occurs, treat it as recoverable: wait the returned poll_after_seconds, call "

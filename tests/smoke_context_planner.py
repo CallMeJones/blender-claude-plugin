@@ -38,7 +38,6 @@ def main():
         cube = _ensure_cube_selected()
 
         material = bpy.data.materials.get("Planner Test Blue") or bpy.data.materials.new("Planner Test Blue")
-        material.use_nodes = True
         material.diffuse_color = (0.1, 0.25, 1.0, 1.0)
         cube.data.materials.clear()
         cube.data.materials.append(material)
