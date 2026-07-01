@@ -556,6 +556,13 @@ def _material_animation_summaries(obj):
     return result
 
 
+def _material_slot_count(obj):
+    try:
+        return len([slot for slot in obj.material_slots if slot.material])
+    except Exception:
+        return 0
+
+
 def _animation_scene_object_context(obj):
     object_animation = _animation_owner_summary(obj)
     data_animation = _animation_owner_summary(obj.data) if getattr(obj, "data", None) else None
@@ -594,6 +601,7 @@ def _animation_scene_object_context(obj):
         cautions.append("Physics or simulation state may need baking/validation before repair.")
     if material_animation:
         tools.add("get_material_node_details")
+        cautions.append("Material or node-tree animation is present; inspect shader nodes before keying material values.")
     if constraints or drivers or object_animation["driver_count"]:
         tools.add("get_rigging_details")
     if object_animation["has_animation_data"] and (object_animation.get("channel_summary") or {}).get("has_pose_bone_keys"):
@@ -625,6 +633,7 @@ def _animation_scene_object_context(obj):
         "data_animation": data_animation,
         "shape_key_animation": shape_key_animation,
         "shape_key_count": shape_key_count,
+        "material_slot_count": _material_slot_count(obj),
         "material_animation": material_animation,
         "constraints": constraints,
         "drivers": drivers,
@@ -638,6 +647,139 @@ def _animation_scene_object_context(obj):
         "recommended_animation_owner": primary_target,
         "recommended_detail_tools": sorted(tools),
         "cautions": cautions,
+    }
+
+
+def _animation_hardening_summary(context, objects, subject_routing, contact_surface_candidates):
+    target_counts = Counter(item["suggested_primary_animation_target"] for item in objects)
+    risk_flags = []
+    required_before_mutation = []
+    recommended_review_tools = {
+        "sample_animation_state",
+        "analyze_animation_principles",
+        "compare_animation_to_brief",
+    }
+    repair_loop_inputs = {
+        "repair_animation_from_findings",
+        "run_animation_repair_loop",
+    }
+
+    if objects:
+        recommended_review_tools.update({"capture_animation_playblast", "review_playblast_against_brief"})
+    else:
+        risk_flags.append(
+            {
+                "code": "no_animation_subjects",
+                "severity": "blocker",
+                "message": "No animation subjects were resolved for scene-context routing.",
+                "recommended_tool": "get_animation_scene_context",
+            }
+        )
+
+    if context.scene.camera:
+        recommended_review_tools.add("analyze_camera_framing")
+    else:
+        risk_flags.append(
+            {
+                "code": "no_active_camera",
+                "severity": "warning",
+                "message": "No active camera is set; playblast/framing review can only be data-oriented until a camera is assigned.",
+                "recommended_tool": "get_render_camera_compositor_details",
+            }
+        )
+
+    if contact_surface_candidates:
+        recommended_review_tools.update({"analyze_contact_sliding", "analyze_center_of_mass"})
+    elif objects:
+        risk_flags.append(
+            {
+                "code": "no_contact_surface_candidates",
+                "severity": "info",
+                "message": "No obvious floor/contact surface was found; contact and balance checks may need explicit support_object_names.",
+                "recommended_tool": "get_animation_scene_context",
+            }
+        )
+
+    for item in objects:
+        object_name = item["name"]
+        if item["animation_routing_confidence"] == "low":
+            risk_flags.append(
+                {
+                    "code": "low_animation_target_confidence",
+                    "severity": "warning",
+                    "object": object_name,
+                    "message": "Animation target routing is low confidence; inspect details before mutating.",
+                    "recommended_tool": "get_rigging_details",
+                }
+            )
+        if item["rig"]["likely_rig_driven"] or item["type"] == "ARMATURE":
+            recommended_review_tools.update({"get_rigging_details", "get_rig_pose_library_details"})
+            required_before_mutation.append(
+                {
+                    "requirement": "rig_controls",
+                    "object": object_name,
+                    "tool": "get_rigging_details",
+                    "reason": "Rig-driven subjects should be posed through controls or validated pose-library actions before mesh/object transform repair.",
+                }
+            )
+            if not item["rig_control_hints"] and not item["rig"].get("control_targets"):
+                risk_flags.append(
+                    {
+                        "code": "rig_controls_unknown",
+                        "severity": "warning",
+                        "object": object_name,
+                        "message": "Rig-driven object has no obvious control hints in the compact context.",
+                        "recommended_tool": "get_rigging_details",
+                    }
+                )
+        if item["shape_key_count"] or (item["shape_key_animation"] and item["shape_key_animation"]["has_animation_data"]):
+            recommended_review_tools.add("get_shape_key_details")
+            required_before_mutation.append(
+                {
+                    "requirement": "shape_key_targets",
+                    "object": object_name,
+                    "tool": "get_shape_key_details",
+                    "reason": "Shape-key deformation should be inspected before replacing transform keys.",
+                }
+            )
+        if item["material_slot_count"] or item["material_animation"]:
+            recommended_review_tools.add("get_material_node_details")
+        if item["material_animation"]:
+            required_before_mutation.append(
+                {
+                    "requirement": "material_animation_targets",
+                    "object": object_name,
+                    "tool": "get_material_node_details",
+                    "reason": "Material/node-tree animation should be inspected before adding or repairing shader keys.",
+                }
+            )
+        if item["physics"]["rigid_body"] or item["physics"]["simulation_modifiers"] or item["physics"]["particle_system_count"]:
+            recommended_review_tools.update({"get_simulation_details", "inspect_simulation_bake"})
+            required_before_mutation.append(
+                {
+                    "requirement": "simulation_cache_readiness",
+                    "object": object_name,
+                    "tool": "inspect_simulation_bake",
+                    "reason": "Physics/simulation state should be checked before persistent bake or repair work.",
+                }
+            )
+
+    blocker_count = sum(1 for item in risk_flags if item.get("severity") == "blocker")
+    warning_count = sum(1 for item in risk_flags if item.get("severity") == "warning")
+    status = "blocked" if blocker_count else "needs_attention" if warning_count or required_before_mutation else "ready"
+    return {
+        "status": status,
+        "target_counts": dict(sorted(target_counts.items())),
+        "risk_flags": risk_flags,
+        "required_before_mutation": required_before_mutation,
+        "recommended_review_tools": sorted(recommended_review_tools),
+        "repair_loop_inputs": sorted(repair_loop_inputs),
+        "repair_loop_limits": [
+            "Automatic repair is for bounded helper operations from repair_animation_from_findings.",
+            "Center-of-mass/contact/support findings may need manual re-pose planning before the loop can safely mutate.",
+            "Persistent simulation/cache bake remains explicit one-time approval work.",
+        ],
+        "subject_count": len(subject_routing),
     }
 
 
@@ -723,10 +865,13 @@ def animation_scene_context(context, *, object_names=None, selected_only=False, 
         "active_camera": _safe_name(context.scene.camera),
         "camera_count": len([obj for obj in context.scene.objects if obj.type == "CAMERA"]),
     }
+    hardening = _animation_hardening_summary(context, objects, subject_routing, contact_surface_candidates)
+    recommended.extend(hardening["recommended_review_tools"])
     return {
         "ok": True,
         "message": f"Built animation-aware scene context for {len(objects)} object(s)",
         "summary": summary,
+        "animation_hardening": hardening,
         "objects": objects,
         "subject_routing": subject_routing,
         "contact_surface_candidates": contact_surface_candidates,

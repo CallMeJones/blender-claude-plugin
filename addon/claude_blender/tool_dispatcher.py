@@ -767,6 +767,19 @@ def run_animation_workflow(context, args):
             "pending_preview": bool(getattr(context.scene.claude_blender, "pending_preview", False)) if hasattr(context.scene, "claude_blender") else False,
             "result_type": "live_preview_helper_workflow",
         }
+    if workflow.get("status") == "blocked_by_scene_context":
+        return {
+            "ok": True,
+            "message": "Animation workflow is blocked by scene context; inspect preflight_warnings before mutating the scene",
+            "status": "blocked_by_scene_context",
+            "workflow": workflow,
+            "executed": [],
+            "skipped": [],
+            "review": {},
+            "repair_loop": {},
+            "pending_preview": bool(getattr(context.scene.claude_blender, "pending_preview", False)) if hasattr(context.scene, "claude_blender") else False,
+            "result_type": "live_preview_helper_workflow",
+        }
 
     executed = []
     skipped = []

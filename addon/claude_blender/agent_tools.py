@@ -471,7 +471,7 @@ def blender_tool_definitions():
         },
         {
             "name": "get_animation_scene_context",
-            "description": "Build read-only animation-aware scene context that identifies likely edit targets, rig-driven objects, rig control candidates, shape keys, constraints, drivers, NLA, physics/simulation hints, contact surfaces, camera readiness, and recommended deeper inspection tools.",
+            "description": "Build read-only animation-aware scene context that identifies likely edit targets, rig-driven objects, rig control candidates, shape keys, constraints, drivers, NLA, physics/simulation hints, contact surfaces, camera readiness, hardening risk flags, required pre-mutation inspections, and recommended deeper inspection/review tools.",
             "input_schema": {
                 "type": "object",
                 "properties": {

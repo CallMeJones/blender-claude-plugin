@@ -290,8 +290,66 @@ def main():
         assert "review_playblast_against_brief" in call_names, plan
         assert "draft_script" not in call_names, plan
         assert plan["script_fallback_policy"]["allowed"] is True, plan
+        assert plan["animation_hardening"]["status"] == "ready", plan
+        assert plan["animation_hardening"]["target_counts"]["object_transform"] == 1, plan
+        assert "analyze_camera_framing" in plan["animation_hardening"]["recommended_review_tools"], plan
+        assert "review_playblast_against_brief" in plan["animation_hardening"]["recommended_review_tools"], plan
+        assert not plan["preflight_warnings"], plan
         assert not any("scale" in item for item in plan["generation_blockers"]), plan
         assert not scene.claude_blender.pending_preview
+
+        original_camera = scene.camera
+        scene.camera = None
+        try:
+            no_camera_context = _execute(context, "get_animation_scene_context", {"object_names": ["Cube"]})
+            no_camera_flags = {item["code"] for item in no_camera_context["animation_hardening"]["risk_flags"]}
+            assert "no_active_camera" in no_camera_flags, no_camera_context
+            assert no_camera_context["animation_hardening"]["status"] == "needs_attention", no_camera_context
+        finally:
+            scene.camera = original_camera
+
+        missing_subject_brief = {
+            "contract_id": "anim-missing-subject-smoke",
+            "subjects": [{"name": "MissingCube"}],
+            "subject_names": ["MissingCube"],
+            "action": "bounce",
+            "timing": {"frame_start": 1, "frame_end": 24, "requested_count": 2},
+            "secondary_actions": [],
+            "clarification_needed": False,
+            "ready_for_generation": True,
+            "validation_plan": {},
+        }
+        missing_subject_plan = _execute(
+            context,
+            "plan_animation_workflow",
+            {
+                "prompt": "Make MissingCube bounce twice.",
+                "subject_names": ["MissingCube"],
+                "frame_start": 1,
+                "frame_end": 24,
+                "mode": "full",
+                "brief": missing_subject_brief,
+            },
+        )["workflow"]
+        assert missing_subject_plan["status"] == "blocked_by_scene_context", missing_subject_plan
+        assert missing_subject_plan["animation_hardening"]["status"] == "blocked", missing_subject_plan
+        assert [item["code"] for item in missing_subject_plan["preflight_warnings"]] == ["no_animation_subjects"], missing_subject_plan
+        assert missing_subject_plan["next_tool_calls"] == [], missing_subject_plan
+        missing_subject_run = _execute(
+            context,
+            "run_animation_workflow",
+            {
+                "prompt": "Make MissingCube bounce twice.",
+                "subject_names": ["MissingCube"],
+                "frame_start": 1,
+                "frame_end": 24,
+                "mode": "full",
+                "brief": missing_subject_brief,
+            },
+        )
+        assert missing_subject_run["status"] == "blocked_by_scene_context", missing_subject_run
+        assert missing_subject_run["executed"] == [], missing_subject_run
+        assert not missing_subject_run["pending_preview"], missing_subject_run
 
         move_workflow = _execute(
             context,
@@ -1563,6 +1621,29 @@ def main():
         material = bpy.data.materials[material_result["material"]]
         assert material.node_tree.animation_data and material.node_tree.animation_data.action
         assert material.node_tree.animation_data.action.name == material_result["action"]
+
+        shape_result = _execute(
+            context,
+            "animate_shape_key",
+            {
+                "object_name": "Cube",
+                "key_name": "Agent Bridge Expression",
+                "frame_start": 1,
+                "frame_end": 48,
+                "value_start": 0.0,
+                "value_end": 1.0,
+            },
+        )
+        assert shape_result["shape_key"] == "Agent Bridge Expression", shape_result
+
+        hardened_context = _execute(context, "get_animation_scene_context", {"object_names": ["Cube"]})
+        hardening = hardened_context["animation_hardening"]
+        requirements = {item["requirement"] for item in hardening["required_before_mutation"]}
+        assert hardening["target_counts"]["shape_keys"] == 1, hardened_context
+        assert "shape_key_targets" in requirements, hardened_context
+        assert "material_animation_targets" in requirements, hardened_context
+        assert "get_shape_key_details" in hardening["recommended_review_tools"], hardened_context
+        assert "get_material_node_details" in hardening["recommended_review_tools"], hardened_context
 
         light_result = _execute(
             context,

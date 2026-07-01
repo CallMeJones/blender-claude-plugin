@@ -72,7 +72,7 @@ TOOL_CONTRACTS = {
         "mutates_scene": False,
     },
     "get_animation_scene_context": {
-        "description": "Return animation-aware routing context for rigs, control candidates, shape keys, physics, materials, cameras, contact surfaces, and likely edit targets",
+        "description": "Return animation-aware routing and hardening context for rigs, control candidates, shape keys, physics, materials, cameras, contact surfaces, likely edit targets, and required pre-mutation inspections",
         "mutates_scene": False,
     },
     "create_animation_brief": {

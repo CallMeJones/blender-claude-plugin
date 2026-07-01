@@ -500,6 +500,7 @@ def plan_animation_workflow(
         selected_only=bool(selected_only),
         max_objects=max_objects,
     )
+    animation_hardening = scene_context.get("animation_hardening") or {}
     if isinstance(timing_chart, dict):
         timing_result = {"ok": True, "message": "Using caller-provided timing chart", "chart": timing_chart, "brief": brief_data}
         chart = timing_chart
@@ -534,17 +535,30 @@ def plan_animation_workflow(
 
     clarification_needed = bool(brief_data.get("clarification_needed"))
     generation_blocked_by_clarification = clarification_needed and mode in {"generate", "full"}
+    hardening_blockers = [
+        item
+        for item in animation_hardening.get("risk_flags", [])
+        if item.get("severity") == "blocker"
+    ]
+    generation_blocked_by_scene_context = bool(hardening_blockers)
     next_tool_calls = []
-    if not generation_blocked_by_clarification:
+    if not generation_blocked_by_clarification and not generation_blocked_by_scene_context:
         if mode in {"generate", "full"}:
             next_tool_calls.extend(generation_calls)
         if mode in {"review", "repair", "full"}:
             next_tool_calls.extend(review_calls)
     status = "needs_clarification" if generation_blocked_by_clarification else "ready"
-    if clarification_needed and mode == "review":
+    if generation_blocked_by_scene_context:
+        status = "blocked_by_scene_context"
+    elif clarification_needed and mode == "review":
         status = "ready_for_review"
-    if generation_blockers and mode in {"generate", "full"} and not clarification_needed:
+    if generation_blockers and mode in {"generate", "full"} and not clarification_needed and not generation_blocked_by_scene_context:
         status = "ready_with_helper_gaps"
+    preflight_warnings = [
+        item
+        for item in animation_hardening.get("risk_flags", [])
+        if item.get("severity") in {"warning", "blocker"}
+    ]
 
     steps = [
         _step(
@@ -573,6 +587,10 @@ def plan_animation_workflow(
                 reason="Choose object transforms, rig controls, shape keys, materials, physics, or camera targets deliberately.",
             ),
             result_key="scene_context",
+            notes=[
+                f"Hardening status: {animation_hardening.get('status', 'unknown')}.",
+                "Inspect required_before_mutation entries before replacing existing rig, shape-key, material, or simulation animation.",
+            ],
         ),
         _step(
             "timing",
@@ -621,6 +639,8 @@ def plan_animation_workflow(
         "prompt": prompt,
         "brief": brief_data,
         "scene_context": scene_context,
+        "animation_hardening": animation_hardening,
+        "preflight_warnings": preflight_warnings,
         "timing_chart": chart,
         "steps": steps,
         "next_tool_calls": next_tool_calls,
@@ -631,6 +651,7 @@ def plan_animation_workflow(
             "Follow next_tool_calls in order; do not call draft_script before the workflow has produced brief, scene context, and timing chart.",
             "Leave helper mutations in preview state unless the user explicitly asks to commit or revert.",
             "Use draft_script for custom animation code when static checks pass; keep persistent bake/free operations on explicit approval paths.",
+            "Use animation_hardening.required_before_mutation before changing rig controls, shape keys, material nodes, or simulation-backed objects.",
         ],
     }
     return {
