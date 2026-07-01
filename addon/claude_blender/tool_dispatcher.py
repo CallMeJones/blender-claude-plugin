@@ -2404,6 +2404,90 @@ def apply_procedural_array_stack(context, args):
     )
 
 
+def edit_mesh(context, args):
+    return advanced_helpers.edit_mesh(
+        context,
+        operation=str(args.get("operation") or "extrude_faces"),
+        object_names=_name_list(args.get("object_names")),
+        selected_only=bool(args.get("selected_only", True)),
+        face_scope=str(args.get("face_scope") or "ALL"),
+        direction=str(args.get("direction") or "NORMAL"),
+        axis=str(args.get("axis") or "Z"),
+        distance=_bounded_float(args.get("distance"), 0.25, minimum=-100.0, maximum=100.0),
+        inset_thickness=_bounded_float(args.get("inset_thickness"), 0.05, minimum=0.0, maximum=100.0),
+        inset_depth=_bounded_float(args.get("inset_depth"), 0.0, minimum=-100.0, maximum=100.0),
+        merge_distance=_bounded_float(args.get("merge_distance"), 0.0001, minimum=0.0, maximum=10.0),
+        allow_shape_keys=bool(args.get("allow_shape_keys", False)),
+        label=args.get("label", "Edit mesh"),
+    )
+
+
+def curve_to_mesh(context, args):
+    return advanced_helpers.curve_to_mesh(
+        context,
+        object_names=_name_list(args.get("object_names")),
+        selected_only=bool(args.get("selected_only", True)),
+        name_prefix=str(args.get("name_prefix") or "Agent Bridge Mesh "),
+        hide_original=bool(args.get("hide_original", False)),
+        label=args.get("label", "Convert curve to mesh"),
+    )
+
+
+def boolean_op(context, args):
+    return advanced_helpers.boolean_op(
+        context,
+        target_object_name=str(args.get("target_object_name") or ""),
+        cutter_object_names=_name_list(args.get("cutter_object_names")),
+        operation=str(args.get("operation") or "DIFFERENCE"),
+        solver=str(args.get("solver") or "FAST"),
+        name_prefix=str(args.get("name_prefix") or "Agent Bridge Boolean"),
+        label=args.get("label", "Apply boolean operation"),
+    )
+
+
+def mirror_model(context, args):
+    return advanced_helpers.mirror_model(
+        context,
+        object_names=_name_list(args.get("object_names")),
+        selected_only=bool(args.get("selected_only", True)),
+        use_axis=args.get("use_axis"),
+        mirror_object_name=str(args.get("mirror_object_name") or ""),
+        bisect_axis=args.get("bisect_axis"),
+        flip_axis=args.get("flip_axis"),
+        use_clip=bool(args.get("use_clip", False)),
+        use_mirror_merge=bool(args.get("use_mirror_merge", True)),
+        merge_threshold=_bounded_float(args.get("merge_threshold"), 0.001, minimum=0.0, maximum=10.0),
+        name=str(args.get("name") or "Agent Bridge Mirror"),
+        label=args.get("label", "Mirror model"),
+    )
+
+
+def symmetrize_model(context, args):
+    return advanced_helpers.symmetrize_model(
+        context,
+        object_names=_name_list(args.get("object_names")),
+        selected_only=bool(args.get("selected_only", True)),
+        axis=str(args.get("axis") or "X"),
+        direction=str(args.get("direction") or "POSITIVE_TO_NEGATIVE"),
+        merge_threshold=_bounded_float(args.get("merge_threshold"), 0.001, minimum=0.0, maximum=10.0),
+        name=str(args.get("name") or "Agent Bridge Symmetry"),
+        label=args.get("label", "Symmetrize model"),
+    )
+
+
+def solidify_model(context, args):
+    return advanced_helpers.solidify_model(
+        context,
+        object_names=_name_list(args.get("object_names")),
+        selected_only=bool(args.get("selected_only", True)),
+        thickness=_bounded_float(args.get("thickness"), 0.1, minimum=-10.0, maximum=10.0),
+        offset=_bounded_float(args.get("offset"), 0.0, minimum=-1.0, maximum=1.0),
+        use_even_offset=bool(args.get("use_even_offset", True)),
+        name=str(args.get("name") or "Agent Bridge Solidify"),
+        label=args.get("label", "Solidify model"),
+    )
+
+
 def create_procedural_object_kit(context, args):
     return advanced_helpers.create_procedural_object_kit(
         context,
@@ -3590,6 +3674,26 @@ def _preview_expected_changes(step, label, kind, target_text):
             f"{label}: prepares imported asset objects around {step.get('target') or target_text} "
             f"with {features}."
         )
+    if kind == "edit_mesh":
+        return f"{label}: applies {step.get('operation', 'edit_mesh')} to {target_text} with mesh-data rollback."
+    if kind == "curve_to_mesh":
+        return f"{label}: creates {_format_count('mesh object', len(step.get('created') or []))} from curve/text sources."
+    if kind == "boolean_op":
+        cutters = ", ".join(step.get("cutters") or []) or "selected cutters"
+        return (
+            f"{label}: adds {step.get('operation', 'DIFFERENCE').lower()} Boolean modifiers to "
+            f"{step.get('target') or target_text} using {cutters}."
+        )
+    if kind == "mirror_model":
+        axes = ", ".join(step.get("axis") or []) or "X"
+        return f"{label}: adds non-destructive Mirror modifiers on {axes} for {target_text}."
+    if kind == "symmetrize_model":
+        return (
+            f"{label}: adds non-destructive symmetry Mirror modifiers on "
+            f"{step.get('axis', 'X')} ({step.get('direction', 'POSITIVE_TO_NEGATIVE')}) for {target_text}."
+        )
+    if kind == "solidify_model":
+        return f"{label}: adds Solidify modifiers to {target_text} with thickness {step.get('thickness')}."
     if kind == "organize_scene_for_production":
         return (
             f"{label}: links {_format_count('object', len(step.get('linked') or []))} into "
@@ -3738,6 +3842,12 @@ TOOL_FUNCTIONS = {
     "create_storyboard_panels": create_storyboard_panels,
     "create_2d_cutout_layer": create_2d_cutout_layer,
     "apply_procedural_array_stack": apply_procedural_array_stack,
+    "edit_mesh": edit_mesh,
+    "curve_to_mesh": curve_to_mesh,
+    "boolean_op": boolean_op,
+    "mirror_model": mirror_model,
+    "symmetrize_model": symmetrize_model,
+    "solidify_model": solidify_model,
     "create_procedural_object_kit": create_procedural_object_kit,
     "create_camera_dolly_animation": create_camera_dolly_animation,
     "create_directed_animation_shot": create_directed_animation_shot,

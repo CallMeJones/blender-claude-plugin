@@ -1000,6 +1000,14 @@ def main():
                 {"apply_procedural_array_stack"},
             ),
             (
+                "Use a boolean cutter, mirror the model, symmetrize it, and solidify wall thickness.",
+                {"boolean_op", "mirror_model", "symmetrize_model", "solidify_model"},
+            ),
+            (
+                "Extrude mesh faces, inset panels, bridge boundary loops, merge by distance, and convert curve to mesh.",
+                {"edit_mesh", "curve_to_mesh"},
+            ),
+            (
                 "Create an advanced procedural object kit with a kitbash scatter grid.",
                 {"create_procedural_object_kit"},
             ),

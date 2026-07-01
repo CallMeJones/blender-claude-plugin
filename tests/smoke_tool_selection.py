@@ -273,8 +273,32 @@ def main():
         assert "plan_advanced_scene_workflow" in procedural_names, procedural_meta
         assert "create_procedural_object_kit" in procedural_names, procedural_meta
         assert "apply_procedural_array_stack" in procedural_names, procedural_meta
+        assert "edit_mesh" in procedural_names, procedural_meta
+        assert "curve_to_mesh" in procedural_names, procedural_meta
+        assert "boolean_op" in procedural_names, procedural_meta
+        assert "mirror_model" in procedural_names, procedural_meta
+        assert "symmetrize_model" in procedural_names, procedural_meta
+        assert "solidify_model" in procedural_names, procedural_meta
         assert "add_geometry_nodes_modifier" in procedural_names, procedural_meta
         assert "get_geometry_nodes_details" in procedural_names, procedural_meta
+
+        modeling_tools, modeling_meta = agent_tools.select_blender_tool_definitions(
+            "Use a boolean cutter, mirror the model, symmetrize it on X, and solidify the wall thickness.",
+            bundle,
+        )
+        modeling_names = _names(modeling_tools)
+        for expected in {"boolean_op", "mirror_model", "symmetrize_model", "solidify_model"}:
+            assert expected in modeling_names, (expected, modeling_meta)
+        assert "draft_script" not in modeling_names, modeling_meta
+
+        mesh_edit_tools, mesh_edit_meta = agent_tools.select_blender_tool_definitions(
+            "Extrude the top face, inset the panel, bridge boundary loops, merge by distance, and convert this curve to mesh.",
+            bundle,
+        )
+        mesh_edit_names = _names(mesh_edit_tools)
+        assert "edit_mesh" in mesh_edit_names, mesh_edit_meta
+        assert "curve_to_mesh" in mesh_edit_names, mesh_edit_meta
+        assert "draft_script" not in mesh_edit_names, mesh_edit_meta
 
         cloth_tools, cloth_meta = agent_tools.select_blender_tool_definitions(
             "Add cloth simulation setup and inspect the physics cache before any bake.",

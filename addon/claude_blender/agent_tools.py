@@ -21,9 +21,9 @@ AGENT_GUIDANCE = (
     "When the user asks to change the scene, use safe helper tools first so Blender changes immediately. "
     "Use direct Blender data concepts: objects, collections, materials, cameras, lights, actions, keyframes. "
     "For broad multi-step scene, asset, animation, and evidence work, call plan_director_workflow first to get an ordered helper/evidence/preview plan without mutating the scene. For advanced 3D, 2D/storyboard, animation, simulation, compositor/render, asset-import, or script-heavy tasks, call plan_advanced_scene_workflow first when the helper path is not obvious. It returns domain-specific helpers and script fallback boundaries. "
-    "For scene building and layout, prefer create_primitive, create_empty, duplicate_selected_objects, parent_selected_to_empty, align_selected_objects, distribute_selected_objects, set_object_visibility, set_object_display, assign_material_to_selected, assign_emission_material_to_selected, create_shader_material, create_text_object, create_curve_path, create_collection, link_selected_to_collection, add_light, add_camera, add_modifier_to_selected, add_geometry_nodes_modifier, apply_procedural_array_stack, create_procedural_object_kit, add_track_to_constraint, add_copy_transform_constraint, create_basic_armature, add_particle_system_to_selected, add_cloth_simulation_to_selected, set_render_settings, set_camera_settings, and set_world_background. create_shader_material includes bounded material presets; add_geometry_nodes_modifier includes passthrough, transform, join-geometry, set-position, and subdivide-mesh starter templates. "
+    "For scene building and layout, prefer create_primitive, create_empty, duplicate_selected_objects, parent_selected_to_empty, align_selected_objects, distribute_selected_objects, set_object_visibility, set_object_display, assign_material_to_selected, assign_emission_material_to_selected, create_shader_material, create_text_object, create_curve_path, create_collection, link_selected_to_collection, add_light, add_camera, add_modifier_to_selected, add_geometry_nodes_modifier, apply_procedural_array_stack, edit_mesh, curve_to_mesh, boolean_op, mirror_model, symmetrize_model, solidify_model, create_procedural_object_kit, add_track_to_constraint, add_copy_transform_constraint, create_basic_armature, add_particle_system_to_selected, add_cloth_simulation_to_selected, set_render_settings, set_camera_settings, and set_world_background. create_shader_material includes bounded material presets; add_geometry_nodes_modifier includes passthrough, transform, join-geometry, set-position, and subdivide-mesh starter templates. "
     "For 2D, storyboard, animatic, cutout, or motion-graphics work, inspect first with get_2d_animation_details, then prefer create_storyboard_panels, create_2d_cutout_layer, create_camera_dolly_animation, capture_animation_playblast, and render jobs before drafting custom Grease Pencil or SVG Python. "
-    "For model refinement and production presentation, prefer shade_smooth_selected, add_bevel_and_subsurf, apply_procedural_array_stack, create_procedural_object_kit, create_wheel_assembly, add_panel_seams, add_window_materials, apply_vehicle_refinement_template, apply_product_refinement_template, apply_character_refinement_template, create_studio_product_stage, add_dimension_callouts, apply_lighting_preset, create_material_palette, create_product_turntable_setup, prepare_imported_asset_presentation, and organize_scene_for_production when they fit the task. create_procedural_object_kit includes kitbash, radial/scatter/product, mechanical-joint, control-panel, studio-prop, mechanical-part, modular-wall-panel, and pipe-run templates for bounded prop generation before custom mesh scripts. "
+    "For model refinement and production presentation, prefer shade_smooth_selected, add_bevel_and_subsurf, apply_procedural_array_stack, edit_mesh, curve_to_mesh, boolean_op, mirror_model, symmetrize_model, solidify_model, create_procedural_object_kit, create_wheel_assembly, add_panel_seams, add_window_materials, apply_vehicle_refinement_template, apply_product_refinement_template, apply_character_refinement_template, create_studio_product_stage, add_dimension_callouts, apply_lighting_preset, create_material_palette, create_product_turntable_setup, prepare_imported_asset_presentation, and organize_scene_for_production when they fit the task. create_procedural_object_kit includes kitbash, radial/scatter/product, mechanical-joint, control-panel, studio-prop, mechanical-part, modular-wall-panel, and pipe-run templates for bounded prop generation before custom mesh scripts. "
     "For shape-key animation, prefer create_shape_key and animate_shape_key before drafting Python. "
     "For quick animation playblasts and visual review, use low-resolution preview defaults unless the user explicitly asks for HD/final/1080p/4K quality. For long-running or high-resolution renders, frame sequences, 1080p/4K previews, or MP4 quality checks, use start_render_job and poll get_render_job_status instead of blocking render_scene_thumbnail, capture tools, or draft_script; report the returned rough estimate/poll interval to the user; use assemble_render_job_video for PNG sequences and validate_render_job_output before reporting success; use cancel_render_job if the user wants to stop it. If a render, playblast, or visual-review tool times out, treat it as recoverable: wait the returned poll_after_seconds, call blender_bridge_status, inspect get_visual_evidence_resources and the audit log, and only rerun if no artifact/result appears. "
     "For simulation setup, prefer add_cloth_simulation_to_selected or add_particle_system_to_selected for bounded setup, then inspect with get_simulation_details or inspect_simulation_bake. For persistent simulation/cache bakes or cache-freeing operations, use stage_persistent_simulation_bake for a fixed approval-gated script. Session-wide external script trust is not enough for bpy.ops.fluid.* or bpy.ops.ptcache.* bake/free operators; they require explicit one-time user approval. Do not hand the user a checkpoint or recovery .blend path unless you just verified that it exists and is restorable through checkpoint metadata, diagnostics, or a filesystem check. "
@@ -1238,6 +1238,46 @@ def blender_tool_definitions():
             },
         },
         {
+            "name": "edit_mesh",
+            "description": "Apply one bounded destructive mesh edit to selected or named single-user mesh objects with mesh-data snapshot rollback. Supports face extrusion, face inset, boundary-loop bridge, dissolve-degenerate, and merge-by-distance.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "operation": {
+                        "type": "string",
+                        "enum": ["extrude_faces", "inset_faces", "merge_by_distance", "dissolve_degenerate", "bridge_boundary_loops"],
+                    },
+                    "object_names": {"type": "array", "items": {"type": "string"}},
+                    "selected_only": {"type": "boolean"},
+                    "face_scope": {"type": "string", "enum": ["ALL", "TOP", "BOTTOM", "LEFT", "RIGHT", "FRONT", "BACK"]},
+                    "direction": {"type": "string", "enum": ["NORMAL", "AXIS", "X", "Y", "Z"]},
+                    "axis": {"type": "string", "enum": ["X", "Y", "Z"]},
+                    "distance": {"type": "number"},
+                    "inset_thickness": {"type": "number"},
+                    "inset_depth": {"type": "number"},
+                    "merge_distance": {"type": "number"},
+                    "allow_shape_keys": {"type": "boolean"},
+                    "label": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "curve_to_mesh",
+            "description": "Create mesh-copy objects from selected or named Curve/Text objects without destroying the source. Optionally hides the source. Applies immediately with preview revert support.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "object_names": {"type": "array", "items": {"type": "string"}},
+                    "selected_only": {"type": "boolean"},
+                    "name_prefix": {"type": "string"},
+                    "hide_original": {"type": "boolean"},
+                    "label": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+        },
+        {
             "name": "create_shader_material",
             "description": "Create or update a Principled BSDF material from explicit values or bounded presets such as brushed metal, matte plastic, clear glass, emissive accent, or matte ceramic. Optionally assigns it to selected mesh objects and applies immediately with preview revert support.",
             "input_schema": {
@@ -2280,6 +2320,77 @@ def blender_tool_definitions():
                     "bevel_segments": {"type": "integer", "minimum": 1, "maximum": 32},
                     "add_weighted_normals": {"type": "boolean"},
                     "name_prefix": {"type": "string"},
+                    "label": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "boolean_op",
+            "description": "Add non-destructive Boolean modifiers to a target mesh using named cutter meshes or selected cutters. Use for difference, union, and intersect cuts before custom mesh scripts. Applies immediately with preview revert support.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "target_object_name": {"type": "string"},
+                    "cutter_object_names": {"type": "array", "items": {"type": "string"}},
+                    "operation": {"type": "string", "enum": ["DIFFERENCE", "UNION", "INTERSECT"]},
+                    "solver": {"type": "string", "enum": ["FAST", "FLOAT", "EXACT", "MANIFOLD"]},
+                    "name_prefix": {"type": "string"},
+                    "label": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "mirror_model",
+            "description": "Add non-destructive Mirror modifiers to selected or named mesh objects, with optional mirror object, bisect axes, clipping, and merge settings. Applies immediately with preview revert support.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "object_names": {"type": "array", "items": {"type": "string"}},
+                    "selected_only": {"type": "boolean"},
+                    "use_axis": {"type": "array", "items": {"type": "boolean"}, "minItems": 3, "maxItems": 3},
+                    "mirror_object_name": {"type": "string"},
+                    "bisect_axis": {"type": "array", "items": {"type": "boolean"}, "minItems": 3, "maxItems": 3},
+                    "flip_axis": {"type": "array", "items": {"type": "boolean"}, "minItems": 3, "maxItems": 3},
+                    "use_clip": {"type": "boolean"},
+                    "use_mirror_merge": {"type": "boolean"},
+                    "merge_threshold": {"type": "number"},
+                    "name": {"type": "string"},
+                    "label": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "symmetrize_model",
+            "description": "Add a non-destructive symmetry Mirror modifier to selected or named mesh objects on one axis. Use for quick left/right, front/back, or top/bottom symmetry before destructive mesh scripts. Applies immediately with preview revert support.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "object_names": {"type": "array", "items": {"type": "string"}},
+                    "selected_only": {"type": "boolean"},
+                    "axis": {"type": "string", "enum": ["X", "Y", "Z"]},
+                    "direction": {"type": "string", "enum": ["POSITIVE_TO_NEGATIVE", "NEGATIVE_TO_POSITIVE"]},
+                    "merge_threshold": {"type": "number"},
+                    "name": {"type": "string"},
+                    "label": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "solidify_model",
+            "description": "Add non-destructive Solidify modifiers to selected or named mesh objects for wall thickness, shells, panels, or flat cutout depth. Applies immediately with preview revert support.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "object_names": {"type": "array", "items": {"type": "string"}},
+                    "selected_only": {"type": "boolean"},
+                    "thickness": {"type": "number"},
+                    "offset": {"type": "number"},
+                    "use_even_offset": {"type": "boolean"},
+                    "name": {"type": "string"},
                     "label": {"type": "string"},
                 },
                 "additionalProperties": False,
@@ -3385,6 +3496,12 @@ _TOOL_GROUPS = {
         "create_collection",
         "link_selected_to_collection",
         "add_modifier_to_selected",
+        "edit_mesh",
+        "curve_to_mesh",
+        "boolean_op",
+        "mirror_model",
+        "symmetrize_model",
+        "solidify_model",
         "duplicate_selected_objects",
         "parent_selected_to_empty",
         "align_selected_objects",
@@ -3563,6 +3680,12 @@ _TOOL_GROUPS = {
         "create_storyboard_panels",
         "create_2d_cutout_layer",
         "apply_procedural_array_stack",
+        "edit_mesh",
+        "curve_to_mesh",
+        "boolean_op",
+        "mirror_model",
+        "symmetrize_model",
+        "solidify_model",
         "create_shader_material",
         "add_geometry_nodes_modifier",
         "create_shape_key",
@@ -3723,6 +3846,12 @@ _TOOL_GROUPS = {
         "plan_advanced_scene_workflow",
         "get_geometry_nodes_details",
         "apply_procedural_array_stack",
+        "edit_mesh",
+        "curve_to_mesh",
+        "boolean_op",
+        "mirror_model",
+        "symmetrize_model",
+        "solidify_model",
         "create_procedural_object_kit",
         "add_geometry_nodes_modifier",
         "shade_smooth_selected",
@@ -3744,15 +3873,15 @@ _TOOL_GROUPS = {
 
 _GROUP_KEYWORDS = {
     "selection": {"select", "selected", "active", "frame", "playhead", "inspect", "workspace", "tab", "focus", "viewport focus", "front view", "top view", "camera view"},
-    "basic_edit": {"make", "create", "add", "move", "scale", "rotate", "transform", "object", "primitive", "empty", "marker", "collection", "duplicate", "copy", "parent", "align", "distribute", "layout", "arrange", "hide", "unhide", "visibility", "visible", "display", "wireframe", "show name", "in front"},
+    "basic_edit": {"make", "create", "add", "move", "scale", "rotate", "transform", "object", "primitive", "empty", "marker", "collection", "duplicate", "copy", "parent", "align", "distribute", "layout", "arrange", "hide", "unhide", "visibility", "visible", "display", "wireframe", "show name", "in front", "edit mesh", "extrude", "inset", "bridge", "dissolve", "merge", "curve to mesh", "convert curve", "boolean", "cutter", "mirror", "symmetry", "symmetrize", "solidify"},
     "materials": {"material", "shader", "color", "colour", "red", "blue", "green", "metal", "metallic", "chrome", "glass", "emission", "glow", "window"},
     "animation": {"animate", "animation", "animation brief", "prompt contract", "success criteria", "timing chart", "key pose", "key poses", "hold", "breakdown", "keyframe", "timeline", "frame", "orbit", "dolly", "camera move", "crane", "truck", "bounce", "driver", "motion", "motion arc", "arc", "follow path", "path", "retime", "interpolation", "easing", "loop", "cycles", "turntable", "pulse", "reveal", "stagger", "playblast", "timing", "spacing", "blocking", "anticipation", "squash", "stretch", "settle", "follow-through", "principles", "center of mass", "support", "contact sliding", "simulation", "physics bake", "persistent bake", "directed shot", "shot template"},
     "camera_render": {"camera", "render", "render job", "render output", "output resource", "quality check", "thumbnail", "still", "mp4", "video assembly", "assemble video", "validate render", "1080p", "4k", "frame sequence", "samples", "light", "lighting", "world", "background", "dof", "depth of field", "lens", "compositor", "compositing", "post process", "alpha", "transparent", "resolution", "intensity", "studio", "product stage", "presentation", "close-up", "closeup", "underside"},
     "project_files": {"save", "save as", "save-as", "save copy", "autosave", "auto save", "open blend", "open file", "load blend", "new project", "create project", "blend file", ".blend", "project folder", "project directory", "checkpoint"},
     "deep_inspect": {"inspect", "analyze", "analyse", "summarize", "summary", "details", "world model", "what", "list", "screenshot", "viewport", "visual", "visual evidence", "evidence resource", "resource uri", "image", "capture", "playblast", "review", "diagnostic", "diagnostics", "missing external", "linked library", "linked libraries", "blend file", "data-block", "datablock", "backup", "workspace", "layout json", "underside", "gear"},
     "external_assets": {"asset", "assets", "asset catalog", "asset library", "external asset", "external assets", "asset cache", "cache diagnostics", "poly haven", "polyhaven", "sketchfab", "hdri", "hdris", "environment map", "texture", "textures", "model library", "download model", "download asset", "import model", "import asset", "import hdri", "import texture", "sketchfab uid"},
-    "advanced_create": {"advanced", "advanced 3d", "advanced 2d", "geometry nodes", "geometry-node", "node network", "shape key", "text", "curve", "particle", "armature", "constraint", "rig", "driver", "callout", "dimension", "label", "palette", "swatch", "organize", "collection", "cutout", "storyboard", "animatic", "procedural array", "object kit", "kit", "kitbash", "scatter grid", "radial array", "mechanical", "mechanical part", "joint", "control panel", "modular", "wall panel", "pipe run", "prop generator", "directed shot", "shot template"},
-    "refinement": {"refine", "polish", "smooth", "high poly", "high-poly", "detail", "bevel", "subdivision", "subsurf", "seam", "panel", "dimension", "callout", "stage", "palette", "lighting", "modifier stack"},
+    "advanced_create": {"advanced", "advanced 3d", "advanced 2d", "geometry nodes", "geometry-node", "node network", "shape key", "text", "curve", "particle", "armature", "constraint", "rig", "driver", "callout", "dimension", "label", "palette", "swatch", "organize", "collection", "cutout", "storyboard", "animatic", "procedural array", "object kit", "kit", "kitbash", "scatter grid", "radial array", "mechanical", "mechanical part", "joint", "control panel", "modular", "wall panel", "pipe run", "prop generator", "edit mesh", "extrude", "inset", "bridge", "dissolve", "merge", "curve to mesh", "convert curve", "boolean", "cutter", "mirror", "symmetry", "symmetrize", "solidify", "directed shot", "shot template"},
+    "refinement": {"refine", "polish", "smooth", "high poly", "high-poly", "detail", "bevel", "subdivision", "subsurf", "seam", "panel", "dimension", "callout", "stage", "palette", "lighting", "modifier stack", "edit mesh", "extrude", "inset", "bridge", "dissolve", "merge", "boolean", "cutter", "mirror", "symmetry", "symmetrize", "solidify", "thickness"},
     "vehicle": {"car", "vehicle", "truck", "wheel", "tire", "tyre", "rim", "headlight", "taillight", "windshield", "door", "grille"},
     "product": {"product", "catalog", "catalogue", "packshot", "presentation", "hero shot", "studio shot"},
     "character": {"character", "humanoid", "person", "head", "face", "eyes", "shoulder", "body", "toon", "avatar"},
@@ -3760,7 +3889,7 @@ _GROUP_KEYWORDS = {
     "curves_text": {"curve", "path", "text", "label", "spline"},
     "advanced_workflow": {"advanced workflow", "advanced 3d", "advanced 2d", "advanced animation", "director", "director workflow", "helper path", "helper gap", "which tools", "what tools", "workflow plan"},
     "two_d_storyboard": {"2d", "two dimensional", "storyboard", "animatic", "storyboard panel", "storyboard panels", "2d panel", "2d panels", "cutout", "cut-out", "motion graphic", "motion graphics", "grease pencil", "grease-pencil", "2d animation"},
-    "procedural_3d": {"procedural", "procedural 3d", "array stack", "modifier stack", "scatter", "scatter grid", "kitbash", "object kit", "kit", "radial array", "mechanical", "mechanical joint", "mechanical part", "control panel", "modular", "wall panel", "pipe run", "hard surface", "hard-surface", "non destructive", "non-destructive"},
+    "procedural_3d": {"procedural", "procedural 3d", "array stack", "modifier stack", "scatter", "scatter grid", "kitbash", "object kit", "kit", "radial array", "mechanical", "mechanical joint", "mechanical part", "control panel", "modular", "wall panel", "pipe run", "hard surface", "hard-surface", "non destructive", "non-destructive", "edit mesh", "extrude", "inset", "bridge", "dissolve", "merge", "curve to mesh", "convert curve", "boolean", "cutter", "mirror", "symmetry", "symmetrize", "solidify"},
     "simulation_setup": {"cloth", "cloth sim", "cloth simulation", "simulation setup", "physics setup", "sim setup"},
     "particles": {"particle", "particles", "simulation", "sim", "physics", "bake", "persistent bake", "cache", "point cache", "spark", "dust", "cloth"},
     "geometry_nodes": {"geometry node", "geometry-node", "geometry nodes", "geometry-node network", "node network", "node group", "procedural array", "array stack", "radial array"},
@@ -3910,6 +4039,35 @@ def select_blender_tool_definitions(prompt="", context_bundle=None, *, max_schem
                 "run_animation_repair_loop",
             }
         )
+    explicit_material_request = _contains_keyword(
+        text,
+        {
+            "material",
+            "shader",
+            "preset",
+            "color",
+            "colour",
+            "red",
+            "blue",
+            "green",
+            "metal",
+            "metallic",
+            "chrome",
+            "glass",
+            "emission",
+            "glow",
+        },
+    )
+    if "materials" in matched_groups and explicit_material_request:
+        protected.update(
+            {
+                "get_material_node_details",
+                "get_shader_nodes_details",
+                "assign_material_to_selected",
+                "assign_emission_material_to_selected",
+                "create_shader_material",
+            }
+        )
     if "draft_script" in selected:
         protected.add("draft_script")
     if "draft_privileged_script" in selected:
@@ -3984,6 +4142,12 @@ TOOL_FUNCTIONS_FOR_MUTATION_COMPAT = {
     "create_storyboard_panels",
     "create_2d_cutout_layer",
     "apply_procedural_array_stack",
+    "edit_mesh",
+    "curve_to_mesh",
+    "boolean_op",
+    "mirror_model",
+    "symmetrize_model",
+    "solidify_model",
     "create_procedural_object_kit",
     "create_camera_dolly_animation",
     "create_directed_animation_shot",

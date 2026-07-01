@@ -13,7 +13,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(ROOT, "addon"))
 
 import claude_blender  # noqa: E402
-from claude_blender import agent_tools, context_bundle, live_preview, tool_dispatcher  # noqa: E402
+from claude_blender import advanced_helpers, agent_tools, context_bundle, live_preview, tool_dispatcher  # noqa: E402
 
 
 ADVANCED_TOOLS = {
@@ -24,6 +24,12 @@ ADVANCED_TOOLS = {
     "create_storyboard_panels",
     "create_2d_cutout_layer",
     "apply_procedural_array_stack",
+    "edit_mesh",
+    "curve_to_mesh",
+    "boolean_op",
+    "mirror_model",
+    "symmetrize_model",
+    "solidify_model",
     "create_procedural_object_kit",
     "create_camera_dolly_animation",
     "create_directed_animation_shot",
@@ -66,6 +72,10 @@ def _snapshot(scene, cube, camera):
         "armatures": set(bpy.data.armatures.keys()),
         "particles": set(bpy.data.particles.keys()),
         "actions": set(bpy.data.actions.keys()),
+        "mesh_topology": {
+            mesh.name: (len(mesh.vertices), len(mesh.edges), len(mesh.polygons))
+            for mesh in bpy.data.meshes
+        },
         "cube_modifiers": [modifier.name for modifier in cube.modifiers],
         "cube_shape_keys": [block.name for block in cube.data.shape_keys.key_blocks] if cube.data.shape_keys else [],
         "camera_constraints": len(camera.constraints),
@@ -117,6 +127,59 @@ def main():
     cube.data.materials.clear()
     cube.data.materials.append(existing_material)
     existing_topology = _material_topology(existing_material)
+    bridge_mesh = bpy.data.meshes.new("Agent Bridge Bridge Fixture Mesh")
+    bridge_mesh.from_pydata(
+        [
+            (-0.5, -0.5, 0.0),
+            (0.5, -0.5, 0.0),
+            (0.5, 0.5, 0.0),
+            (-0.5, 0.5, 0.0),
+            (-0.5, -0.5, 1.0),
+            (0.5, -0.5, 1.0),
+            (0.5, 0.5, 1.0),
+            (-0.5, 0.5, 1.0),
+        ],
+        [(0, 1), (1, 2), (2, 3), (3, 0), (4, 5), (5, 6), (6, 7), (7, 4)],
+        [],
+    )
+    bridge_mesh.update()
+    bridge_fixture = bpy.data.objects.new("Agent Bridge Bridge Fixture", bridge_mesh)
+    context.collection.objects.link(bridge_fixture)
+    merge_mesh = bpy.data.meshes.new("Agent Bridge Merge Fixture Mesh")
+    merge_mesh.from_pydata([(0.0, 0.0, 0.0), (0.0005, 0.0, 0.0), (1.0, 0.0, 0.0)], [(0, 2), (1, 2)], [])
+    merge_mesh.update()
+    merge_fixture = bpy.data.objects.new("Agent Bridge Merge Fixture", merge_mesh)
+    context.collection.objects.link(merge_fixture)
+    dissolve_mesh = bpy.data.meshes.new("Agent Bridge Dissolve Fixture Mesh")
+    dissolve_mesh.from_pydata(
+        [(0.0, 0.0, 0.0), (0.00001, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)],
+        [(0, 1), (1, 2), (2, 3), (3, 0)],
+        [(0, 1, 2, 3)],
+    )
+    dissolve_mesh.update()
+    dissolve_fixture = bpy.data.objects.new("Agent Bridge Dissolve Fixture", dissolve_mesh)
+    context.collection.objects.link(dissolve_fixture)
+    shape_key_mesh = bpy.data.meshes.new("Agent Bridge Shape Key Fixture Mesh")
+    shape_key_mesh.from_pydata(
+        [(-0.5, -0.5, 0.0), (0.5, -0.5, 0.0), (0.5, 0.5, 0.0), (-0.5, 0.5, 0.0)],
+        [(0, 1), (1, 2), (2, 3), (3, 0)],
+        [(0, 1, 2, 3)],
+    )
+    shape_key_mesh.update()
+    shape_key_fixture = bpy.data.objects.new("Agent Bridge Shape Key Fixture", shape_key_mesh)
+    context.collection.objects.link(shape_key_fixture)
+    shape_key_fixture.shape_key_add(name="Basis")
+    raised_key = shape_key_fixture.shape_key_add(name="Raised")
+    for point in raised_key.data:
+        point.co.z += 0.1
+    failure_curve_data = bpy.data.curves.new("Agent Bridge Failure Curve", "CURVE")
+    failure_curve_data.dimensions = "3D"
+    failure_spline = failure_curve_data.splines.new("POLY")
+    failure_spline.points.add(1)
+    failure_spline.points[0].co = (0.0, 0.0, 0.0, 1.0)
+    failure_spline.points[1].co = (1.0, 0.0, 0.0, 1.0)
+    failure_curve = bpy.data.objects.new("Agent Bridge Failure Curve", failure_curve_data)
+    context.collection.objects.link(failure_curve)
     initial = _snapshot(scene, cube, camera)
 
     try:
@@ -130,6 +193,125 @@ def main():
         assert invalid_dolly["ok"] is False, invalid_dolly
         assert "not a camera" in invalid_dolly["message"], invalid_dolly
         assert live_preview.current_transaction() is None, invalid_dolly
+        blocked_shape_key_edit = json.loads(
+            tool_dispatcher.execute_tool(
+                context,
+                "edit_mesh",
+                {
+                    "operation": "extrude_faces",
+                    "object_names": [shape_key_fixture.name],
+                    "selected_only": False,
+                    "face_scope": "ALL",
+                },
+            )
+        )
+        assert blocked_shape_key_edit["ok"] is False, blocked_shape_key_edit
+        assert blocked_shape_key_edit["objects"] == [], blocked_shape_key_edit
+        assert "shape-key meshes" in blocked_shape_key_edit["skipped"][0]["reason"], blocked_shape_key_edit
+        assert live_preview.current_transaction() is None, blocked_shape_key_edit
+
+        cube_topology_before_failed_snapshot = (len(cube.data.vertices), len(cube.data.edges), len(cube.data.polygons))
+        original_record_mesh_data_snapshot = live_preview._record_mesh_data_snapshot
+
+        def _fail_record_mesh_data_snapshot(obj):
+            raise RuntimeError("forced mesh snapshot failure")
+
+        try:
+            live_preview._record_mesh_data_snapshot = _fail_record_mesh_data_snapshot
+            failed_mesh_edit = json.loads(
+                tool_dispatcher.execute_tool(
+                    context,
+                    "edit_mesh",
+                    {
+                        "operation": "extrude_faces",
+                        "object_names": ["Cube"],
+                        "selected_only": False,
+                        "face_scope": "TOP",
+                        "direction": "AXIS",
+                        "axis": "Z",
+                        "distance": 0.1,
+                    },
+                )
+            )
+        finally:
+            live_preview._record_mesh_data_snapshot = original_record_mesh_data_snapshot
+        assert failed_mesh_edit["ok"] is False, failed_mesh_edit
+        assert failed_mesh_edit["objects"] == [], failed_mesh_edit
+        assert "forced mesh snapshot failure" in failed_mesh_edit["skipped"][0]["reason"], failed_mesh_edit
+        assert (len(cube.data.vertices), len(cube.data.edges), len(cube.data.polygons)) == cube_topology_before_failed_snapshot
+        transaction = live_preview.current_transaction()
+        assert transaction is None or transaction.get("status") != "pending", transaction
+
+        original_record_created_id = live_preview._record_created_id
+
+        def _fail_record_created_id(kind, name):
+            raise RuntimeError("forced recorder failure")
+
+        try:
+            live_preview._record_created_id = _fail_record_created_id
+            failed_curve = json.loads(
+                tool_dispatcher.execute_tool(
+                    context,
+                    "curve_to_mesh",
+                    {"object_names": [failure_curve.name], "selected_only": False, "name_prefix": "Agent Bridge Failed Convert "},
+                )
+            )
+        finally:
+            live_preview._record_created_id = original_record_created_id
+        assert failed_curve["ok"] is False, failed_curve
+        assert not any(obj.name.startswith("Agent Bridge Failed Convert ") for obj in bpy.data.objects), failed_curve
+        assert not any(mesh.name.startswith("Agent Bridge Failed Convert ") for mesh in bpy.data.meshes), failed_curve
+        transaction = live_preview.current_transaction()
+        assert transaction is None or transaction.get("status") != "pending", transaction
+
+        record_call_count = {"count": 0}
+
+        def _fail_second_record_created_id(kind, name):
+            record_call_count["count"] += 1
+            if record_call_count["count"] == 2:
+                raise RuntimeError("forced second recorder failure")
+            return original_record_created_id(kind, name)
+
+        try:
+            live_preview._record_created_id = _fail_second_record_created_id
+            failed_second_record_curve = json.loads(
+                tool_dispatcher.execute_tool(
+                    context,
+                    "curve_to_mesh",
+                    {"object_names": [failure_curve.name], "selected_only": False, "name_prefix": "Agent Bridge Half Recorded "},
+                )
+            )
+        finally:
+            live_preview._record_created_id = original_record_created_id
+        assert failed_second_record_curve["ok"] is False, failed_second_record_curve
+        assert not any(obj.name.startswith("Agent Bridge Half Recorded ") for obj in bpy.data.objects), failed_second_record_curve
+        assert not any(mesh.name.startswith("Agent Bridge Half Recorded ") for mesh in bpy.data.meshes), failed_second_record_curve
+        transaction = live_preview.current_transaction()
+        assert transaction is None or transaction.get("status") != "pending", transaction
+        assert not any("Agent Bridge Half Recorded " in name for name in (transaction or {}).get("changed_data_blocks", [])), transaction
+
+        original_link_object_like_source = advanced_helpers._link_object_like_source
+
+        def _fail_link_object_like_source(context, source, duplicate):
+            raise RuntimeError("forced link failure")
+
+        try:
+            advanced_helpers._link_object_like_source = _fail_link_object_like_source
+            failed_link_curve = json.loads(
+                tool_dispatcher.execute_tool(
+                    context,
+                    "curve_to_mesh",
+                    {"object_names": [failure_curve.name], "selected_only": False, "name_prefix": "Agent Bridge Link Failed "},
+                )
+            )
+        finally:
+            advanced_helpers._link_object_like_source = original_link_object_like_source
+        assert failed_link_curve["ok"] is False, failed_link_curve
+        assert not any(obj.name.startswith("Agent Bridge Link Failed ") for obj in bpy.data.objects), failed_link_curve
+        assert not any(mesh.name.startswith("Agent Bridge Link Failed ") for mesh in bpy.data.meshes), failed_link_curve
+        transaction = live_preview.current_transaction()
+        assert transaction is None or transaction.get("status") != "pending", transaction
+        assert not any("Agent Bridge Link Failed " in name for name in (transaction or {}).get("changed_data_blocks", [])), transaction
 
         workflow = _execute(
             context,
@@ -347,6 +529,125 @@ def main():
         assert procedural["objects"][0]["object"] == "Cube"
         assert cube.modifiers.get("Agent Bridge Advanced Procedural Array")
 
+        extruded = _execute(
+            context,
+            "edit_mesh",
+            {
+                "operation": "extrude_faces",
+                "object_names": ["Cube"],
+                "selected_only": False,
+                "face_scope": "TOP",
+                "direction": "AXIS",
+                "axis": "Z",
+                "distance": 0.2,
+            },
+        )
+        assert extruded["objects"][0]["after"]["vertices"] > extruded["objects"][0]["before"]["vertices"], extruded
+        inset = _execute(
+            context,
+            "edit_mesh",
+            {
+                "operation": "inset_faces",
+                "object_names": ["Cube"],
+                "selected_only": False,
+                "face_scope": "TOP",
+                "inset_thickness": 0.04,
+            },
+        )
+        assert inset["objects"][0]["after"]["faces"] >= inset["objects"][0]["before"]["faces"], inset
+        bridged = _execute(
+            context,
+            "edit_mesh",
+            {"operation": "bridge_boundary_loops", "object_names": [bridge_fixture.name], "selected_only": False},
+        )
+        assert bridged["objects"][0]["after"]["faces"] > bridged["objects"][0]["before"]["faces"], bridged
+        merged = _execute(
+            context,
+            "edit_mesh",
+            {"operation": "merge_by_distance", "object_names": [merge_fixture.name], "selected_only": False, "merge_distance": 0.01},
+        )
+        assert merged["objects"][0]["after"]["vertices"] < merged["objects"][0]["before"]["vertices"], merged
+        dissolved = _execute(
+            context,
+            "edit_mesh",
+            {"operation": "dissolve_degenerate", "object_names": [dissolve_fixture.name], "selected_only": False, "merge_distance": 0.01},
+        )
+        assert dissolved["objects"][0]["after"]["vertices"] < dissolved["objects"][0]["before"]["vertices"], dissolved
+
+        cutter = _execute(
+            context,
+            "create_primitive",
+            {
+                "primitive_type": "CUBE",
+                "name": "Agent Bridge Boolean Cutter",
+                "location": [0.6, 0.0, 0.0],
+                "scale": [0.35, 0.35, 0.35],
+            },
+        )
+        assert cutter["object"] in bpy.data.objects
+        boolean = _execute(
+            context,
+            "boolean_op",
+            {
+                "target_object_name": "Cube",
+                "cutter_object_names": [cutter["object"]],
+                "operation": "DIFFERENCE",
+                "solver": "FAST",
+                "name_prefix": "Agent Bridge Advanced Boolean",
+            },
+        )
+        boolean_modifier = cube.modifiers.get(boolean["modifiers"][0]["name"])
+        assert boolean_modifier and boolean_modifier.type == "BOOLEAN", boolean
+        assert boolean_modifier.operation == "DIFFERENCE", boolean
+        assert boolean_modifier.object == bpy.data.objects[cutter["object"]], boolean
+
+        mirror = _execute(
+            context,
+            "mirror_model",
+            {
+                "object_names": ["Cube"],
+                "selected_only": False,
+                "use_axis": [True, False, False],
+                "name": "Agent Bridge Advanced Mirror",
+            },
+        )
+        assert mirror["axis"] == ["X"], mirror
+        mirror_modifier = cube.modifiers.get("Agent Bridge Advanced Mirror")
+        assert mirror_modifier and mirror_modifier.type == "MIRROR", mirror
+        assert tuple(bool(item) for item in mirror_modifier.use_axis) == (True, False, False), mirror
+
+        symmetry = _execute(
+            context,
+            "symmetrize_model",
+            {
+                "object_names": ["Cube"],
+                "selected_only": False,
+                "axis": "Y",
+                "direction": "NEGATIVE_TO_POSITIVE",
+                "name": "Agent Bridge Advanced Symmetry",
+            },
+        )
+        symmetry_modifier = cube.modifiers.get("Agent Bridge Advanced Symmetry")
+        assert symmetry["axis"] == "Y", symmetry
+        assert symmetry_modifier and symmetry_modifier.type == "MIRROR", symmetry
+        assert tuple(bool(item) for item in symmetry_modifier.use_bisect_axis) == (False, True, False), symmetry
+
+        solidify = _execute(
+            context,
+            "solidify_model",
+            {
+                "object_names": ["Cube"],
+                "selected_only": False,
+                "thickness": 0.08,
+                "offset": 0.0,
+                "name": "Agent Bridge Advanced Solidify",
+            },
+        )
+        solidify_modifier = cube.modifiers.get("Agent Bridge Advanced Solidify")
+        assert solidify_modifier and solidify_modifier.type == "SOLIDIFY", solidify
+        assert round(float(solidify_modifier.thickness), 3) == 0.08, solidify
+
+        _select_object(context, cube)
         shape_key = _execute(context, "create_shape_key", {"object_name": "Cube", "key_name": "Agent Bridge Bulge", "value": 0.25})
         assert shape_key["shape_key"] in cube.data.shape_keys.key_blocks
         _execute(
@@ -405,6 +706,13 @@ def main():
             },
         )
         assert bpy.data.objects[curve["object"]].type == "CURVE"
+        converted_curve = _execute(
+            context,
+            "curve_to_mesh",
+            {"object_names": [curve["object"]], "selected_only": False, "name_prefix": "Agent Bridge Converted "},
+        )
+        converted_object = bpy.data.objects[converted_curve["created"][0]["object"]]
+        assert converted_object.type == "MESH", converted_curve
 
         armature = _execute(
             context,

@@ -129,6 +129,12 @@ Expose external agents to narrow client tools rather than raw Python first:
 - `create_collection`: creates or finds a scene collection.
 - `link_selected_to_collection`: links selected objects to a named collection.
 - `add_modifier_to_selected`: adds bounded BEVEL, SUBSURF, SOLIDIFY, or ARRAY modifiers to selected mesh objects.
+- `edit_mesh`: applies bounded topology edits such as face extrusion, face inset, boundary-loop bridge, dissolve-degenerate, and merge-by-distance to single-user mesh data with mesh snapshot rollback.
+- `curve_to_mesh`: creates preview-safe mesh-copy objects from Curve/Text sources without destroying the original.
+- `boolean_op`: adds non-destructive Boolean modifiers to a target mesh using named or selected cutter meshes.
+- `mirror_model`: adds non-destructive Mirror modifiers to selected or named mesh objects.
+- `symmetrize_model`: adds a non-destructive symmetry Mirror modifier on one axis.
+- `solidify_model`: adds non-destructive Solidify modifiers for shell/wall thickness.
 - `create_shader_material`: creates or updates a Principled BSDF material and optionally assigns it to selected mesh objects.
 - `add_geometry_nodes_modifier`: adds a valid passthrough Geometry Nodes modifier and starter node group.
 - `create_shape_key`: creates or updates a mesh shape key value.

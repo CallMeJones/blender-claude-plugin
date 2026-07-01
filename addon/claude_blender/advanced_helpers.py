@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+import bmesh
 import math
 import re
 
@@ -30,6 +31,7 @@ KEYFRAME_INTERPOLATIONS = {
 
 EMPTY_DISPLAY_TYPES = {"PLAIN_AXES", "ARROWS", "SINGLE_ARROW", "CIRCLE", "CUBE", "SPHERE", "CONE", "IMAGE"}
 OBJECT_DISPLAY_TYPES = {"TEXTURED", "SOLID", "WIRE", "BOUNDS"}
+EDIT_MESH_OPERATIONS = {"extrude_faces", "inset_faces", "merge_by_distance", "dissolve_degenerate", "bridge_boundary_loops"}
 
 LIGHTING_PRESETS = {
     "product_softbox": [
@@ -3909,10 +3911,16 @@ ADVANCED_WORKFLOW_DOMAINS = {
         "script_boundary": "Prefer storyboard/cutout helpers when they fit; draft_script can handle custom Grease Pencil stroke editing, SVG conversion, or bespoke vector workflows after static checks.",
     },
     "procedural_3d": {
-        "keywords": {"advanced 3d", "procedural", "array", "scatter", "kit", "object kit", "kitbash", "mechanical", "mechanical joint", "mechanical part", "control panel", "modular", "wall panel", "pipe run", "hard surface", "hard-surface", "geometry nodes", "node group", "modifier stack"},
+        "keywords": {"advanced 3d", "procedural", "array", "scatter", "kit", "object kit", "kitbash", "mechanical", "mechanical joint", "mechanical part", "control panel", "modular", "wall panel", "pipe run", "hard surface", "hard-surface", "geometry nodes", "node group", "modifier stack", "edit mesh", "extrude", "inset", "bridge", "dissolve", "merge", "curve to mesh", "convert curve", "boolean", "cutter", "mirror", "symmetry", "symmetrize", "solidify", "wall thickness"},
         "tools": [
             "get_geometry_nodes_details",
             "apply_procedural_array_stack",
+            "edit_mesh",
+            "curve_to_mesh",
+            "boolean_op",
+            "mirror_model",
+            "symmetrize_model",
+            "solidify_model",
             "create_procedural_object_kit",
             "add_geometry_nodes_modifier",
             "shade_smooth_selected",
@@ -4751,6 +4759,706 @@ def apply_procedural_array_stack(
         "ok": True,
         "message": f"Applied procedural array stack to {len(changed)} mesh object(s)",
         "objects": changed,
+        "missing_object_names": missing,
+        "transaction_id": transaction["id"],
+    }
+
+
+def _clamped_float(value, default, minimum, maximum):
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        result = float(default)
+    return max(float(minimum), min(float(maximum), result))
+
+
+def _coerce_bool_triplet(value, fallback):
+    if value is None:
+        values = list(fallback)
+    elif isinstance(value, str):
+        text = value.strip().upper()
+        values = [axis in text for axis in ("X", "Y", "Z")]
+    else:
+        values = list(value)[:3]
+    while len(values) < 3:
+        values.append(bool(fallback[len(values)]))
+    return tuple(bool(item) for item in values[:3])
+
+
+def _axis_names_from_triplet(values):
+    return [axis for axis, enabled in zip(("X", "Y", "Z"), values) if enabled]
+
+
+def _mesh_topology_counts(mesh):
+    return {
+        "vertices": len(mesh.vertices),
+        "edges": len(mesh.edges),
+        "faces": len(mesh.polygons),
+    }
+
+
+def _bm_topology_counts(bm):
+    return {
+        "vertices": len(bm.verts),
+        "edges": len(bm.edges),
+        "faces": len(bm.faces),
+    }
+
+
+def _normalize_edit_mesh_operation(operation):
+    normalized = str(operation or "").strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "extrude": "extrude_faces",
+        "extrude_face": "extrude_faces",
+        "inset": "inset_faces",
+        "inset_region": "inset_faces",
+        "merge": "merge_by_distance",
+        "remove_doubles": "merge_by_distance",
+        "dissolve": "dissolve_degenerate",
+        "bridge": "bridge_boundary_loops",
+        "bridge_loops": "bridge_boundary_loops",
+        "bridge_edge_loops": "bridge_boundary_loops",
+    }
+    normalized = aliases.get(normalized, normalized)
+    return normalized if normalized in EDIT_MESH_OPERATIONS else ""
+
+
+def _face_scope_axis(scope):
+    normalized = str(scope or "ALL").strip().upper().replace("-", "_").replace(" ", "_")
+    return {
+        "TOP": ("Z", 1.0),
+        "UP": ("Z", 1.0),
+        "BOTTOM": ("Z", -1.0),
+        "DOWN": ("Z", -1.0),
+        "RIGHT": ("X", 1.0),
+        "LEFT": ("X", -1.0),
+        "BACK": ("Y", 1.0),
+        "FRONT": ("Y", -1.0),
+    }.get(normalized)
+
+
+def _scoped_bmesh_faces(bm, scope):
+    faces = list(bm.faces)
+    if not faces:
+        return []
+    axis_spec = _face_scope_axis(scope)
+    if axis_spec is None:
+        return faces
+    axis_name, sign = axis_spec
+    axis_index, _axis_name = _axis_index(axis_name)
+    centers = [(face, face.calc_center_median()[axis_index]) for face in faces]
+    values = [value for _face, value in centers]
+    target = max(values) if sign > 0.0 else min(values)
+    span = max(values) - min(values)
+    tolerance = max(1e-6, abs(span) * 0.02)
+    return [face for face, value in centers if abs(value - target) <= tolerance]
+
+
+def _edit_mesh_vector(bm, faces, direction, axis, distance):
+    distance = _clamped_float(distance, 0.25, -100.0, 100.0)
+    normalized = str(direction or "NORMAL").strip().upper()
+    axis_index, axis_name = _axis_index(axis)
+    if normalized == "AXIS":
+        components = [0.0, 0.0, 0.0]
+        components[axis_index] = 1.0
+        return Vector(components) * distance, axis_name
+    if normalized in {"X", "Y", "Z"}:
+        axis_index, axis_name = _axis_index(normalized)
+        components = [0.0, 0.0, 0.0]
+        components[axis_index] = 1.0
+        return Vector(components) * distance, axis_name
+    normal = Vector((0.0, 0.0, 0.0))
+    for face in faces:
+        normal += face.normal
+    if normal.length < 1e-8:
+        normal = Vector((0.0, 0.0, 1.0))
+    else:
+        normal.normalize()
+    return normal * distance, "NORMAL"
+
+
+def _apply_bmesh_edit_operation(bm, operation, *, face_scope, direction, axis, distance, inset_thickness, inset_depth, merge_distance):
+    bm.verts.ensure_lookup_table()
+    bm.edges.ensure_lookup_table()
+    bm.faces.ensure_lookup_table()
+    bm.normal_update()
+    before_counts = _bm_topology_counts(bm)
+    details = {}
+
+    if operation == "extrude_faces":
+        faces = _scoped_bmesh_faces(bm, face_scope)
+        if not faces:
+            return before_counts, before_counts, {"skipped": "no scoped faces"}
+        vec, used_direction = _edit_mesh_vector(bm, faces, direction, axis, distance)
+        result = bmesh.ops.extrude_face_region(bm, geom=faces)
+        verts = [item for item in result.get("geom", []) if isinstance(item, bmesh.types.BMVert)]
+        bmesh.ops.translate(bm, verts=verts, vec=vec)
+        details = {"face_scope": str(face_scope or "ALL").upper(), "direction": used_direction, "distance": float(distance), "faces": len(faces)}
+
+    elif operation == "inset_faces":
+        faces = _scoped_bmesh_faces(bm, face_scope)
+        if not faces:
+            return before_counts, before_counts, {"skipped": "no scoped faces"}
+        thickness = _clamped_float(inset_thickness, 0.05, 0.0, 100.0)
+        depth = _clamped_float(inset_depth, 0.0, -100.0, 100.0)
+        bmesh.ops.inset_region(
+            bm,
+            faces=faces,
+            thickness=thickness,
+            depth=depth,
+            use_even_offset=True,
+            use_interpolate=True,
+        )
+        details = {"face_scope": str(face_scope or "ALL").upper(), "thickness": thickness, "depth": depth, "faces": len(faces)}
+
+    elif operation == "merge_by_distance":
+        distance = _clamped_float(merge_distance, 0.0001, 0.0, 10.0)
+        result = bmesh.ops.remove_doubles(bm, verts=list(bm.verts), dist=distance)
+        result = result or {}
+        details = {"distance": distance, "merged": len(result.get("targetmap", {}) or {})}
+
+    elif operation == "dissolve_degenerate":
+        distance = _clamped_float(merge_distance, 0.0001, 0.0, 10.0)
+        bmesh.ops.dissolve_degenerate(bm, edges=list(bm.edges), dist=distance)
+        details = {"distance": distance}
+
+    elif operation == "bridge_boundary_loops":
+        boundary_edges = [edge for edge in bm.edges if edge.is_boundary or edge.is_wire]
+        if len(boundary_edges) < 4:
+            return before_counts, before_counts, {"skipped": "not enough boundary edges"}
+        if len(boundary_edges) > 512:
+            return before_counts, before_counts, {"skipped": "too many boundary edges"}
+        bmesh.ops.bridge_loops(bm, edges=boundary_edges)
+        details = {"boundary_edges": len(boundary_edges)}
+
+    bm.normal_update()
+    bm.verts.ensure_lookup_table()
+    bm.edges.ensure_lookup_table()
+    bm.faces.ensure_lookup_table()
+    after_counts = _bm_topology_counts(bm)
+    return before_counts, after_counts, details
+
+
+def _mesh_edit_blockers(obj, *, allow_shape_keys=False):
+    blockers = []
+    mesh = obj.data if obj and obj.type == "MESH" else None
+    if mesh is None:
+        blockers.append("not a mesh")
+    elif mesh.users > 1:
+        blockers.append("mesh data has multiple users")
+    elif mesh.shape_keys and not allow_shape_keys:
+        blockers.append("shape-key meshes need explicit allow_shape_keys")
+    if getattr(obj, "library", None) is not None or getattr(mesh, "library", None) is not None:
+        blockers.append("linked library data is read-only")
+    return blockers
+
+
+def _selected_meshes_except(context, excluded):
+    return [obj for obj in getattr(context, "selected_objects", []) if obj.type == "MESH" and obj != excluded]
+
+
+def _forget_recorded_created_id(transaction, kind, name):
+    if not transaction or not name:
+        return
+    key = f"created:{kind}:{name}"
+    if key not in transaction.get("before_state", {}):
+        return
+    transaction["before_state"].pop(key, None)
+    try:
+        transaction.get("changed_data_blocks", []).remove(name)
+    except ValueError:
+        pass
+
+
+def edit_mesh(
+    context,
+    *,
+    operation="extrude_faces",
+    object_names=None,
+    selected_only=True,
+    face_scope="ALL",
+    direction="NORMAL",
+    axis="Z",
+    distance=0.25,
+    inset_thickness=0.05,
+    inset_depth=0.0,
+    merge_distance=0.0001,
+    allow_shape_keys=False,
+    label="Edit mesh",
+):
+    operation = _normalize_edit_mesh_operation(operation)
+    if not operation:
+        return {"ok": False, "message": f"operation must be one of {', '.join(sorted(EDIT_MESH_OPERATIONS))}"}
+    objects, missing = _resolve_edit_objects(context, object_names=object_names, selected_only=selected_only, max_objects=16)
+    meshes = [obj for obj in objects if obj.type == "MESH"]
+    if not meshes:
+        return {"ok": False, "message": "No mesh objects found for edit_mesh", "missing_object_names": missing}
+
+    changed = []
+    skipped = []
+    transaction = None
+    opened_transaction = False
+    for obj in meshes:
+        blockers = _mesh_edit_blockers(obj, allow_shape_keys=allow_shape_keys)
+        if blockers:
+            skipped.append({"object": obj.name, "reason": "; ".join(blockers)})
+            continue
+        mesh = obj.data
+        before_mesh_counts = _mesh_topology_counts(mesh)
+        bm = bmesh.new()
+        try:
+            bm.from_mesh(mesh)
+            before_counts, after_counts, details = _apply_bmesh_edit_operation(
+                bm,
+                operation,
+                face_scope=face_scope,
+                direction=direction,
+                axis=axis,
+                distance=distance,
+                inset_thickness=inset_thickness,
+                inset_depth=inset_depth,
+                merge_distance=merge_distance,
+            )
+            if before_counts == after_counts and details.get("skipped"):
+                skipped.append({"object": obj.name, "reason": details["skipped"]})
+                continue
+            if before_counts == after_counts and operation in {"merge_by_distance", "dissolve_degenerate"}:
+                skipped.append({"object": obj.name, "reason": "no topology changed"})
+                continue
+            if transaction is None:
+                pending = live_preview.current_transaction()
+                had_pending = bool(pending and pending.get("status") == "pending")
+                transaction = live_preview.begin(label, context)
+                opened_transaction = not had_pending
+            live_preview._record_mesh_data_snapshot(obj)
+            bm.to_mesh(mesh)
+            mesh.update()
+            changed.append(
+                {
+                    "object": obj.name,
+                    "operation": operation,
+                    "before": before_mesh_counts,
+                    "after": _mesh_topology_counts(mesh),
+                    "details": details,
+                }
+            )
+        except Exception as exc:
+            skipped.append({"object": obj.name, "reason": f"{type(exc).__name__}: {exc}"})
+        finally:
+            bm.free()
+
+    if not changed:
+        if opened_transaction and transaction and transaction.get("status") == "pending":
+            live_preview.revert(context)
+        return {
+            "ok": False,
+            "message": f"No mesh topology changed for {operation}",
+            "operation": operation,
+            "objects": [],
+            "skipped": skipped,
+            "missing_object_names": missing,
+        }
+
+    transaction["applied_steps"].append({"type": "edit_mesh", "label": label, "operation": operation, "objects": changed})
+    live_preview.redraw(context)
+    live_preview._mark_pending(context, label)
+    return {
+        "ok": True,
+        "message": f"Applied {operation} to {len(changed)} mesh object(s)",
+        "operation": operation,
+        "objects": changed,
+        "skipped": skipped,
+        "missing_object_names": missing,
+        "transaction_id": transaction["id"],
+    }
+
+
+def curve_to_mesh(
+    context,
+    *,
+    object_names=None,
+    selected_only=True,
+    name_prefix="Agent Bridge Mesh ",
+    hide_original=False,
+    label="Convert curve to mesh",
+):
+    objects, missing = _resolve_edit_objects(context, object_names=object_names, selected_only=selected_only, max_objects=32)
+    curves = [obj for obj in objects if obj.type in {"CURVE", "FONT"}]
+    if not curves:
+        return {"ok": False, "message": "No curve or text objects found for curve_to_mesh", "missing_object_names": missing}
+
+    depsgraph = context.evaluated_depsgraph_get()
+    transaction = None
+    opened_transaction = False
+    created = []
+    skipped = []
+    prefix = str(name_prefix or "Agent Bridge Mesh ")
+    for obj in curves:
+        mesh = None
+        mesh_obj = None
+        recorded_ids = []
+        try:
+            if transaction is None:
+                pending = live_preview.current_transaction()
+                had_pending = bool(pending and pending.get("status") == "pending")
+                transaction = live_preview.begin(label, context)
+                opened_transaction = not had_pending
+            evaluated = obj.evaluated_get(depsgraph)
+            mesh = bpy.data.meshes.new_from_object(evaluated, depsgraph=depsgraph)
+            mesh.name = f"{prefix}{obj.name} Mesh"
+            mesh_obj = bpy.data.objects.new(f"{prefix}{obj.name}", mesh)
+            mesh_obj.matrix_world = obj.matrix_world.copy()
+            live_preview._record_created_id("object", mesh_obj.name)
+            recorded_ids.append(("object", mesh_obj.name))
+            live_preview._record_created_id("mesh", mesh.name)
+            recorded_ids.append(("mesh", mesh.name))
+            _link_object_like_source(context, obj, mesh_obj)
+            if hide_original:
+                live_preview._record_object_visibility(obj)
+                obj.hide_set(True)
+                obj.hide_viewport = True
+                obj.hide_render = True
+            created.append({"source": obj.name, "object": mesh_obj.name, "mesh": mesh.name})
+        except Exception as exc:
+            if mesh_obj and bpy.data.objects.get(mesh_obj.name):
+                bpy.data.objects.remove(mesh_obj, do_unlink=True)
+            if mesh and bpy.data.meshes.get(mesh.name) and mesh.users == 0:
+                bpy.data.meshes.remove(mesh)
+            for kind, name in recorded_ids:
+                _forget_recorded_created_id(transaction, kind, name)
+            skipped.append({"object": obj.name, "reason": f"{type(exc).__name__}: {exc}"})
+
+    if not created:
+        if opened_transaction and transaction and transaction.get("status") == "pending":
+            live_preview.revert(context)
+        return {
+            "ok": False,
+            "message": "No mesh objects were created from curves",
+            "created": [],
+            "skipped": skipped,
+            "missing_object_names": missing,
+        }
+
+    transaction["applied_steps"].append({"type": "curve_to_mesh", "label": label, "created": created})
+    live_preview.redraw(context)
+    live_preview._mark_pending(context, label)
+    return {
+        "ok": True,
+        "message": f"Converted {len(created)} curve/text object(s) to mesh copies",
+        "created": created,
+        "skipped": skipped,
+        "missing_object_names": missing,
+        "transaction_id": transaction["id"],
+    }
+
+
+def _normalize_boolean_operation(operation):
+    normalized = str(operation or "DIFFERENCE").strip().upper().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "SUBTRACT": "DIFFERENCE",
+        "CUT": "DIFFERENCE",
+        "JOIN": "UNION",
+        "ADD": "UNION",
+        "COMMON": "INTERSECT",
+        "INTERSECTION": "INTERSECT",
+    }
+    normalized = aliases.get(normalized, normalized)
+    return normalized if normalized in {"DIFFERENCE", "UNION", "INTERSECT"} else "DIFFERENCE"
+
+
+def _normalize_boolean_solver(solver):
+    normalized = str(solver or "FAST").strip().upper()
+    return normalized if normalized in {"FAST", "FLOAT", "EXACT", "MANIFOLD"} else "FAST"
+
+
+def _set_boolean_solver(modifier, solver):
+    if not hasattr(modifier, "solver"):
+        return ""
+    solver = _normalize_boolean_solver(solver)
+    candidates = [solver]
+    if solver == "FAST":
+        candidates.extend(["FLOAT", "EXACT"])
+    elif solver == "FLOAT":
+        candidates.extend(["FAST", "EXACT"])
+    elif solver == "MANIFOLD":
+        candidates.append("EXACT")
+    for candidate in dict.fromkeys(candidates):
+        try:
+            modifier.solver = candidate
+            return str(modifier.solver)
+        except (TypeError, ValueError):
+            continue
+    return str(getattr(modifier, "solver", ""))
+
+
+def boolean_op(
+    context,
+    *,
+    target_object_name="",
+    cutter_object_names=None,
+    operation="DIFFERENCE",
+    solver="FAST",
+    name_prefix="Agent Bridge Boolean",
+    label="Apply boolean operation",
+):
+    """Add non-destructive Boolean modifiers to a target mesh."""
+
+    target_name = str(target_object_name or "").strip()
+    target = bpy.data.objects.get(target_name) if target_name else getattr(context, "active_object", None)
+    if not target or target.type != "MESH":
+        return {"ok": False, "message": "Boolean operation needs a mesh target object", "target_object_name": target_name}
+
+    missing = []
+    cutters = []
+    for name in [str(item).strip() for item in cutter_object_names or [] if str(item).strip()]:
+        cutter = bpy.data.objects.get(name)
+        if not cutter:
+            missing.append(name)
+        elif cutter.type == "MESH" and cutter != target:
+            cutters.append(cutter)
+    if not cutters and not cutter_object_names:
+        cutters = _selected_meshes_except(context, target)
+    cutters = cutters[:32]
+    if not cutters:
+        return {
+            "ok": False,
+            "message": "Boolean operation needs at least one mesh cutter object",
+            "target": target.name,
+            "missing_object_names": missing,
+        }
+
+    operation = _normalize_boolean_operation(operation)
+    solver = _normalize_boolean_solver(solver)
+    prefix = str(name_prefix or "Agent Bridge Boolean")
+    transaction = live_preview.begin(label, context)
+    modifiers = []
+    applied_solver = solver
+    for cutter in cutters:
+        modifier = target.modifiers.new(f"{prefix} {operation.title()} {cutter.name}", "BOOLEAN")
+        live_preview._record_created_modifier(target, modifier)
+        if hasattr(modifier, "operand_type"):
+            modifier.operand_type = "OBJECT"
+        modifier.operation = operation
+        modifier.object = cutter
+        applied_solver = _set_boolean_solver(modifier, solver) or solver
+        modifiers.append({"name": modifier.name, "cutter": cutter.name})
+
+    transaction["applied_steps"].append(
+        {
+            "type": "boolean_op",
+            "label": label,
+            "target": target.name,
+            "cutters": [cutter.name for cutter in cutters],
+            "operation": operation,
+            "solver": applied_solver,
+            "modifiers": [item["name"] for item in modifiers],
+        }
+    )
+    live_preview.redraw(context)
+    live_preview._mark_pending(context, label)
+    return {
+        "ok": True,
+        "message": f"Added {len(modifiers)} {operation.lower()} Boolean modifier(s) to {target.name}",
+        "target": target.name,
+        "cutters": [cutter.name for cutter in cutters],
+        "operation": operation,
+        "solver": applied_solver,
+        "modifiers": modifiers,
+        "missing_object_names": missing,
+        "transaction_id": transaction["id"],
+    }
+
+
+def mirror_model(
+    context,
+    *,
+    object_names=None,
+    selected_only=True,
+    use_axis=(True, False, False),
+    mirror_object_name="",
+    bisect_axis=(False, False, False),
+    flip_axis=(False, False, False),
+    use_clip=False,
+    use_mirror_merge=True,
+    merge_threshold=0.001,
+    name="Agent Bridge Mirror",
+    label="Mirror model",
+):
+    objects, missing = _resolve_edit_objects(context, object_names=object_names, selected_only=selected_only)
+    meshes = [obj for obj in objects if obj.type == "MESH"]
+    if not meshes:
+        return {"ok": False, "message": "No mesh objects found for mirror model", "missing_object_names": missing}
+
+    axis = _coerce_bool_triplet(use_axis, (True, False, False))
+    if not any(axis):
+        axis = (True, False, False)
+    bisect = _coerce_bool_triplet(bisect_axis, (False, False, False))
+    flip = _coerce_bool_triplet(flip_axis, (False, False, False))
+    mirror_object = None
+    mirror_object_name = str(mirror_object_name or "").strip()
+    if mirror_object_name:
+        mirror_object = bpy.data.objects.get(mirror_object_name)
+        if mirror_object is None:
+            return {"ok": False, "message": f"Mirror object not found: {mirror_object_name}", "missing_object_names": missing + [mirror_object_name]}
+
+    transaction = live_preview.begin(label, context)
+    changed = []
+    for obj in meshes:
+        modifier = obj.modifiers.new(str(name or "Agent Bridge Mirror"), "MIRROR")
+        live_preview._record_created_modifier(obj, modifier)
+        modifier.use_axis = axis
+        modifier.use_bisect_axis = bisect
+        modifier.use_bisect_flip_axis = flip
+        modifier.use_clip = bool(use_clip)
+        modifier.use_mirror_merge = bool(use_mirror_merge)
+        modifier.merge_threshold = _clamped_float(merge_threshold, 0.001, 0.0, 10.0)
+        if mirror_object is not None:
+            modifier.mirror_object = mirror_object
+        changed.append({"object": obj.name, "modifier": modifier.name})
+
+    transaction["applied_steps"].append(
+        {
+            "type": "mirror_model",
+            "label": label,
+            "objects": changed,
+            "axis": _axis_names_from_triplet(axis),
+            "mirror_object": mirror_object.name if mirror_object else "",
+        }
+    )
+    live_preview.redraw(context)
+    live_preview._mark_pending(context, label)
+    return {
+        "ok": True,
+        "message": f"Added Mirror modifier to {len(changed)} mesh object(s)",
+        "objects": changed,
+        "axis": _axis_names_from_triplet(axis),
+        "mirror_object": mirror_object.name if mirror_object else "",
+        "missing_object_names": missing,
+        "transaction_id": transaction["id"],
+    }
+
+
+def symmetrize_model(
+    context,
+    *,
+    object_names=None,
+    selected_only=True,
+    axis="X",
+    direction="POSITIVE_TO_NEGATIVE",
+    merge_threshold=0.001,
+    name="Agent Bridge Symmetry",
+    label="Symmetrize model",
+):
+    objects, missing = _resolve_edit_objects(context, object_names=object_names, selected_only=selected_only)
+    meshes = [obj for obj in objects if obj.type == "MESH"]
+    if not meshes:
+        return {"ok": False, "message": "No mesh objects found for symmetrize model", "missing_object_names": missing}
+
+    axis_index, axis_name = _axis_index(axis)
+    normalized_direction = str(direction or "POSITIVE_TO_NEGATIVE").strip().upper().replace("-", "_").replace(" ", "_")
+    direction_aliases = {
+        "+TO-": "POSITIVE_TO_NEGATIVE",
+        "POSITIVE_TO_NEGATIVE": "POSITIVE_TO_NEGATIVE",
+        "POSITIVE_TO_NEG": "POSITIVE_TO_NEGATIVE",
+        "POS_TO_NEG": "POSITIVE_TO_NEGATIVE",
+        "-TO+": "NEGATIVE_TO_POSITIVE",
+        "NEGATIVE_TO_POSITIVE": "NEGATIVE_TO_POSITIVE",
+        "NEGATIVE_TO_POS": "NEGATIVE_TO_POSITIVE",
+        "NEG_TO_POS": "NEGATIVE_TO_POSITIVE",
+    }
+    normalized_direction = direction_aliases.get(normalized_direction, normalized_direction)
+    if normalized_direction not in {"POSITIVE_TO_NEGATIVE", "NEGATIVE_TO_POSITIVE"}:
+        normalized_direction = "POSITIVE_TO_NEGATIVE"
+
+    use_axis = [False, False, False]
+    use_axis[axis_index] = True
+    bisect_axis = [False, False, False]
+    bisect_axis[axis_index] = True
+    flip_axis = [False, False, False]
+    flip_axis[axis_index] = normalized_direction == "NEGATIVE_TO_POSITIVE"
+    threshold = _clamped_float(merge_threshold, 0.001, 0.0, 10.0)
+
+    transaction = live_preview.begin(label, context)
+    changed = []
+    for obj in meshes:
+        modifier = obj.modifiers.new(str(name or "Agent Bridge Symmetry"), "MIRROR")
+        live_preview._record_created_modifier(obj, modifier)
+        modifier.use_axis = tuple(use_axis)
+        modifier.use_bisect_axis = tuple(bisect_axis)
+        modifier.use_bisect_flip_axis = tuple(flip_axis)
+        modifier.use_clip = True
+        modifier.use_mirror_merge = True
+        modifier.merge_threshold = threshold
+        changed.append({"object": obj.name, "modifier": modifier.name})
+
+    transaction["applied_steps"].append(
+        {
+            "type": "symmetrize_model",
+            "label": label,
+            "objects": changed,
+            "axis": axis_name,
+            "direction": normalized_direction,
+        }
+    )
+    live_preview.redraw(context)
+    live_preview._mark_pending(context, label)
+    return {
+        "ok": True,
+        "message": f"Added symmetry Mirror modifier to {len(changed)} mesh object(s)",
+        "objects": changed,
+        "axis": axis_name,
+        "direction": normalized_direction,
+        "missing_object_names": missing,
+        "transaction_id": transaction["id"],
+    }
+
+
+def solidify_model(
+    context,
+    *,
+    object_names=None,
+    selected_only=True,
+    thickness=0.1,
+    offset=0.0,
+    use_even_offset=True,
+    name="Agent Bridge Solidify",
+    label="Solidify model",
+):
+    objects, missing = _resolve_edit_objects(context, object_names=object_names, selected_only=selected_only)
+    meshes = [obj for obj in objects if obj.type == "MESH"]
+    if not meshes:
+        return {"ok": False, "message": "No mesh objects found for solidify model", "missing_object_names": missing}
+
+    thickness = _clamped_float(thickness, 0.1, -10.0, 10.0)
+    offset = _clamped_float(offset, 0.0, -1.0, 1.0)
+    transaction = live_preview.begin(label, context)
+    changed = []
+    for obj in meshes:
+        modifier = obj.modifiers.new(str(name or "Agent Bridge Solidify"), "SOLIDIFY")
+        live_preview._record_created_modifier(obj, modifier)
+        modifier.thickness = thickness
+        modifier.offset = offset
+        if hasattr(modifier, "use_even_offset"):
+            modifier.use_even_offset = bool(use_even_offset)
+        changed.append({"object": obj.name, "modifier": modifier.name})
+
+    transaction["applied_steps"].append(
+        {
+            "type": "solidify_model",
+            "label": label,
+            "objects": changed,
+            "thickness": thickness,
+            "offset": offset,
+        }
+    )
+    live_preview.redraw(context)
+    live_preview._mark_pending(context, label)
+    return {
+        "ok": True,
+        "message": f"Added Solidify modifier to {len(changed)} mesh object(s)",
+        "objects": changed,
+        "thickness": thickness,
+        "offset": offset,
         "missing_object_names": missing,
         "transaction_id": transaction["id"],
     }

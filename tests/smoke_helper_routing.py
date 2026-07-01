@@ -93,6 +93,20 @@ def main():
     assert not procedural_guard["blocked"], procedural_guard
     assert "apply_procedural_array_stack" in procedural_guard["recommended_tools"], procedural_guard
 
+    modeling_guard = helper_routing.helper_first_script_advisory(
+        "Write Python for a boolean cutter, mirror modifier, symmetry pass, and solidify thickness."
+    )
+    assert modeling_guard["code"] == "procedural_3d_helper_required", modeling_guard
+    for expected in {"boolean_op", "mirror_model", "symmetrize_model", "solidify_model"}:
+        assert expected in modeling_guard["recommended_tools"], (expected, modeling_guard)
+
+    edit_mesh_guard = helper_routing.helper_first_script_advisory(
+        "Write Python to extrude faces, inset panels, bridge edge loops, merge by distance, and convert curve to mesh."
+    )
+    assert edit_mesh_guard["code"] == "procedural_3d_helper_required", edit_mesh_guard
+    assert "edit_mesh" in edit_mesh_guard["recommended_tools"], edit_mesh_guard
+    assert "curve_to_mesh" in edit_mesh_guard["recommended_tools"], edit_mesh_guard
+
     modular_guard = helper_routing.helper_first_script_advisory(
         "Write Python for a modular wall panel object kit with pipe run details."
     )

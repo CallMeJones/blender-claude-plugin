@@ -475,6 +475,26 @@ def _record_object_parent(obj):
         transaction["changed_data_blocks"].append(obj.name)
 
 
+def _record_mesh_data_snapshot(obj):
+    transaction = begin()
+    if obj is None or obj.type != "MESH" or obj.data is None:
+        return None
+    mesh = obj.data
+    key = f"object:{obj.name}:mesh_data"
+    if key in transaction["before_state"]:
+        return bpy.data.meshes.get(transaction["before_state"][key].get("snapshot_mesh_name", ""))
+    snapshot = mesh.copy()
+    snapshot.name = f"{mesh.name} Agent Bridge Snapshot {transaction['id'][:8]}"
+    transaction["before_state"][key] = {
+        "kind": "mesh_data_snapshot",
+        "object_name": obj.name,
+        "mesh_name": mesh.name,
+        "snapshot_mesh_name": snapshot.name,
+    }
+    transaction["changed_data_blocks"].append(mesh.name)
+    return snapshot
+
+
 def _record_material(material):
     transaction = begin()
     key = f"material:{material.name}:diffuse"
@@ -1311,6 +1331,12 @@ def commit(context):
     transaction = current_transaction()
     if not transaction or transaction["status"] != "pending":
         return {"ok": False, "message": "No pending preview transaction"}
+    for before in list(transaction["before_state"].values()):
+        if before.get("kind") != "mesh_data_snapshot":
+            continue
+        snapshot = bpy.data.meshes.get(before.get("snapshot_mesh_name", ""))
+        if snapshot and snapshot.users == 0:
+            bpy.data.meshes.remove(snapshot)
     # Capture the committed result as a single Blender undo step so the user can
     # still Ctrl+Z the agent's changes after committing the preview.
     try:
@@ -1516,6 +1542,20 @@ def revert(context):
             if mesh:
                 for polygon, use_smooth in zip(mesh.polygons, before["polygon_smooth"]):
                     polygon.use_smooth = bool(use_smooth)
+        elif before.get("kind") == "mesh_data_snapshot":
+            obj = bpy.data.objects.get(before["object_name"])
+            snapshot = bpy.data.meshes.get(before["snapshot_mesh_name"])
+            if obj is None or obj.type != "MESH":
+                rollback_warnings.append(f"Missing mesh object for mesh-data restore: {before['object_name']}")
+                continue
+            if snapshot is None:
+                rollback_warnings.append(f"Missing mesh snapshot for restore: {before['snapshot_mesh_name']}")
+                continue
+            current_mesh = obj.data
+            obj.data = snapshot
+            if current_mesh and current_mesh != snapshot and current_mesh.users == 0:
+                bpy.data.meshes.remove(current_mesh)
+            snapshot.name = before["mesh_name"]
         elif before.get("kind") == "shader_material":
             material = bpy.data.materials.get(before["material_name"])
             if material:

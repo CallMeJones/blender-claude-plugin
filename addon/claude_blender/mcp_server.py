@@ -165,6 +165,20 @@ ADVANCED_ROUTE_TERMS = {
     "radial array",
     "pipe run",
     "modular wall panel",
+    "edit mesh",
+    "extrude",
+    "inset",
+    "bridge",
+    "dissolve",
+    "merge",
+    "curve to mesh",
+    "convert curve",
+    "boolean",
+    "cutter",
+    "mirror",
+    "symmetry",
+    "symmetrize",
+    "solidify",
     "director",
     "director workflow",
     "asset import",
@@ -177,6 +191,12 @@ ADVANCED_ROUTE_TOOLS = {
     "create_storyboard_panels",
     "create_2d_cutout_layer",
     "apply_procedural_array_stack",
+    "edit_mesh",
+    "curve_to_mesh",
+    "boolean_op",
+    "mirror_model",
+    "symmetrize_model",
+    "solidify_model",
     "create_procedural_object_kit",
     "create_camera_dolly_animation",
     "create_directed_animation_shot",
@@ -204,6 +224,24 @@ PROCEDURAL_ROUTE_TERMS = {
     "modular wall panel",
     "wall panel",
     "pipe run",
+    "edit mesh",
+    "extrude",
+    "inset",
+    "bridge",
+    "dissolve",
+    "merge",
+    "curve to mesh",
+    "convert curve",
+    "boolean",
+    "cutter",
+    "boolean cutter",
+    "boolean difference",
+    "mirror",
+    "mirror model",
+    "symmetry",
+    "symmetrize",
+    "solidify",
+    "wall thickness",
 }
 SIMULATION_SETUP_ROUTE_TERMS = {"cloth simulation", "cloth sim", "simulation setup", "physics setup"}
 CAMERA_MOVE_ROUTE_TERMS = {"camera dolly", "dolly shot", "camera move", "camera animation", "lens keyframe", "directed shot", "shot template"}
@@ -1102,6 +1140,8 @@ def _tool_category(tool):
         return "camera_render"
     if "animate" in name or "animation" in name or "frame" in name:
         return "animation"
+    if name in {"edit_mesh", "curve_to_mesh", "boolean_op", "mirror_model", "symmetrize_model", "solidify_model"}:
+        return "geometry"
     if "geometry" in name or "modifier" in name or "bevel" in name or "subsurf" in name or "shape_key" in name:
         return "geometry"
     if "rigging" in name or "armature" in name or "constraint" in name or name in {"set_rig_pose_hold", "set_rig_custom_property_keyframes", "get_rig_pose_library_details", "apply_rig_pose_from_action", "apply_rig_pose_marker", "apply_rig_action_clip", "offset_rig_limb_controls"}:
@@ -1291,6 +1331,18 @@ def _score_tool_match(tool, query):
                 score += 950
             elif name == "apply_procedural_array_stack":
                 score += 900
+            elif name == "edit_mesh" and any(term in normalized_query for term in ("edit mesh", "extrude", "inset", "bridge", "dissolve", "merge")):
+                score += 1250
+            elif name == "curve_to_mesh" and any(term in normalized_query for term in ("curve to mesh", "convert curve", "mesh copy")):
+                score += 1250
+            elif name == "boolean_op" and any(term in normalized_query for term in ("boolean", "cutter", "cut", "difference", "union", "intersect")):
+                score += 1200
+            elif name == "mirror_model" and "mirror" in normalized_query:
+                score += 1200
+            elif name == "symmetrize_model" and any(term in normalized_query for term in ("symmetry", "symmetrize", "symmetrical")):
+                score += 1200
+            elif name == "solidify_model" and any(term in normalized_query for term in ("solidify", "thickness", "shell")):
+                score += 1200
             elif name in {"get_geometry_nodes_details", "add_geometry_nodes_modifier", "add_bevel_and_subsurf"}:
                 score += 500
         if simulation_setup_query:
